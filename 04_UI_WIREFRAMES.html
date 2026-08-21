@@ -1,0 +1,2472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Subscription Management Tool — UI Wireframes</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+  .screen { scroll-margin-top: 80px; }
+  .wireframe-box { border: 2px dashed #cbd5e1; }
+  .focus-ring:focus { outline: 2px solid #3b82f6; outline-offset: 2px; }
+  details[open] summary { background: #1e293b; color: white; }
+</style>
+</head>
+<body class="bg-slate-100 text-slate-900">
+
+<!-- Top Nav -->
+<nav class="bg-slate-900 text-white p-4 sticky top-0 z-50 shadow-lg">
+  <div class="max-w-7xl mx-auto flex justify-between items-center">
+    <h1 class="text-xl font-bold">📋 UI Wireframes — Subscription Management Tool</h1>
+    <div class="text-sm">Path B — Deliverable 4 of 5</div>
+  </div>
+  <div class="max-w-7xl mx-auto mt-3 flex flex-wrap gap-2 text-sm">
+    <a href="#dashboard" class="px-3 py-1 bg-slate-700 hover:bg-slate-600 rounded">1. Dashboard</a>
+    <a href="#subscriptions" class="px-3 py-1 bg-slate-700 hover:bg-slate-600 rounded">2. Subscriptions</a>
+    <a href="#sub-detail" class="px-3 py-1 bg-slate-700 hover:bg-slate-600 rounded">3. Sub Detail</a>
+    <a href="#leads" class="px-3 py-1 bg-slate-700 hover:bg-slate-600 rounded">4. Leads</a>
+    <a href="#new-quote" class="px-3 py-1 bg-slate-700 hover:bg-slate-600 rounded">5. New Quote</a>
+    <a href="#quote-detail" class="px-3 py-1 bg-slate-700 hover:bg-slate-600 rounded">6. Quote Detail</a>
+    <a href="#public-quote" class="px-3 py-1 bg-slate-700 hover:bg-slate-600 rounded">7. Public Quote View</a>
+    <a href="#search" class="px-3 py-1 bg-slate-700 hover:bg-slate-600 rounded">8. Quick Search</a>
+    <a href="#settings" class="px-3 py-1 bg-slate-700 hover:bg-slate-600 rounded">9. Settings</a>
+    <a href="#prorata" class="px-3 py-1 bg-emerald-700 hover:bg-emerald-600 rounded">10. Pro-rata Calc</a>
+    <a href="#domains" class="px-3 py-1 bg-emerald-700 hover:bg-emerald-600 rounded">11. Domain Mapping</a>
+    <a href="#system-health" class="px-3 py-1 bg-emerald-700 hover:bg-emerald-600 rounded">12. System Health</a>
+    <a href="#customer-detail" class="px-3 py-1 bg-emerald-700 hover:bg-emerald-600 rounded">13. Customer Detail</a>
+    <a href="#renewal-batches" class="px-3 py-1 bg-purple-700 hover:bg-purple-600 rounded">14. Renewal Batches</a>
+  </div>
+</nav>
+
+<div class="max-w-7xl mx-auto p-6 space-y-12">
+
+  <!-- Introduction -->
+  <section class="bg-white rounded-lg shadow p-6">
+    <h2 class="text-2xl font-bold mb-4">📐 UI Wireframes Overview</h2>
+    <p class="mb-3">यह document Phase 1 MVP के <strong>14 key screens</strong> के wireframes दिखाता है (9 original + 4 priority-1 additions per pre-implementation audit + 1 Renewal Batches History)। हर wireframe में:</p>
+    <ul class="list-disc list-inside space-y-1 text-slate-700">
+      <li>Layout structure और component placement</li>
+      <li>Key interactions और user flows</li>
+      <li>Form fields और validation cues</li>
+      <li>Empty states और error scenarios</li>
+    </ul>
+    <p class="mt-3 text-sm text-amber-700 bg-amber-50 p-3 rounded">
+      ⚠️ ये wireframes <strong>low-fidelity</strong> हैं — final UI design (colors, typography, micro-interactions) Phase 1 के Week 1-2 में finalize होगा designer के साथ।
+    </p>
+  </section>
+
+  <!-- =================================================================
+       1. DASHBOARD
+       ================================================================= -->
+  <section id="dashboard" class="screen bg-white rounded-lg shadow p-6">
+    <div class="flex justify-between items-center mb-4 pb-3 border-b-2 border-slate-200">
+      <h2 class="text-2xl font-bold">1️⃣ Dashboard (Home)</h2>
+      <span class="text-sm text-slate-500">Landing page after login</span>
+    </div>
+
+    <!-- Mock App Layout -->
+    <div class="border border-slate-300 rounded-lg overflow-hidden">
+
+      <!-- App Header -->
+      <div class="bg-slate-800 text-white px-4 py-3 flex items-center justify-between text-sm">
+        <div class="flex items-center gap-3">
+          <span class="font-bold">📦 ExcelTech Subscriptions</span>
+          <span class="text-slate-300">|</span>
+          <span>All Organizations ▼</span>
+        </div>
+        <div class="flex items-center gap-4">
+          <input type="text" placeholder="🔍 Search domain, customer, quote, invoice..."
+                 class="bg-slate-700 text-white px-3 py-1.5 rounded w-96 placeholder-slate-400" />
+          <div class="flex items-center gap-2">
+            <span>🔔 3</span>
+            <span class="w-7 h-7 bg-blue-500 rounded-full flex items-center justify-center">H</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex">
+        <!-- Sidebar -->
+        <div class="w-56 bg-slate-100 border-r border-slate-300 p-3 text-sm space-y-1">
+          <div class="px-3 py-2 bg-blue-100 text-blue-800 rounded font-medium">🏠 Dashboard</div>
+          <div class="px-3 py-2 hover:bg-slate-200 rounded">📋 Subscriptions</div>
+          <div class="px-3 py-2 hover:bg-slate-200 rounded">🎯 Leads</div>
+          <div class="px-3 py-2 hover:bg-slate-200 rounded">📄 Quick Quotes</div>
+          <div class="px-3 py-2 hover:bg-slate-200 rounded">🌐 Domains</div>
+          <div class="px-3 py-2 hover:bg-slate-200 rounded">👥 Customers</div>
+          <div class="border-t border-slate-300 my-2"></div>
+          <div class="px-3 py-2 hover:bg-slate-200 rounded">⚙️ Settings</div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="flex-1 p-6 space-y-6 bg-white">
+          <div>
+            <h3 class="text-xl font-bold">Good morning, Hitesh 👋</h3>
+            <p class="text-slate-500 text-sm">यहाँ आज का overview है</p>
+          </div>
+
+          <!-- Stats Cards -->
+          <div class="grid grid-cols-4 gap-4">
+            <div class="bg-blue-50 border border-blue-200 p-4 rounded">
+              <div class="text-3xl font-bold text-blue-700">142</div>
+              <div class="text-sm text-blue-600 mt-1">Active Subscriptions</div>
+            </div>
+            <div class="bg-amber-50 border border-amber-200 p-4 rounded">
+              <div class="text-3xl font-bold text-amber-700">8</div>
+              <div class="text-sm text-amber-600 mt-1">⏰ Expiring in 30 days</div>
+            </div>
+            <div class="bg-emerald-50 border border-emerald-200 p-4 rounded">
+              <div class="text-3xl font-bold text-emerald-700">23</div>
+              <div class="text-sm text-emerald-600 mt-1">🎯 Open Leads</div>
+            </div>
+            <div class="bg-purple-50 border border-purple-200 p-4 rounded">
+              <div class="text-3xl font-bold text-purple-700">5</div>
+              <div class="text-sm text-purple-600 mt-1">📄 Pending Quotes</div>
+            </div>
+          </div>
+
+          <!-- Quick Actions -->
+          <div class="flex gap-3">
+            <button class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">+ New Quote</button>
+            <button class="bg-emerald-600 text-white px-4 py-2 rounded hover:bg-emerald-700">+ New Lead</button>
+            <button class="bg-slate-600 text-white px-4 py-2 rounded hover:bg-slate-700">View All Subscriptions</button>
+          </div>
+
+          <!-- Recent Activity / Expiring Soon -->
+          <div class="grid grid-cols-2 gap-6">
+            <div class="border border-slate-300 rounded p-4">
+              <h4 class="font-semibold mb-3 text-slate-700">⏰ Expiring This Month</h4>
+              <div class="space-y-2 text-sm">
+                <div class="flex justify-between p-2 bg-red-50 rounded">
+                  <span><strong>acme.com</strong> — Google Workspace</span>
+                  <span class="text-red-600 font-medium">7 days</span>
+                </div>
+                <div class="flex justify-between p-2 bg-amber-50 rounded">
+                  <span><strong>techcorp.in</strong> — Microsoft 365</span>
+                  <span class="text-amber-600 font-medium">15 days</span>
+                </div>
+                <div class="flex justify-between p-2 bg-blue-50 rounded">
+                  <span><strong>startup.io</strong> — Workspace + Backup</span>
+                  <span class="text-blue-600">28 days</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="border border-slate-300 rounded p-4">
+              <h4 class="font-semibold mb-3 text-slate-700">📌 Recent Activity</h4>
+              <div class="space-y-2 text-sm text-slate-600">
+                <div>✅ Quote QQ-2026-0042 accepted by Acme Corp (2h ago)</div>
+                <div>📧 Invoice INV-001234 paid by TechCorp (5h ago)</div>
+                <div>🎯 New lead: StartupCo (yesterday)</div>
+                <div>🔄 Sync completed for Org-2 (yesterday)</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p class="text-sm text-slate-500 mt-3 italic">
+      💡 Top header: Universal search bar (Section 8) — anywhere accessible. Sidebar: persistent navigation. Body: stat cards + quick actions + activity feeds.
+    </p>
+  </section>
+
+  <!-- =================================================================
+       2. SUBSCRIPTIONS LIST
+       ================================================================= -->
+  <section id="subscriptions" class="screen bg-white rounded-lg shadow p-6">
+    <div class="flex justify-between items-center mb-4 pb-3 border-b-2 border-slate-200">
+      <h2 class="text-2xl font-bold">2️⃣ Subscriptions List (Cross-Org Unified)</h2>
+      <span class="text-sm text-slate-500">All 4 Zoho orgs combined</span>
+    </div>
+
+    <div class="wireframe-box rounded-lg p-4 bg-slate-50">
+      <!-- Filters -->
+      <div class="flex gap-3 mb-4 flex-wrap">
+        <select class="border px-3 py-2 rounded text-sm bg-white">
+          <option>All Organizations</option>
+          <option>Org-1 (Excel Tech Pvt Ltd)</option>
+          <option>Org-2 (ExcelTech Cloud)</option>
+        </select>
+        <select class="border px-3 py-2 rounded text-sm bg-white">
+          <option>All Status</option>
+          <option>Active</option>
+          <option>Expiring Soon</option>
+          <option>Expired</option>
+        </select>
+        <select class="border px-3 py-2 rounded text-sm bg-white">
+          <option>All Time</option>
+          <option>Expiring in 7 days</option>
+          <option>Expiring in 30 days</option>
+          <option>Expiring in 60 days</option>
+        </select>
+        <input type="text" placeholder="Search domain or customer..." class="border px-3 py-2 rounded text-sm flex-1 max-w-xs" />
+        <!-- Note: per PRD §3.3/§5.3/§5.4 subscriptions are created ONLY via quote acceptance + invoice payment.
+             "Import Subscription" exists for one-time legacy data migration during onboarding, gated by admin role. -->
+        <button class="bg-slate-200 text-slate-700 border border-slate-300 px-4 py-2 rounded text-sm hover:bg-slate-300" title="One-time admin import of legacy subscriptions from CSV. Not for regular use.">📥 Import Subscription</button>
+      </div>
+
+      <!-- Table -->
+      <div class="bg-white border border-slate-300 rounded overflow-hidden">
+        <table class="w-full text-sm">
+          <thead class="bg-slate-100 text-slate-700">
+            <tr>
+              <th class="text-left p-3"><input type="checkbox" /></th>
+              <th class="text-left p-3">Sub #</th>
+              <th class="text-left p-3">Domain</th>
+              <th class="text-left p-3">Customer</th>
+              <th class="text-left p-3">Item</th>
+              <th class="text-right p-3">Qty</th>
+              <th class="text-right p-3">Amount</th>
+              <th class="text-left p-3">End Date</th>
+              <th class="text-left p-3">Status</th>
+              <th class="text-left p-3">Actions</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y">
+            <tr class="hover:bg-slate-50">
+              <td class="p-3"><input type="checkbox" /></td>
+              <td class="p-3 font-mono text-xs">SUB-2025-0042</td>
+              <td class="p-3"><span class="font-medium">acme.com</span></td>
+              <td class="p-3">Acme Corp</td>
+              <td class="p-3 text-xs">GW Business Standard</td>
+              <td class="p-3 text-right">10</td>
+              <td class="p-3 text-right font-medium">₹90,000</td>
+              <td class="p-3"><span class="text-red-600 font-medium">22 May 2026</span></td>
+              <td class="p-3"><span class="bg-red-100 text-red-700 px-2 py-1 rounded text-xs">⚠️ 7 days</span></td>
+              <td class="p-3">
+                <button class="text-blue-600 hover:underline text-xs">Renew</button>
+                <span class="text-slate-300 mx-1">|</span>
+                <button class="text-slate-600 hover:underline text-xs">Pro-rata</button>
+              </td>
+            </tr>
+            <tr class="hover:bg-slate-50">
+              <td class="p-3"><input type="checkbox" /></td>
+              <td class="p-3 font-mono text-xs">SUB-2025-0067</td>
+              <td class="p-3">techcorp.in</td>
+              <td class="p-3">TechCorp Pvt Ltd</td>
+              <td class="p-3 text-xs">Microsoft 365 BP</td>
+              <td class="p-3 text-right">25</td>
+              <td class="p-3 text-right font-medium">₹3,15,000</td>
+              <td class="p-3">30 May 2026</td>
+              <td class="p-3"><span class="bg-amber-100 text-amber-700 px-2 py-1 rounded text-xs">⏰ 15 days</span></td>
+              <td class="p-3">
+                <button class="text-blue-600 hover:underline text-xs">Renew</button>
+                <span class="text-slate-300 mx-1">|</span>
+                <button class="text-slate-600 hover:underline text-xs">Pro-rata</button>
+              </td>
+            </tr>
+            <tr class="hover:bg-slate-50">
+              <td class="p-3"><input type="checkbox" /></td>
+              <td class="p-3 font-mono text-xs">SUB-2025-0089</td>
+              <td class="p-3">startup.io</td>
+              <td class="p-3">StartupCo</td>
+              <td class="p-3 text-xs">GW Business Starter</td>
+              <td class="p-3 text-right">5</td>
+              <td class="p-3 text-right font-medium">₹15,000</td>
+              <td class="p-3">15 June 2026</td>
+              <td class="p-3"><span class="bg-emerald-100 text-emerald-700 px-2 py-1 rounded text-xs">✓ Active</span></td>
+              <td class="p-3">
+                <button class="text-blue-600 hover:underline text-xs">Renew</button>
+                <span class="text-slate-300 mx-1">|</span>
+                <button class="text-slate-600 hover:underline text-xs">Pro-rata</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="bg-slate-50 px-4 py-2 text-xs flex justify-between text-slate-600">
+          <div>Showing 1-3 of 142 subscriptions</div>
+          <div>← Previous · <span class="font-bold">1</span> · 2 · 3 · ... · 8 · Next →</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- =================================================================
+       3. SUBSCRIPTION DETAIL
+       ================================================================= -->
+  <section id="sub-detail" class="screen bg-white rounded-lg shadow p-6">
+    <div class="flex justify-between items-center mb-4 pb-3 border-b-2 border-slate-200">
+      <h2 class="text-2xl font-bold">3️⃣ Subscription Detail Page</h2>
+      <span class="text-sm text-slate-500">Renewal History timeline included</span>
+    </div>
+
+    <div class="wireframe-box rounded-lg p-4 bg-slate-50 space-y-4">
+      <!-- Breadcrumb -->
+      <div class="text-xs text-slate-500">Subscriptions › <span class="font-medium text-slate-700">SUB-2025-0042</span></div>
+
+      <!-- Header Card -->
+      <div class="bg-white border rounded p-4 flex justify-between items-start">
+        <div>
+          <div class="flex items-center gap-2 mb-1">
+            <h3 class="text-2xl font-bold">acme.com</h3>
+            <span class="bg-red-100 text-red-700 px-2 py-1 rounded text-xs font-medium">⚠️ Expiring in 7 days</span>
+          </div>
+          <div class="text-slate-600">Acme Corp (Excel Tech Org-2)</div>
+          <div class="text-sm text-slate-500 mt-1 font-mono">SUB-2025-0042 · Created on 22 May 2025</div>
+        </div>
+        <div class="flex gap-2">
+          <button class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">🔄 Renew</button>
+          <button class="bg-emerald-600 text-white px-4 py-2 rounded hover:bg-emerald-700">📐 Pro-rata</button>
+          <button class="border border-slate-300 text-slate-700 px-3 py-2 rounded">⋮</button>
+        </div>
+      </div>
+
+      <!-- Key Details Grid -->
+      <div class="grid grid-cols-4 gap-4">
+        <div class="bg-white border rounded p-3">
+          <div class="text-xs text-slate-500">Item</div>
+          <div class="font-medium text-sm">Google Workspace Business Standard</div>
+        </div>
+        <div class="bg-white border rounded p-3">
+          <div class="text-xs text-slate-500">Quantity</div>
+          <div class="font-medium">10 licenses</div>
+        </div>
+        <div class="bg-white border rounded p-3">
+          <div class="text-xs text-slate-500">Annual Price</div>
+          <div class="font-medium">₹90,000 (₹750/user/mo)</div>
+        </div>
+        <div class="bg-white border rounded p-3">
+          <div class="text-xs text-slate-500">End Date</div>
+          <div class="font-medium text-red-600">22 May 2026</div>
+        </div>
+        <div class="bg-white border rounded p-3">
+          <div class="text-xs text-slate-500">Billing Cycle</div>
+          <div class="font-medium">Annual</div>
+        </div>
+        <div class="bg-white border rounded p-3">
+          <div class="text-xs text-slate-500">Auto-Renew</div>
+          <div class="font-medium">❌ Off</div>
+        </div>
+        <div class="bg-white border rounded p-3">
+          <div class="text-xs text-slate-500">Next Renewal Price</div>
+          <div class="font-medium">₹95,000</div>
+        </div>
+        <div class="bg-white border rounded p-3">
+          <div class="text-xs text-slate-500">Process Status</div>
+          <div class="font-medium">Expiring Soon</div>
+        </div>
+      </div>
+
+      <!-- Renewal History Timeline -->
+      <div class="bg-white border rounded p-4">
+        <h4 class="font-semibold mb-3">📜 Renewal History Timeline</h4>
+        <div class="relative pl-6 border-l-2 border-slate-200 space-y-4">
+          <div class="relative">
+            <div class="absolute -left-[26px] w-4 h-4 bg-emerald-500 rounded-full border-2 border-white"></div>
+            <div class="text-xs text-slate-500">22 May 2025</div>
+            <div class="font-medium text-sm">✅ Fresh Sale — Initial Subscription</div>
+            <div class="text-xs text-slate-600">Quote QQ-2025-0042 → Invoice INV-001050 → Paid ₹85,000</div>
+          </div>
+          <div class="relative">
+            <div class="absolute -left-[26px] w-4 h-4 bg-emerald-500 rounded-full border-2 border-white"></div>
+            <div class="text-xs text-slate-500">10 Sept 2025</div>
+            <div class="font-medium text-sm">📐 Pro-rata — Added 3 licenses</div>
+            <div class="text-xs text-slate-600">Quote EST-2025-0089 → Invoice INV-001134 → Paid ₹5,250 (255 days)</div>
+          </div>
+          <div class="relative">
+            <div class="absolute -left-[26px] w-4 h-4 bg-amber-500 rounded-full border-2 border-white"></div>
+            <div class="text-xs text-slate-500">Today</div>
+            <div class="font-medium text-sm">⏰ Renewal Due — Action Needed</div>
+            <div class="text-xs text-slate-600">Click "Renew" to generate renewal quote</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- =================================================================
+       4. LEADS LIST + DETAIL
+       ================================================================= -->
+  <section id="leads" class="screen bg-white rounded-lg shadow p-6">
+    <div class="flex justify-between items-center mb-4 pb-3 border-b-2 border-slate-200">
+      <h2 class="text-2xl font-bold">4️⃣ Leads — List & Detail</h2>
+      <span class="text-sm text-slate-500">Prospects (Central App only)</span>
+    </div>
+
+    <div class="grid grid-cols-2 gap-4">
+      <!-- Leads List -->
+      <div class="wireframe-box rounded-lg p-3 bg-slate-50">
+        <div class="text-sm font-semibold mb-2">📋 Leads List</div>
+        <div class="flex gap-2 mb-2">
+          <select class="border px-2 py-1 rounded text-xs bg-white">
+            <option>All Status</option>
+            <option>New</option>
+            <option>Contacted</option>
+            <option>Quoted</option>
+            <option>Won</option>
+          </select>
+          <button class="bg-blue-600 text-white px-3 py-1 rounded text-xs">+ New Lead</button>
+        </div>
+        <div class="space-y-2">
+          <div class="bg-white border-l-4 border-blue-500 p-2 rounded text-xs">
+            <div class="font-medium">Acme Corporation</div>
+            <div class="text-slate-600">john@acme.com · acme.com</div>
+            <div class="flex justify-between mt-1">
+              <span class="bg-blue-100 text-blue-700 px-2 rounded">Quoted</span>
+              <span class="text-slate-500">2 days ago</span>
+            </div>
+          </div>
+          <div class="bg-white border-l-4 border-amber-500 p-2 rounded text-xs">
+            <div class="font-medium">StartupCo</div>
+            <div class="text-slate-600">priya@startupco.in · startup.io</div>
+            <div class="flex justify-between mt-1">
+              <span class="bg-amber-100 text-amber-700 px-2 rounded">Negotiating</span>
+              <span class="text-slate-500">1 week ago</span>
+            </div>
+          </div>
+          <div class="bg-white border-l-4 border-slate-300 p-2 rounded text-xs">
+            <div class="font-medium">TechVentures Ltd</div>
+            <div class="text-slate-600">contact@techv.com · techv.com</div>
+            <div class="flex justify-between mt-1">
+              <span class="bg-slate-100 text-slate-700 px-2 rounded">New</span>
+              <span class="text-slate-500">Today</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Lead Detail -->
+      <div class="wireframe-box rounded-lg p-3 bg-slate-50">
+        <div class="text-sm font-semibold mb-2">👤 Lead Detail: Acme Corporation</div>
+        <div class="bg-white border rounded p-3 space-y-2 text-xs">
+          <div class="flex justify-between border-b pb-2">
+            <div>
+              <div class="font-bold">Acme Corporation</div>
+              <div class="text-slate-500 font-mono">LD-2026-0042</div>
+            </div>
+            <span class="bg-blue-100 text-blue-700 px-2 py-1 rounded">Quoted</span>
+          </div>
+          <div><span class="text-slate-500">Contact:</span> John Doe (Director)</div>
+          <div><span class="text-slate-500">Email:</span> john@acme.com</div>
+          <div><span class="text-slate-500">Phone:</span> +91-98765-43210</div>
+          <div><span class="text-slate-500">Domain:</span> acme.com</div>
+          <div><span class="text-slate-500">GSTIN:</span> 27AAAPL1234C1Z5</div>
+          <div><span class="text-slate-500">Source:</span> Referral</div>
+          <div><span class="text-slate-500">Est. Value:</span> ₹1,20,000</div>
+          <div><span class="text-slate-500">Target Org:</span> ExcelTech Cloud</div>
+          <div class="border-t pt-2 mt-2">
+            <div class="font-medium mb-1">📄 Quotes Sent:</div>
+            <div class="text-blue-600 hover:underline cursor-pointer">QQ-2026-0042 (Sent, viewed 2x)</div>
+          </div>
+          <div class="border-t pt-2 mt-2 flex gap-2">
+            <button class="bg-emerald-600 text-white px-2 py-1 rounded">+ New Quote</button>
+            <button class="bg-blue-600 text-white px-2 py-1 rounded">Convert to Customer</button>
+            <button class="border px-2 py-1 rounded text-slate-600">Mark Lost</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p class="text-sm text-slate-500 mt-3 italic">
+      💡 Lead Detail पर "Convert to Customer" button — atomic conversion job trigger करता है (push to Zoho)। "+ New Quote" से Quick Quote builder open होगा pre-filled lead data के साथ।
+    </p>
+  </section>
+
+  <!-- =================================================================
+       5. NEW QUICK QUOTE (Unified Builder) — Redesigned
+       Covers: Mode A (Existing customer / Type 2 Cross-sell) AND
+               Mode B (Lead / Type 1) inline; service dates per line;
+               smart intra/inter-state GST; settings-aware defaults;
+               pre-flight checklist; send-path indicator.
+       ================================================================= -->
+  <section id="new-quote" class="screen bg-white rounded-lg shadow p-6">
+    <div class="flex justify-between items-center mb-4 pb-3 border-b-2 border-slate-200">
+      <h2 class="text-2xl font-bold">5️⃣ New Quick Quote — Unified Builder</h2>
+      <span class="text-sm text-slate-500">Single UI · two customer modes · two backend paths</span>
+    </div>
+
+    <div class="wireframe-box rounded-lg p-4 bg-slate-50 space-y-4">
+
+      <!-- ============================================================
+           A. STICKY HEADER STRIP — quote summary always visible
+           ============================================================ -->
+      <div class="bg-slate-900 text-white rounded-lg p-4 sticky top-0 z-40 shadow-lg">
+        <div class="flex justify-between items-center gap-4 flex-wrap">
+          <div class="flex items-center gap-4">
+            <div>
+              <div class="text-xs text-slate-400">QUOTE NUMBER (preview)</div>
+              <div class="text-lg font-mono font-bold">QQ-2026-0043</div>
+              <div class="text-xs text-slate-400">Auto-assigned on Save Draft</div>
+            </div>
+            <div class="h-12 border-l border-slate-600"></div>
+            <div>
+              <div class="text-xs text-slate-400">QUOTE TYPE</div>
+              <div class="flex items-center gap-2">
+                <span class="bg-blue-600 px-2 py-0.5 rounded text-xs font-semibold">TYPE 2 — Cross-sell</span>
+                <span class="text-xs text-slate-400">(switches automatically with customer mode)</span>
+              </div>
+            </div>
+            <div class="h-12 border-l border-slate-600"></div>
+            <div>
+              <div class="text-xs text-slate-400">TOTAL</div>
+              <div class="text-2xl font-bold text-emerald-400">₹46,728</div>
+              <div class="text-xs text-slate-400">inc. GST 18%</div>
+            </div>
+          </div>
+          <div class="flex gap-2">
+            <button class="border border-slate-600 px-3 py-2 rounded text-sm hover:bg-slate-700">Save Draft</button>
+            <button class="border border-slate-500 bg-slate-700 px-3 py-2 rounded text-sm hover:bg-slate-600">📄 Preview PDF</button>
+            <button class="bg-emerald-600 px-4 py-2 rounded text-sm font-semibold hover:bg-emerald-700">📧 Send Quote →</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pre-flight checklist -->
+      <div class="bg-white border rounded p-3 text-xs">
+        <div class="flex items-center gap-4 flex-wrap">
+          <span class="font-semibold text-slate-700">Pre-flight:</span>
+          <span class="flex items-center gap-1 text-emerald-700">✓ Customer selected</span>
+          <span class="flex items-center gap-1 text-emerald-700">✓ Target org resolved (ExcelTech Cloud)</span>
+          <span class="flex items-center gap-1 text-emerald-700">✓ 2 line items</span>
+          <span class="flex items-center gap-1 text-emerald-700">✓ Place-of-supply: intra-state</span>
+          <span class="flex items-center gap-1 text-amber-700">⚠ Terms &amp; Conditions empty (will use org default)</span>
+        </div>
+      </div>
+
+      <!-- ============================================================
+           B. CUSTOMER (with TWO modes shown side-by-side)
+           ============================================================ -->
+      <div class="bg-white border rounded p-4">
+        <div class="flex justify-between items-center mb-3">
+          <h4 class="font-semibold text-slate-800">1. Customer</h4>
+          <div class="text-xs text-slate-500">customer_type radio toggle → drives Mode A vs Mode B backend path</div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3 mb-4">
+
+          <!-- MODE A — Existing Customer (active state) -->
+          <label class="border-2 border-blue-500 bg-blue-50 rounded p-3 cursor-pointer block">
+            <div class="flex items-center justify-between mb-2">
+              <div class="flex items-center gap-2">
+                <input type="radio" name="customer_type" checked />
+                <span class="font-semibold text-blue-900">Mode A — Existing Customer</span>
+              </div>
+              <span class="bg-blue-200 text-blue-900 text-xs px-2 py-0.5 rounded">Quote Type 2 · Cross-sell</span>
+            </div>
+            <div class="text-xs text-slate-700">Customer Zoho में मौजूद है → "Send" पर सीधे Zoho Estimate बनेगा</div>
+          </label>
+
+          <!-- MODE B — Lead -->
+          <label class="border border-slate-300 bg-white rounded p-3 cursor-pointer block hover:border-slate-400">
+            <div class="flex items-center justify-between mb-2">
+              <div class="flex items-center gap-2">
+                <input type="radio" name="customer_type" />
+                <span class="font-semibold text-slate-800">Mode B — New Customer (Lead)</span>
+              </div>
+              <span class="bg-amber-100 text-amber-800 text-xs px-2 py-0.5 rounded">Quote Type 1 · Lead</span>
+            </div>
+            <div class="text-xs text-slate-700">Lead Central में बनेगा → "Send" पर Central PDF + public link email</div>
+          </label>
+        </div>
+
+        <!-- ===== MODE A active state — Existing Customer search ===== -->
+        <div class="border-2 border-blue-200 rounded p-3 bg-blue-50">
+          <div class="text-xs text-blue-900 font-semibold mb-2">▼ MODE A — Existing Customer (currently active)</div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="text-xs text-slate-600">Search customer (Zoho cache, all orgs)</label>
+              <div class="relative mt-1">
+                <input type="text" value="Acme Corp" class="border w-full px-3 py-2 rounded text-sm" />
+                <span class="absolute right-2 top-2 text-slate-400">🔍</span>
+              </div>
+              <div class="text-xs text-slate-500 mt-1">Type 2+ chars to search across all 4 Zoho orgs</div>
+            </div>
+            <div>
+              <label class="text-xs text-slate-600">Target Organization (auto-resolved)</label>
+              <select class="border w-full px-3 py-2 rounded mt-1 text-sm bg-white">
+                <option>ExcelTech Cloud Services (Zoho)</option>
+                <option>ExcelTech India</option>
+                <option>ExcelTech Solutions</option>
+                <option>ExcelTech Global</option>
+              </select>
+              <div class="text-xs text-slate-500 mt-1">Resolved from selected customer's org</div>
+            </div>
+          </div>
+
+          <!-- Selected customer card -->
+          <div class="mt-3 bg-white border-l-4 border-blue-600 rounded p-3 text-sm">
+            <div class="flex justify-between items-start">
+              <div>
+                <div class="flex items-center gap-2">
+                  <span class="font-bold text-base text-slate-900">Acme Corporation</span>
+                  <span class="bg-emerald-100 text-emerald-800 text-xs px-2 py-0.5 rounded">✓ Active in Zoho</span>
+                </div>
+                <div class="text-xs text-slate-600 mt-1">
+                  Zoho ID: <code class="bg-slate-100 px-1 rounded">cust_98345621</code> ·
+                  GSTIN: <code class="bg-slate-100 px-1 rounded">27AAAPL1234C1Z5</code> ·
+                  PAN: <code class="bg-slate-100 px-1 rounded">AAAPL1234C</code>
+                </div>
+                <div class="text-xs text-slate-600 mt-1">
+                  📧 billing@acme.com · 📞 +91 22 6789 0123
+                </div>
+                <div class="text-xs text-slate-600 mt-1">
+                  📍 Plot 42, MIDC, Mumbai 400093 · State: <strong>Maharashtra (27)</strong>
+                </div>
+              </div>
+              <div class="text-right text-xs">
+                <a href="#customer-detail" class="text-blue-600 hover:underline">View profile →</a>
+                <div class="mt-1 text-slate-500">3 active subs · LTV ₹4.82 L</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== MODE B preview state — collapsed/disabled hint ===== -->
+        <details class="mt-3 bg-slate-50 border border-slate-200 rounded">
+          <summary class="cursor-pointer p-3 text-xs text-slate-600">▶ Preview: MODE B — New Customer (Lead) inline form (click to expand)</summary>
+          <div class="p-4 border-t border-slate-200 bg-white">
+            <div class="text-xs text-slate-500 mb-3">Lead form fields appear inline when Mode B is selected. Lead is created in Central App on Save Draft. Lead-number reserved as <code class="bg-slate-100 px-1 rounded">LD-2026-NNNN</code>.</div>
+
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="text-xs text-slate-600">Company Name <span class="text-red-500">*</span></label>
+                <input type="text" placeholder="e.g. Globex Industries" class="border w-full px-3 py-2 rounded mt-1 text-sm" />
+              </div>
+              <div>
+                <label class="text-xs text-slate-600">Contact Person</label>
+                <input type="text" placeholder="e.g. Priya Mehta" class="border w-full px-3 py-2 rounded mt-1 text-sm" />
+              </div>
+              <div>
+                <label class="text-xs text-slate-600">Email <span class="text-red-500">*</span></label>
+                <input type="email" placeholder="billing@globex.in" class="border w-full px-3 py-2 rounded mt-1 text-sm" />
+                <div class="text-xs text-amber-700 mt-1">⚠ Duplicate-email check runs on blur (warn / block per settings)</div>
+              </div>
+              <div>
+                <label class="text-xs text-slate-600">Phone</label>
+                <input type="tel" placeholder="+91 ..." class="border w-full px-3 py-2 rounded mt-1 text-sm" />
+              </div>
+              <div>
+                <label class="text-xs text-slate-600">GSTIN</label>
+                <input type="text" placeholder="29AAACG3245H1Z9" class="border w-full px-3 py-2 rounded mt-1 text-sm font-mono" />
+                <div class="text-xs text-slate-500 mt-1">State auto-detected from first 2 digits</div>
+              </div>
+              <div>
+                <label class="text-xs text-slate-600">Primary Domain</label>
+                <input type="text" placeholder="globex.in" class="border w-full px-3 py-2 rounded mt-1 text-sm" />
+              </div>
+              <div>
+                <label class="text-xs text-slate-600">Lead Source</label>
+                <select class="border w-full px-3 py-2 rounded mt-1 text-sm bg-white">
+                  <option>Website</option><option>Referral</option><option>LinkedIn</option>
+                  <option>Cold Call</option><option>Trade Show</option><option>Other</option>
+                </select>
+              </div>
+              <div>
+                <label class="text-xs text-slate-600">Target Organization</label>
+                <select class="border w-full px-3 py-2 rounded mt-1 text-sm bg-white">
+                  <option>ExcelTech India (default)</option>
+                  <option>ExcelTech Cloud Services</option>
+                </select>
+                <div class="text-xs text-slate-500 mt-1">Where the customer will be created on acceptance</div>
+              </div>
+            </div>
+
+            <div class="mt-3 grid grid-cols-2 gap-3">
+              <div>
+                <label class="text-xs text-slate-600">Billing Address</label>
+                <textarea rows="2" class="border w-full px-3 py-2 rounded mt-1 text-sm" placeholder="Street, City"></textarea>
+              </div>
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <label class="text-xs text-slate-600">State</label>
+                  <select class="border w-full px-3 py-2 rounded mt-1 text-sm bg-white">
+                    <option>Maharashtra (27)</option>
+                    <option>Karnataka (29)</option>
+                    <option>—</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="text-xs text-slate-600">Postal Code</label>
+                  <input type="text" class="border w-full px-3 py-2 rounded mt-1 text-sm" />
+                </div>
+              </div>
+            </div>
+
+            <div class="mt-3 bg-amber-50 border-l-4 border-amber-500 text-xs p-2 rounded text-amber-900">
+              <strong>Mode B post-acceptance flow:</strong> Lead → public quote link → customer accepts →
+              "Convert to Customer" job runs atomic sequence per Zoho Spec §15: creates Zoho contact +
+              estimate + domain row + subscription row. PRD §3.2 customer hygiene boundary preserved —
+              Zoho में lead तभी जाएगा जब accept हो।
+            </div>
+          </div>
+        </details>
+      </div>
+
+      <!-- ============================================================
+           C. QUOTE HEADER (date, validity, currency)
+           ============================================================ -->
+      <div class="bg-white border rounded p-4">
+        <div class="flex justify-between items-center mb-3">
+          <h4 class="font-semibold text-slate-800">2. Quote Header</h4>
+          <span class="text-xs text-slate-500">Defaults are loaded from Settings → Quick Quote</span>
+        </div>
+        <div class="grid grid-cols-5 gap-3">
+          <div>
+            <label class="text-xs text-slate-600">Quote Date</label>
+            <input type="date" value="2026-05-15" class="border w-full px-2 py-1.5 rounded mt-1 text-sm" />
+          </div>
+          <div>
+            <label class="text-xs text-slate-600">Validity (days) <span class="text-blue-500 cursor-help" title="Default 15 days from settings (decision Q1.1)">ⓘ</span></label>
+            <input type="number" value="15" min="1" max="90" class="border w-full px-2 py-1.5 rounded mt-1 text-sm" />
+          </div>
+          <div>
+            <label class="text-xs text-slate-600">Expires On (auto)</label>
+            <div class="border px-2 py-1.5 rounded mt-1 text-sm bg-slate-50 font-mono">30 May 2026</div>
+          </div>
+          <div>
+            <label class="text-xs text-slate-600">Currency <span class="text-slate-400 cursor-help" title="Phase 1 INR only (decision Q5.6)">ⓘ</span></label>
+            <select class="border w-full px-2 py-1.5 rounded mt-1 text-sm bg-white">
+              <option>INR — Indian Rupee (₹)</option>
+              <option disabled>USD (Phase 2)</option>
+            </select>
+          </div>
+          <div>
+            <label class="text-xs text-slate-600">Place of Supply</label>
+            <div class="border px-2 py-1.5 rounded mt-1 text-sm bg-emerald-50 text-emerald-800 font-medium">Intra-state (27 → 27)</div>
+            <div class="text-xs text-slate-500 mt-0.5">Supplier MH · Customer MH → CGST+SGST</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============================================================
+           D. LINE ITEMS — rich table with item picker, dates, discount
+           ============================================================ -->
+      <div class="bg-white border rounded p-4">
+        <div class="flex justify-between items-center mb-3">
+          <h4 class="font-semibold text-slate-800">3. Line Items</h4>
+          <div class="flex gap-2 text-xs">
+            <button class="border border-slate-300 px-2 py-1 rounded bg-white hover:bg-slate-50">📋 Apply Template</button>
+            <button class="border border-slate-300 px-2 py-1 rounded bg-white hover:bg-slate-50">🔁 Copy from previous quote</button>
+          </div>
+        </div>
+
+        <table class="w-full text-sm">
+          <thead class="bg-slate-100 text-xs text-slate-700">
+            <tr>
+              <th class="text-left p-2 w-8">#</th>
+              <th class="text-left p-2">Item (from Zoho)</th>
+              <th class="text-left p-2">Domain</th>
+              <th class="text-left p-2">Service Period</th>
+              <th class="text-right p-2">Qty</th>
+              <th class="text-right p-2">Unit Price</th>
+              <th class="text-right p-2">Disc %</th>
+              <th class="text-right p-2">Tax %</th>
+              <th class="text-right p-2">Line Total</th>
+              <th class="p-2"></th>
+            </tr>
+          </thead>
+          <tbody class="divide-y">
+            <!-- Row 1 -->
+            <tr>
+              <td class="p-2 text-slate-400 text-xs">1</td>
+              <td class="p-2">
+                <input type="text" value="Google Workspace Business Standard" class="w-full px-2 py-1 border rounded text-xs" />
+                <div class="text-xs text-slate-500 mt-1">
+                  HSN: <code class="bg-slate-100 px-1">998313</code> ·
+                  Zoho item: <code class="bg-slate-100 px-1">itm_8412</code> ·
+                  <label class="ml-1"><input type="checkbox" checked class="align-middle"> is_subscription</label>
+                </div>
+              </td>
+              <td class="p-2"><input type="text" value="acme.com" class="w-28 px-2 py-1 border rounded text-xs" /></td>
+              <td class="p-2">
+                <div class="flex gap-1 items-center text-xs">
+                  <input type="date" value="2026-06-01" class="px-1 py-0.5 border rounded text-xs w-28" />
+                  <span class="text-slate-400">→</span>
+                  <input type="date" value="2027-05-31" class="px-1 py-0.5 border rounded text-xs w-28" />
+                </div>
+                <div class="text-xs text-slate-500 mt-1">365 days · Annual</div>
+              </td>
+              <td class="p-2 text-right"><input type="number" value="10" class="w-14 text-right px-2 py-1 border rounded text-xs" /></td>
+              <td class="p-2 text-right"><input type="number" value="3000" class="w-20 text-right px-2 py-1 border rounded text-xs" /></td>
+              <td class="p-2 text-right"><input type="number" value="0" min="0" max="50" class="w-12 text-right px-2 py-1 border rounded text-xs" /></td>
+              <td class="p-2 text-right"><input type="number" value="18" class="w-12 text-right px-2 py-1 border rounded text-xs" /></td>
+              <td class="p-2 text-right font-semibold">₹35,400</td>
+              <td class="p-2"><button class="text-red-600 text-sm" title="Remove">✕</button></td>
+            </tr>
+            <!-- Row 2 -->
+            <tr>
+              <td class="p-2 text-slate-400 text-xs">2</td>
+              <td class="p-2">
+                <input type="text" value="Acronis Cyber Protect Cloud — Backup" class="w-full px-2 py-1 border rounded text-xs" />
+                <div class="text-xs text-slate-500 mt-1">
+                  HSN: <code class="bg-slate-100 px-1">998313</code> ·
+                  Zoho item: <code class="bg-slate-100 px-1">itm_7128</code> ·
+                  <label class="ml-1"><input type="checkbox" checked class="align-middle"> is_subscription</label>
+                </div>
+              </td>
+              <td class="p-2"><input type="text" value="acme.com" class="w-28 px-2 py-1 border rounded text-xs" /></td>
+              <td class="p-2">
+                <div class="flex gap-1 items-center text-xs">
+                  <input type="date" value="2026-06-01" class="px-1 py-0.5 border rounded text-xs w-28" />
+                  <span class="text-slate-400">→</span>
+                  <input type="date" value="2027-05-31" class="px-1 py-0.5 border rounded text-xs w-28" />
+                </div>
+                <div class="text-xs text-slate-500 mt-1">365 days · Annual</div>
+              </td>
+              <td class="p-2 text-right"><input type="number" value="2" class="w-14 text-right px-2 py-1 border rounded text-xs" /></td>
+              <td class="p-2 text-right"><input type="number" value="2200" class="w-20 text-right px-2 py-1 border rounded text-xs" /></td>
+              <td class="p-2 text-right"><input type="number" value="10" min="0" max="50" class="w-12 text-right px-2 py-1 border rounded text-xs" /></td>
+              <td class="p-2 text-right"><input type="number" value="18" class="w-12 text-right px-2 py-1 border rounded text-xs" /></td>
+              <td class="p-2 text-right font-semibold">₹4,672</td>
+              <td class="p-2"><button class="text-red-600 text-sm" title="Remove">✕</button></td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="mt-3 flex gap-2 items-center">
+          <button class="text-blue-600 text-sm hover:underline">+ Add Line Item</button>
+          <span class="text-slate-300">|</span>
+          <button class="text-slate-600 text-sm hover:underline">🔍 Pick from Zoho Item catalogue</button>
+          <span class="text-slate-300">|</span>
+          <button class="text-slate-600 text-sm hover:underline">📋 Bulk paste (CSV)</button>
+        </div>
+      </div>
+
+      <!-- ============================================================
+           E. SMART GST BREAKDOWN + TOTALS
+           ============================================================ -->
+      <div class="grid grid-cols-3 gap-3">
+        <!-- GST breakdown card -->
+        <div class="col-span-2 bg-white border rounded p-4">
+          <div class="flex justify-between items-center mb-3">
+            <h4 class="font-semibold text-slate-800">4. Tax Breakdown</h4>
+            <div class="text-xs text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">
+              ✓ Intra-state — CGST+SGST applied (supplier &amp; customer both Maharashtra)
+            </div>
+          </div>
+          <div class="grid grid-cols-3 gap-3 text-sm">
+            <div class="bg-blue-50 border border-blue-200 rounded p-3">
+              <div class="text-xs text-blue-700">CGST @ 9%</div>
+              <div class="text-xl font-bold text-blue-900">₹3,564</div>
+            </div>
+            <div class="bg-blue-50 border border-blue-200 rounded p-3">
+              <div class="text-xs text-blue-700">SGST @ 9%</div>
+              <div class="text-xl font-bold text-blue-900">₹3,564</div>
+            </div>
+            <div class="bg-slate-100 border border-slate-200 rounded p-3 opacity-50">
+              <div class="text-xs text-slate-600">IGST @ 18%</div>
+              <div class="text-xl font-bold text-slate-500">— N/A —</div>
+              <div class="text-xs text-slate-500 mt-1">Only for inter-state</div>
+            </div>
+          </div>
+          <div class="text-xs text-slate-500 mt-3 italic">
+            Place-of-supply rule: supplier state vs customer state. If different → IGST 18%. If same → CGST 9% + SGST 9%. Reverse Charge Mechanism (RCM) toggle available in Settings → Tax &amp; GST.
+          </div>
+        </div>
+
+        <!-- Totals card -->
+        <div class="bg-emerald-50 border border-emerald-200 rounded p-4">
+          <div class="font-semibold text-emerald-900 mb-3">Totals</div>
+          <div class="space-y-1.5 text-sm">
+            <div class="flex justify-between text-slate-700"><span>Gross Subtotal</span><span>₹39,600</span></div>
+            <div class="flex justify-between text-slate-700"><span>Line Discounts</span><span>− ₹0</span></div>
+            <div class="flex justify-between text-slate-700"><span>Net Subtotal</span><span>₹39,600</span></div>
+            <div class="flex justify-between text-slate-700"><span>+ CGST</span><span>₹3,564</span></div>
+            <div class="flex justify-between text-slate-700"><span>+ SGST</span><span>₹3,564</span></div>
+            <div class="border-t border-emerald-300 pt-2 flex justify-between text-base font-bold text-emerald-900">
+              <span>Total</span><span>₹46,728</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============================================================
+           F. TERMS & CONDITIONS + NOTES + INTERNAL NOTES
+           ============================================================ -->
+      <div class="grid grid-cols-3 gap-3">
+        <div class="bg-white border rounded p-3">
+          <div class="flex justify-between items-center">
+            <label class="text-xs text-slate-600 font-semibold">Terms &amp; Conditions (on PDF)</label>
+            <button class="text-xs text-blue-600 hover:underline">↩ Load org default</button>
+          </div>
+          <textarea rows="4" class="border w-full px-2 py-1.5 rounded mt-1 text-xs" placeholder="Will use ExcelTech Cloud Services default T&amp;C if left blank..."></textarea>
+          <div class="text-xs text-slate-500 mt-1">Default from Settings → PDF Branding</div>
+        </div>
+
+        <div class="bg-white border rounded p-3">
+          <div class="flex justify-between items-center">
+            <label class="text-xs text-slate-600 font-semibold">Notes to Customer (on PDF)</label>
+            <button class="text-xs text-blue-600 hover:underline">↩ Load default</button>
+          </div>
+          <textarea rows="4" class="border w-full px-2 py-1.5 rounded mt-1 text-xs">Thank you for your continued partnership. Pricing valid for 15 days. Pay via NEFT/RTGS to enable services within 24 hours of payment confirmation.</textarea>
+        </div>
+
+        <div class="bg-amber-50 border border-amber-200 rounded p-3">
+          <label class="text-xs text-amber-900 font-semibold">🔒 Internal Notes (NOT on PDF)</label>
+          <textarea rows="4" class="border w-full px-2 py-1.5 rounded mt-1 text-xs bg-white" placeholder="Visible only to sales team. e.g. 'Customer asked for Q2 invoice — coordinate with finance.'"></textarea>
+        </div>
+      </div>
+
+      <!-- ============================================================
+           G. SEND-PATH INDICATOR (changes based on customer mode)
+           ============================================================ -->
+      <div class="bg-blue-50 border border-blue-300 rounded p-3">
+        <div class="text-sm font-semibold text-blue-900 mb-2">📤 What happens when you click "Send Quote":</div>
+        <div class="grid grid-cols-2 gap-3 text-xs">
+          <div class="bg-white border-2 border-blue-500 rounded p-2">
+            <div class="font-semibold text-blue-900 mb-1">▶ Mode A — Existing Customer (current)</div>
+            <ol class="list-decimal list-inside space-y-0.5 text-slate-700">
+              <li>POST /estimates to Zoho org <code class="bg-slate-100 px-1">ExcelTech Cloud</code></li>
+              <li>Custom fields set: <code class="bg-slate-100 px-1">cf_central_quote_id</code></li>
+              <li>Zoho sends email to billing@acme.com (or Central can override)</li>
+              <li>Status syncs back via webhooks (sent → viewed → accepted)</li>
+              <li>On <code>invoice_paid</code> webhook → new Subscription auto-created</li>
+            </ol>
+          </div>
+          <div class="bg-white border border-slate-200 rounded p-2 opacity-60">
+            <div class="font-semibold text-slate-700 mb-1">▷ Mode B — Lead (would be if toggled)</div>
+            <ol class="list-decimal list-inside space-y-0.5 text-slate-700">
+              <li>Lead created in Central (LD-2026-NNNN)</li>
+              <li>Public quote PDF generated locally (Puppeteer)</li>
+              <li>Email with <code class="bg-slate-100 px-1">/q/&lt;token&gt;</code> link to lead</li>
+              <li>Lead views → views++ → accepts → notification to sales</li>
+              <li>Sales clicks "Convert" → atomic Zoho push (Spec §15)</li>
+            </ol>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============================================================
+           H. BOTTOM ACTION BAR
+           ============================================================ -->
+      <div class="flex justify-between items-center pt-2 border-t border-slate-200">
+        <div class="flex gap-2 items-center text-xs text-slate-600">
+          <span>📝 Last saved: never</span>
+          <span class="text-slate-300">|</span>
+          <span>🔒 Created by: Hitesh</span>
+        </div>
+        <div class="flex gap-2">
+          <button class="text-slate-600 px-3 py-2 rounded text-sm hover:bg-slate-100">Cancel</button>
+          <button class="border border-slate-300 px-4 py-2 rounded text-sm bg-white hover:bg-slate-50">Save Draft</button>
+          <button class="border border-blue-300 text-blue-700 px-4 py-2 rounded text-sm hover:bg-blue-50">📄 Preview PDF</button>
+          <button class="bg-emerald-600 text-white px-5 py-2 rounded text-sm hover:bg-emerald-700 font-semibold">📧 Send Quote →</button>
+        </div>
+      </div>
+    </div>
+
+    <p class="text-sm text-slate-500 mt-3 italic">
+      💡 यह same Quote Builder component <strong>4 quote types</strong> में reused होता है: Lead Quote (Type 1) और Cross-sell (Type 2) यहाँ से, Renewal Quote (Type 3) और Pro-rata Quote (Type 4) Subscription Module से — सिर्फ pre-fill data और backend storage path अलग होती है (PRD §3.3, §4.1-4.5).
+    </p>
+  </section>
+
+  <!-- =================================================================
+       6. QUICK QUOTE DETAIL
+       ================================================================= -->
+  <section id="quote-detail" class="screen bg-white rounded-lg shadow p-6">
+    <div class="flex justify-between items-center mb-4 pb-3 border-b-2 border-slate-200">
+      <h2 class="text-2xl font-bold">6️⃣ Quick Quote Detail Page</h2>
+      <span class="text-sm text-slate-500">Status tracking + actions</span>
+    </div>
+
+    <div class="wireframe-box rounded-lg p-4 bg-slate-50">
+      <div class="bg-white border rounded p-4 space-y-4">
+        <!-- Header -->
+        <div class="flex justify-between items-start pb-3 border-b">
+          <div>
+            <div class="text-xs text-slate-500 mb-1">Quick Quote</div>
+            <h3 class="text-xl font-bold font-mono">QQ-2026-0042</h3>
+            <div class="text-sm text-slate-600 mt-1">For: Acme Corporation</div>
+          </div>
+          <span class="bg-blue-100 text-blue-700 px-3 py-1 rounded font-medium text-sm">✓ Accepted</span>
+        </div>
+
+        <!-- Status Timeline -->
+        <div class="flex justify-between items-center text-xs">
+          <div class="text-center flex-1">
+            <div class="w-8 h-8 mx-auto bg-emerald-500 text-white rounded-full flex items-center justify-center mb-1">✓</div>
+            <div class="font-medium">Draft</div>
+            <div class="text-slate-500">14 May, 10:00</div>
+          </div>
+          <div class="flex-1 border-t-2 border-emerald-500 mx-2"></div>
+          <div class="text-center flex-1">
+            <div class="w-8 h-8 mx-auto bg-emerald-500 text-white rounded-full flex items-center justify-center mb-1">✓</div>
+            <div class="font-medium">Sent</div>
+            <div class="text-slate-500">14 May, 10:15</div>
+          </div>
+          <div class="flex-1 border-t-2 border-emerald-500 mx-2"></div>
+          <div class="text-center flex-1">
+            <div class="w-8 h-8 mx-auto bg-emerald-500 text-white rounded-full flex items-center justify-center mb-1">✓</div>
+            <div class="font-medium">Viewed (2x)</div>
+            <div class="text-slate-500">14 May, 14:22</div>
+          </div>
+          <div class="flex-1 border-t-2 border-emerald-500 mx-2"></div>
+          <div class="text-center flex-1">
+            <div class="w-8 h-8 mx-auto bg-emerald-500 text-white rounded-full flex items-center justify-center mb-1">✓</div>
+            <div class="font-medium">Accepted</div>
+            <div class="text-slate-500">15 May, 09:30</div>
+          </div>
+          <div class="flex-1 border-t-2 border-slate-200 mx-2"></div>
+          <div class="text-center flex-1">
+            <div class="w-8 h-8 mx-auto bg-slate-300 text-white rounded-full flex items-center justify-center mb-1">5</div>
+            <div class="font-medium text-slate-500">Converted</div>
+            <div class="text-slate-400">Pending</div>
+          </div>
+        </div>
+
+        <!-- Key Info -->
+        <div class="grid grid-cols-4 gap-3 text-xs bg-slate-50 p-3 rounded">
+          <div><div class="text-slate-500">Total</div><div class="font-bold text-lg">₹1,06,200</div></div>
+          <div><div class="text-slate-500">Valid Until</div><div class="font-medium">29 May 2026</div></div>
+          <div><div class="text-slate-500">Public Link</div><div class="text-blue-600 truncate">app.excel...q/abc123</div></div>
+          <div><div class="text-slate-500">Created By</div><div class="font-medium">Hitesh</div></div>
+        </div>
+
+        <!-- Conversion CTA -->
+        <div class="bg-blue-50 border-l-4 border-blue-500 p-3 rounded">
+          <div class="flex justify-between items-center">
+            <div>
+              <div class="font-semibold text-blue-800">🎉 Quote Accepted by Customer!</div>
+              <div class="text-sm text-blue-700 mt-1">Convert this lead to a paying customer in Zoho Books.</div>
+            </div>
+            <button class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Convert to Customer →</button>
+          </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="flex gap-2 pt-2 border-t">
+          <button class="text-sm border border-slate-300 px-3 py-1.5 rounded hover:bg-slate-50">📄 View PDF</button>
+          <button class="text-sm border border-slate-300 px-3 py-1.5 rounded hover:bg-slate-50">📧 Resend Email</button>
+          <button class="text-sm border border-slate-300 px-3 py-1.5 rounded hover:bg-slate-50">📋 Revise Quote</button>
+          <button class="text-sm border border-red-300 text-red-700 px-3 py-1.5 rounded hover:bg-red-50">✕ Cancel</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- =================================================================
+       7. PUBLIC QUOTE VIEW (Customer-Facing)
+       ================================================================= -->
+  <section id="public-quote" class="screen bg-white rounded-lg shadow p-6">
+    <div class="flex justify-between items-center mb-4 pb-3 border-b-2 border-slate-200">
+      <h2 class="text-2xl font-bold">7️⃣ Public Quote View (Lead-Facing)</h2>
+      <span class="text-sm text-slate-500">No auth required · Mobile-friendly</span>
+    </div>
+
+    <div class="wireframe-box rounded-lg p-4 bg-gradient-to-br from-slate-100 to-slate-200">
+      <div class="max-w-2xl mx-auto bg-white shadow-lg rounded-lg overflow-hidden">
+        <!-- Branded Header -->
+        <div class="bg-slate-900 text-white p-6">
+          <div class="flex justify-between items-center">
+            <div>
+              <div class="text-xs uppercase tracking-wider text-slate-400 mb-1">Quote from</div>
+              <div class="text-xl font-bold">Excel Technologies</div>
+              <div class="text-sm text-slate-300">excel-tech.in</div>
+            </div>
+            <div class="w-16 h-16 bg-blue-500 rounded flex items-center justify-center font-bold">LOGO</div>
+          </div>
+        </div>
+
+        <!-- Quote Info -->
+        <div class="p-6 space-y-4">
+          <div class="flex justify-between text-sm">
+            <div>
+              <div class="text-slate-500">Quote Number</div>
+              <div class="font-mono font-bold">QQ-2026-0042</div>
+            </div>
+            <div>
+              <div class="text-slate-500">Date</div>
+              <div class="font-medium">14 May 2026</div>
+            </div>
+            <div>
+              <div class="text-slate-500">Valid Until</div>
+              <div class="font-medium text-amber-700">29 May 2026</div>
+            </div>
+          </div>
+
+          <div class="border-t pt-4">
+            <div class="text-slate-500 text-sm">Bill To</div>
+            <div class="font-medium">Acme Corporation</div>
+            <div class="text-sm text-slate-600">John Doe · john@acme.com</div>
+          </div>
+
+          <!-- Line Items -->
+          <table class="w-full text-sm border-t border-b">
+            <thead>
+              <tr class="text-left text-slate-500 text-xs">
+                <th class="py-2">Item</th>
+                <th class="py-2 text-right">Qty</th>
+                <th class="py-2 text-right">Rate</th>
+                <th class="py-2 text-right">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="py-2">
+                  <div class="font-medium">Microsoft 365 Business Premium</div>
+                  <div class="text-xs text-slate-500">Annual · acme.com</div>
+                </td>
+                <td class="py-2 text-right">5</td>
+                <td class="py-2 text-right">₹1,800</td>
+                <td class="py-2 text-right font-medium">₹9,000</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="flex justify-end">
+            <div class="w-56 space-y-1 text-sm">
+              <div class="flex justify-between"><span class="text-slate-600">Subtotal:</span><span>₹9,000</span></div>
+              <div class="flex justify-between"><span class="text-slate-600">GST (18%):</span><span>₹1,620</span></div>
+              <div class="flex justify-between border-t pt-1 font-bold text-base"><span>Total:</span><span>₹10,620</span></div>
+            </div>
+          </div>
+
+          <div class="text-xs text-slate-600 bg-slate-50 p-3 rounded">
+            <strong>Terms:</strong> Payment due within 30 days of invoice. Subscription auto-renews unless cancelled 30 days prior to expiry.
+          </div>
+
+          <!-- Big CTA -->
+          <div class="flex gap-2 pt-4">
+            <button class="flex-1 bg-emerald-600 text-white py-3 rounded font-medium hover:bg-emerald-700">✓ Accept Quote</button>
+            <button class="px-4 border-2 border-slate-300 text-slate-700 py-3 rounded font-medium hover:bg-slate-50">Reject</button>
+            <button class="px-4 border-2 border-slate-300 text-slate-700 py-3 rounded font-medium hover:bg-slate-50">📥 PDF</button>
+          </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="bg-slate-50 p-4 text-xs text-slate-500 text-center border-t">
+          Powered by Excel Technologies · Questions? Reply to this email or call +91-98XXX-XXXXX
+        </div>
+      </div>
+    </div>
+
+    <p class="text-sm text-slate-500 mt-3 italic">
+      💡 Mobile-responsive, accessible. Big "Accept" CTA. PDF download option. Clean branded view.
+    </p>
+  </section>
+
+  <!-- =================================================================
+       8. QUICK SEARCH
+       ================================================================= -->
+  <section id="search" class="screen bg-white rounded-lg shadow p-6">
+    <div class="flex justify-between items-center mb-4 pb-3 border-b-2 border-slate-200">
+      <h2 class="text-2xl font-bold">8️⃣ Quick Search (Universal)</h2>
+      <span class="text-sm text-slate-500">Search across all entities</span>
+    </div>
+
+    <div class="wireframe-box rounded-lg p-4 bg-slate-50 max-w-3xl mx-auto">
+      <div class="bg-white rounded-lg shadow-xl p-3">
+        <input type="text" value="acme"
+               class="w-full text-lg px-3 py-3 border-b focus:outline-none"
+               placeholder="🔍 Search domain, customer, quote, invoice, GSTIN..." />
+
+        <div class="mt-3 space-y-1">
+          <div class="text-xs text-slate-500 px-3">Showing results for "acme"</div>
+
+          <div class="p-3 hover:bg-blue-50 rounded cursor-pointer border-l-4 border-blue-500">
+            <div class="flex justify-between items-start">
+              <div>
+                <span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs font-medium">🟢 Customer</span>
+                <span class="ml-2 font-medium">Acme Corporation</span>
+              </div>
+              <span class="text-xs text-slate-500">ExcelTech Cloud</span>
+            </div>
+            <div class="text-xs text-slate-600 mt-1">3 active subscriptions · billing@acme.com · GST: 27AAAPL1234C1Z5</div>
+          </div>
+
+          <div class="p-3 hover:bg-blue-50 rounded cursor-pointer">
+            <div class="flex justify-between items-start">
+              <div>
+                <span class="bg-cyan-100 text-cyan-700 px-2 py-0.5 rounded text-xs font-medium">🔵 Domain</span>
+                <span class="ml-2 font-medium">acme.com</span>
+              </div>
+              <span class="text-xs text-slate-500">→ Acme Corp · Org-2</span>
+            </div>
+          </div>
+
+          <div class="p-3 hover:bg-blue-50 rounded cursor-pointer">
+            <div class="flex justify-between items-start">
+              <div>
+                <span class="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded text-xs font-medium">📋 Subscription</span>
+                <span class="ml-2 font-mono text-sm">SUB-2025-0042</span>
+              </div>
+              <span class="text-xs text-red-600">⚠️ Expires 22 May</span>
+            </div>
+            <div class="text-xs text-slate-600 mt-1">acme.com · GW Business Standard · 10 licenses</div>
+          </div>
+
+          <div class="p-3 hover:bg-blue-50 rounded cursor-pointer">
+            <div class="flex justify-between items-start">
+              <div>
+                <span class="bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-xs font-medium">📄 Quote</span>
+                <span class="ml-2 font-mono text-sm">QQ-2026-0042</span>
+              </div>
+              <span class="text-xs text-emerald-600">✓ Accepted</span>
+            </div>
+            <div class="text-xs text-slate-600 mt-1">Acme Corp · ₹1,06,200 · MS 365 Business Premium</div>
+          </div>
+
+          <div class="p-3 hover:bg-blue-50 rounded cursor-pointer">
+            <div class="flex justify-between items-start">
+              <div>
+                <span class="bg-amber-100 text-amber-700 px-2 py-0.5 rounded text-xs font-medium">🟡 Lead</span>
+                <span class="ml-2">Acme Holdings (different entity)</span>
+              </div>
+              <span class="text-xs text-slate-500">2 weeks ago</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="border-t mt-2 pt-2 px-3 text-xs text-slate-500 flex justify-between">
+          <span>↑↓ to navigate · Enter to open</span>
+          <span>5 results · Showing top matches</span>
+        </div>
+      </div>
+    </div>
+
+    <p class="text-sm text-slate-500 mt-3 italic">
+      💡 Triggered by <kbd class="bg-slate-200 px-1 rounded text-xs">⌘K</kbd> / <kbd class="bg-slate-200 px-1 rounded text-xs">Ctrl+K</kbd> anywhere in app. Universal search across leads, customers, domains, subscriptions, quotes, invoices.
+    </p>
+  </section>
+
+  <!-- =================================================================
+       9. SETTINGS
+       ================================================================= -->
+  <section id="settings" class="screen bg-white rounded-lg shadow p-6">
+    <div class="flex justify-between items-center mb-4 pb-3 border-b-2 border-slate-200">
+      <h2 class="text-2xl font-bold">9️⃣ Settings Page</h2>
+      <span class="text-sm text-slate-500">Configuration management</span>
+    </div>
+
+    <div class="wireframe-box rounded-lg overflow-hidden bg-white border">
+      <div class="flex">
+        <!-- Settings Sidebar -->
+        <div class="w-64 bg-slate-50 border-r p-3 text-sm space-y-1">
+          <div class="text-xs uppercase tracking-wide text-slate-500 px-3 py-1">Configuration</div>
+          <div class="px-3 py-2 bg-blue-100 text-blue-800 rounded font-medium">🏢 Organizations</div>
+          <div class="px-3 py-2 hover:bg-slate-200 rounded">📄 Quick Quote Settings</div>
+          <div class="px-3 py-2 hover:bg-slate-200 rounded">🎨 PDF Branding</div>
+          <div class="px-3 py-2 hover:bg-slate-200 rounded">📧 Email Configuration</div>
+          <div class="px-3 py-2 hover:bg-slate-200 rounded">🔄 Subscription Lifecycle</div>
+          <div class="px-3 py-2 hover:bg-slate-200 rounded">🎯 Lead Management</div>
+          <div class="px-3 py-2 hover:bg-slate-200 rounded">💰 Tax & GST</div>
+          <div class="px-3 py-2 hover:bg-slate-200 rounded">🔔 Notifications</div>
+          <div class="px-3 py-2 hover:bg-slate-200 rounded">📋 Master Data</div>
+          <div class="border-t border-slate-300 my-2"></div>
+          <div class="text-xs uppercase tracking-wide text-slate-500 px-3 py-1">System</div>
+          <div class="px-3 py-2 hover:bg-slate-200 rounded">🩺 Health & Diagnostics</div>
+        </div>
+
+        <!-- Settings Content: Organizations -->
+        <div class="flex-1 p-6">
+          <h3 class="text-xl font-bold mb-1">🏢 Organizations</h3>
+          <p class="text-sm text-slate-600 mb-4">Manage Zoho Books organizations and OAuth connections</p>
+
+          <div class="space-y-3">
+            <!-- Org Card 1 -->
+            <div class="bg-emerald-50 border border-emerald-200 rounded p-4 flex justify-between items-center">
+              <div>
+                <div class="flex items-center gap-2">
+                  <span class="font-semibold">Excel Technologies Pvt Ltd</span>
+                  <span class="bg-emerald-200 text-emerald-800 px-2 py-0.5 rounded text-xs">✓ Connected</span>
+                </div>
+                <div class="text-sm text-slate-600 mt-1">Zoho Org: 60000000123 · INR · India</div>
+                <div class="text-xs text-slate-500 mt-1">Last synced: 2 hours ago · 142 customers · 25 items</div>
+              </div>
+              <div class="flex gap-2">
+                <button class="text-sm border border-slate-300 px-3 py-1.5 rounded hover:bg-white">🔄 Sync</button>
+                <button class="text-sm border border-slate-300 px-3 py-1.5 rounded hover:bg-white">⚙️ Edit</button>
+              </div>
+            </div>
+
+            <!-- Org Card 2 -->
+            <div class="bg-emerald-50 border border-emerald-200 rounded p-4 flex justify-between items-center">
+              <div>
+                <div class="flex items-center gap-2">
+                  <span class="font-semibold">ExcelTech Cloud Services</span>
+                  <span class="bg-emerald-200 text-emerald-800 px-2 py-0.5 rounded text-xs">✓ Connected</span>
+                </div>
+                <div class="text-sm text-slate-600 mt-1">Zoho Org: 60000000456 · INR · India</div>
+                <div class="text-xs text-slate-500 mt-1">Last synced: 2 hours ago · 87 customers · 18 items</div>
+              </div>
+              <div class="flex gap-2">
+                <button class="text-sm border border-slate-300 px-3 py-1.5 rounded hover:bg-white">🔄 Sync</button>
+                <button class="text-sm border border-slate-300 px-3 py-1.5 rounded hover:bg-white">⚙️ Edit</button>
+              </div>
+            </div>
+
+            <!-- Org Card 3 — Disconnected -->
+            <div class="bg-red-50 border border-red-200 rounded p-4 flex justify-between items-center">
+              <div>
+                <div class="flex items-center gap-2">
+                  <span class="font-semibold">ExcelTech Solutions</span>
+                  <span class="bg-red-200 text-red-800 px-2 py-0.5 rounded text-xs">⚠️ Token Expired</span>
+                </div>
+                <div class="text-sm text-slate-600 mt-1">Zoho Org: 60000000789</div>
+                <div class="text-xs text-red-600 mt-1">Connection lost. Re-authenticate to resume sync.</div>
+              </div>
+              <button class="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700">Reconnect</button>
+            </div>
+
+            <button class="w-full border-2 border-dashed border-slate-300 py-3 rounded text-slate-600 hover:bg-slate-50">
+              + Add New Organization
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p class="text-sm text-slate-500 mt-3 italic">
+      💡 13 settings categories in sidebar. Status indicators (green/amber/red) provide quick visual health check.
+    </p>
+  </section>
+
+  <!-- =================================================================
+       10. PRO-RATA CALCULATOR (PRD §5.4)
+       ================================================================= -->
+  <section id="prorata" class="screen bg-white rounded-lg shadow p-6">
+    <div class="flex justify-between items-center mb-4 pb-3 border-b-2 border-slate-200">
+      <h2 class="text-2xl font-bold">🔟 Pro-rata Calculator</h2>
+      <span class="text-sm text-slate-500">Subscription Module → "Pro-rata" action (Quote Type 4)</span>
+    </div>
+
+    <!-- Context banner -->
+    <div class="bg-amber-50 border-l-4 border-amber-500 p-3 rounded mb-4 text-sm">
+      <strong>⚠️ Critical invariant:</strong> Pro-rata कभी भी subscription की <code class="bg-amber-100 px-1 rounded">start_date</code> / <code class="bg-amber-100 px-1 rounded">end_date</code> change नहीं करती। सिर्फ <strong>quantity बढ़ती है</strong>। Invoice paid होने पर Zoho Spec §16 की handler logic apply होगी।
+    </div>
+
+    <div class="wireframe-box rounded-lg p-4 bg-slate-50 space-y-4">
+
+      <!-- Subscription context (read-only) -->
+      <div class="bg-white border rounded p-4">
+        <div class="text-xs text-slate-500 mb-1">PRO-RATA FOR SUBSCRIPTION</div>
+        <div class="flex justify-between items-start">
+          <div>
+            <h3 class="text-lg font-bold font-mono">SUB-2026-0042</h3>
+            <div class="text-sm text-slate-700 mt-1">Acme Corporation · <span class="text-blue-600">acme.com</span> · ExcelTech India</div>
+            <div class="text-sm text-slate-600 mt-1">Item: Google Workspace Business Standard</div>
+          </div>
+          <div class="text-right text-xs">
+            <div class="bg-emerald-100 text-emerald-800 px-2 py-1 rounded inline-block">✓ Active</div>
+            <div class="text-slate-500 mt-2">Current term:</div>
+            <div class="font-mono">01 Apr 2026 → 31 Mar 2027</div>
+          </div>
+        </div>
+        <div class="grid grid-cols-4 gap-3 mt-3 pt-3 border-t text-xs">
+          <div><div class="text-slate-500">Current Qty</div><div class="font-bold text-base">10 users</div></div>
+          <div><div class="text-slate-500">Unit Price (Annual)</div><div class="font-bold text-base">₹9,000</div></div>
+          <div><div class="text-slate-500">Billing Cycle</div><div class="font-bold text-base">Annual</div></div>
+          <div><div class="text-slate-500">Days in Term</div><div class="font-bold text-base">365</div></div>
+        </div>
+      </div>
+
+      <!-- Pro-rata inputs -->
+      <div class="bg-white border rounded p-4">
+        <div class="text-sm font-semibold text-slate-800 mb-3">📥 Pro-rata Inputs</div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="text-xs text-slate-600">Additional Licenses (Qty)</label>
+            <input type="number" value="5" min="1" class="w-full border px-3 py-2 rounded mt-1 text-lg font-semibold" />
+            <div class="text-xs text-slate-500 mt-1">→ New total after payment: <strong>15 users</strong></div>
+          </div>
+          <div>
+            <label class="text-xs text-slate-600">Effective Date</label>
+            <input type="date" value="2026-05-15" class="w-full border px-3 py-2 rounded mt-1 text-lg" />
+            <div class="text-xs text-slate-500 mt-1">From this date until subscription end_date</div>
+          </div>
+        </div>
+
+        <div class="mt-3 text-xs text-slate-600 italic">
+          💡 Subscription की <strong>dates change नहीं</strong> होंगी — current term (01 Apr 2026 → 31 Mar 2027) वैसा ही रहेगा।
+        </div>
+      </div>
+
+      <!-- Auto-calculated breakdown -->
+      <div class="bg-blue-50 border border-blue-200 rounded p-4">
+        <div class="text-sm font-semibold text-blue-900 mb-3">🧮 Auto-Calculated Pro-rata Amount</div>
+
+        <div class="space-y-2 text-sm font-mono">
+          <div class="flex justify-between">
+            <span class="text-slate-700">Effective Date → End Date</span>
+            <span class="text-slate-900">15 May 2026 → 31 Mar 2027</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-slate-700">Period (days)</span>
+            <span class="text-slate-900">321 days</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-slate-700">Per-license daily rate</span>
+            <span class="text-slate-900">₹9,000 ÷ 365 = ₹24.66</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-slate-700">Daily × Period × Additional Qty</span>
+            <span class="text-slate-900">₹24.66 × 321 × 5</span>
+          </div>
+          <div class="border-t border-blue-300 pt-2 flex justify-between text-base">
+            <span class="font-semibold text-blue-900">Subtotal</span>
+            <span class="font-bold text-blue-900">₹39,575.00</span>
+          </div>
+          <div class="flex justify-between text-xs text-slate-600">
+            <span>CGST 9%</span><span>₹3,561.75</span>
+          </div>
+          <div class="flex justify-between text-xs text-slate-600">
+            <span>SGST 9%</span><span>₹3,561.75</span>
+          </div>
+          <div class="border-t border-blue-300 pt-2 flex justify-between text-lg">
+            <span class="font-bold text-blue-900">Grand Total (inc. GST 18%)</span>
+            <span class="font-bold text-blue-900">₹46,698.50</span>
+          </div>
+        </div>
+
+        <div class="mt-3 text-xs text-slate-600">
+          Rounding: <code class="bg-white px-1 rounded">nearest</code> · Calc method: <code class="bg-white px-1 rounded">daily</code>
+          (configurable via Settings → Subscription Lifecycle)
+        </div>
+      </div>
+
+      <!-- Settings override -->
+      <details class="bg-white border rounded p-3 text-sm">
+        <summary class="cursor-pointer text-slate-700">⚙️ Advanced: Override pricing / rate</summary>
+        <div class="mt-3 grid grid-cols-3 gap-3">
+          <div>
+            <label class="text-xs text-slate-600">Override unit price</label>
+            <input type="number" placeholder="9000" class="w-full border px-2 py-1.5 rounded mt-1" />
+          </div>
+          <div>
+            <label class="text-xs text-slate-600">Discount %</label>
+            <input type="number" placeholder="0" min="0" max="50" class="w-full border px-2 py-1.5 rounded mt-1" />
+          </div>
+          <div>
+            <label class="text-xs text-slate-600">Calc method</label>
+            <select class="w-full border px-2 py-1.5 rounded mt-1 bg-white">
+              <option>Daily (default)</option>
+              <option>Monthly</option>
+            </select>
+          </div>
+        </div>
+      </details>
+
+      <!-- Notes -->
+      <div class="bg-white border rounded p-4">
+        <label class="text-xs text-slate-600">Internal note (not on quote PDF)</label>
+        <textarea rows="2" placeholder="e.g. Customer added 5 seats mid-cycle for new team."
+                  class="w-full border px-3 py-2 rounded mt-1 text-sm"></textarea>
+      </div>
+
+      <!-- Actions -->
+      <div class="flex justify-between items-center pt-2">
+        <button class="text-sm text-slate-600 hover:text-slate-900">← Cancel</button>
+        <div class="flex gap-2">
+          <button class="border border-slate-300 px-4 py-2 rounded text-sm hover:bg-white">Save as Draft</button>
+          <button class="border border-blue-300 text-blue-700 px-4 py-2 rounded text-sm hover:bg-blue-50">Preview Quote PDF</button>
+          <button class="bg-blue-600 text-white px-5 py-2 rounded text-sm hover:bg-blue-700 font-semibold">Generate Pro-rata Quote →</button>
+        </div>
+      </div>
+    </div>
+
+    <p class="text-sm text-slate-500 mt-3 italic">
+      💡 "Generate Pro-rata Quote" creates an Estimate in Zoho with <code>cf_business_type=Pro-rata</code>,
+      <code>cf_central_subscription_id=&lt;sub.id&gt;</code>. एक row <code>renewal_history</code> table में जाती है with <code>business_type='Pro-rata'</code>.
+      Invoice paid होने पर §16 handler subscription.quantity += 5 करेगा — dates untouched।
+    </p>
+  </section>
+
+  <!-- =================================================================
+       11. DOMAIN MAPPING VIEW (PRD §5.5)
+       ================================================================= -->
+  <section id="domains" class="screen bg-white rounded-lg shadow p-6">
+    <div class="flex justify-between items-center mb-4 pb-3 border-b-2 border-slate-200">
+      <h2 class="text-2xl font-bold">1️⃣1️⃣ Domain Mapping View</h2>
+      <span class="text-sm text-slate-500">Domain ↔ Customer ↔ Org central index</span>
+    </div>
+
+    <div class="wireframe-box rounded-lg p-4 bg-slate-50 space-y-4">
+
+      <!-- Filters bar -->
+      <div class="flex gap-3 items-center flex-wrap">
+        <input type="text" placeholder="🔍 Search domain (e.g. acme.com)..."
+               class="border px-3 py-2 rounded text-sm flex-1 max-w-md" />
+        <select class="border px-3 py-2 rounded text-sm bg-white">
+          <option>All Organizations</option>
+          <option>ExcelTech India</option>
+          <option>ExcelTech Cloud Services</option>
+          <option>ExcelTech Solutions</option>
+          <option>ExcelTech Global</option>
+        </select>
+        <select class="border px-3 py-2 rounded text-sm bg-white">
+          <option>All Statuses</option>
+          <option>Active</option>
+          <option>Inactive</option>
+          <option>Suspended</option>
+        </select>
+        <button class="border border-slate-300 px-3 py-2 rounded text-sm bg-white hover:bg-slate-100">📤 Export CSV</button>
+      </div>
+
+      <!-- Stats row -->
+      <div class="grid grid-cols-4 gap-3 text-sm">
+        <div class="bg-white border rounded p-3">
+          <div class="text-xs text-slate-500">Total Domains</div>
+          <div class="text-2xl font-bold text-slate-800">287</div>
+        </div>
+        <div class="bg-emerald-50 border border-emerald-200 rounded p-3">
+          <div class="text-xs text-emerald-700">Active</div>
+          <div class="text-2xl font-bold text-emerald-700">261</div>
+        </div>
+        <div class="bg-amber-50 border border-amber-200 rounded p-3">
+          <div class="text-xs text-amber-700">Suspended</div>
+          <div class="text-2xl font-bold text-amber-700">14</div>
+        </div>
+        <div class="bg-slate-100 border border-slate-300 rounded p-3">
+          <div class="text-xs text-slate-600">Inactive</div>
+          <div class="text-2xl font-bold text-slate-600">12</div>
+        </div>
+      </div>
+
+      <!-- Domain Table -->
+      <div class="bg-white border border-slate-300 rounded overflow-hidden">
+        <table class="w-full text-sm">
+          <thead class="bg-slate-100 text-slate-700">
+            <tr>
+              <th class="text-left p-3">Domain</th>
+              <th class="text-left p-3">Customer (Zoho)</th>
+              <th class="text-left p-3">Org</th>
+              <th class="text-center p-3">Active Subs</th>
+              <th class="text-left p-3">Status</th>
+              <th class="text-left p-3">Actions</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y">
+            <!-- Row 1 expanded -->
+            <tr class="bg-blue-50">
+              <td class="p-3">
+                <details open>
+                  <summary class="cursor-pointer">
+                    <strong class="text-blue-700">acme.com</strong>
+                    <div class="text-xs text-slate-500">Added 12 Mar 2024</div>
+                  </summary>
+                </details>
+              </td>
+              <td class="p-3">Acme Corporation<div class="text-xs text-slate-500">GSTIN: 27AAAPL1234C1Z5</div></td>
+              <td class="p-3">ExcelTech India</td>
+              <td class="p-3 text-center"><span class="bg-blue-200 text-blue-800 px-2 py-1 rounded font-semibold">3</span></td>
+              <td class="p-3"><span class="bg-emerald-100 text-emerald-800 px-2 py-1 rounded text-xs">✓ Active</span></td>
+              <td class="p-3 text-xs">
+                <button class="text-blue-600 hover:underline">View</button> ·
+                <button class="text-slate-600 hover:underline">Edit</button>
+              </td>
+            </tr>
+            <!-- Expanded subs for acme.com -->
+            <tr class="bg-blue-50">
+              <td colspan="6" class="p-0">
+                <div class="bg-white border-t border-blue-200 px-6 py-3">
+                  <div class="text-xs font-semibold text-slate-700 mb-2">Linked Subscriptions (3)</div>
+                  <table class="w-full text-xs">
+                    <thead class="text-slate-600">
+                      <tr>
+                        <th class="text-left py-1">Sub #</th>
+                        <th class="text-left py-1">Item</th>
+                        <th class="text-left py-1">Qty</th>
+                        <th class="text-left py-1">End Date</th>
+                        <th class="text-left py-1">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody class="text-slate-700">
+                      <tr><td class="font-mono py-1">SUB-2026-0042</td><td>Google Workspace Business Standard</td><td>10 users</td><td>31 Mar 2027</td><td><span class="bg-emerald-100 text-emerald-800 px-2 rounded">Active</span></td></tr>
+                      <tr><td class="font-mono py-1">SUB-2026-0067</td><td>Microsoft 365 Business Basic</td><td>5 users</td><td>15 Jun 2026</td><td><span class="bg-amber-100 text-amber-800 px-2 rounded">Expiring Soon</span></td></tr>
+                      <tr><td class="font-mono py-1">SUB-2025-0218</td><td>Zoho One</td><td>8 users</td><td>10 Dec 2026</td><td><span class="bg-emerald-100 text-emerald-800 px-2 rounded">Active</span></td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </td>
+            </tr>
+
+            <tr class="hover:bg-slate-50">
+              <td class="p-3"><strong>globex.in</strong><div class="text-xs text-slate-500">Added 22 Aug 2024</div></td>
+              <td class="p-3">Globex Industries Pvt Ltd<div class="text-xs text-slate-500">GSTIN: 29AAACG3245H1Z9</div></td>
+              <td class="p-3">ExcelTech Cloud Services</td>
+              <td class="p-3 text-center"><span class="bg-blue-200 text-blue-800 px-2 py-1 rounded font-semibold">2</span></td>
+              <td class="p-3"><span class="bg-emerald-100 text-emerald-800 px-2 py-1 rounded text-xs">✓ Active</span></td>
+              <td class="p-3 text-xs">
+                <button class="text-blue-600 hover:underline">View</button> ·
+                <button class="text-slate-600 hover:underline">Edit</button>
+              </td>
+            </tr>
+
+            <tr class="hover:bg-slate-50">
+              <td class="p-3"><strong>initech.co.in</strong><div class="text-xs text-slate-500">Added 04 Jan 2025</div></td>
+              <td class="p-3">Initech Software<div class="text-xs text-slate-500">GSTIN: 27AABCI8901K1Z2</div></td>
+              <td class="p-3">ExcelTech India</td>
+              <td class="p-3 text-center"><span class="bg-slate-200 text-slate-700 px-2 py-1 rounded font-semibold">0</span></td>
+              <td class="p-3"><span class="bg-slate-200 text-slate-700 px-2 py-1 rounded text-xs">Inactive</span></td>
+              <td class="p-3 text-xs">
+                <button class="text-blue-600 hover:underline">View</button> ·
+                <button class="text-slate-600 hover:underline">Edit</button>
+              </td>
+            </tr>
+
+            <tr class="hover:bg-slate-50">
+              <td class="p-3"><strong>umbrella.io</strong><div class="text-xs text-slate-500">Added 19 Feb 2026</div></td>
+              <td class="p-3">Umbrella Corp<div class="text-xs text-slate-500">GSTIN: 06AABCU9876F1ZQ</div></td>
+              <td class="p-3">ExcelTech Solutions</td>
+              <td class="p-3 text-center"><span class="bg-blue-200 text-blue-800 px-2 py-1 rounded font-semibold">1</span></td>
+              <td class="p-3"><span class="bg-amber-100 text-amber-800 px-2 py-1 rounded text-xs">⚠ Suspended</span></td>
+              <td class="p-3 text-xs">
+                <button class="text-blue-600 hover:underline">View</button> ·
+                <button class="text-slate-600 hover:underline">Edit</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="px-3 py-2 border-t border-slate-200 flex justify-between items-center text-xs text-slate-600">
+          <div>Showing 1–4 of 287</div>
+          <div class="flex gap-1">
+            <button class="border px-2 py-1 rounded">‹ Prev</button>
+            <button class="border px-2 py-1 rounded bg-slate-900 text-white">1</button>
+            <button class="border px-2 py-1 rounded">2</button>
+            <button class="border px-2 py-1 rounded">3</button>
+            <span>…</span>
+            <button class="border px-2 py-1 rounded">72</button>
+            <button class="border px-2 py-1 rounded">Next ›</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p class="text-sm text-slate-500 mt-3 italic">
+      💡 Domain rows are <strong>auto-created during lead conversion</strong> (PRD §9 Step 3). Manual edit allowed for fixing customer mapping or transferring domains between Zoho orgs (requires admin role). Domain row cannot be deleted while it has active subscriptions.
+    </p>
+  </section>
+
+  <!-- =================================================================
+       12. SYSTEM HEALTH & DIAGNOSTICS (PRD §5A.3.13)
+       ================================================================= -->
+  <section id="system-health" class="screen bg-white rounded-lg shadow p-6">
+    <div class="flex justify-between items-center mb-4 pb-3 border-b-2 border-slate-200">
+      <h2 class="text-2xl font-bold">1️⃣2️⃣ System Health & Diagnostics</h2>
+      <span class="text-sm text-slate-500">Settings → System Health (admin only)</span>
+    </div>
+
+    <div class="wireframe-box rounded-lg p-4 bg-slate-50 space-y-4">
+
+      <!-- Top stats -->
+      <div class="grid grid-cols-4 gap-3">
+        <div class="bg-emerald-50 border border-emerald-200 rounded p-3">
+          <div class="text-xs text-emerald-700">App Status</div>
+          <div class="text-xl font-bold text-emerald-700">✓ Healthy</div>
+          <div class="text-xs text-slate-500 mt-1">uptime 23d 4h</div>
+        </div>
+        <div class="bg-blue-50 border border-blue-200 rounded p-3">
+          <div class="text-xs text-blue-700">App Version</div>
+          <div class="text-xl font-bold text-blue-700 font-mono">v1.0.3</div>
+          <div class="text-xs text-slate-500 mt-1">Schema v1.2 · deployed 14 May</div>
+        </div>
+        <div class="bg-amber-50 border border-amber-200 rounded p-3">
+          <div class="text-xs text-amber-700">Failed Jobs (24h)</div>
+          <div class="text-xl font-bold text-amber-700">3</div>
+          <div class="text-xs text-slate-500 mt-1">Click below to inspect</div>
+        </div>
+        <div class="bg-red-50 border border-red-200 rounded p-3">
+          <div class="text-xs text-red-700">Orgs in Error</div>
+          <div class="text-xl font-bold text-red-700">1</div>
+          <div class="text-xs text-slate-500 mt-1">Reconnect required</div>
+        </div>
+      </div>
+
+      <!-- Per-org Zoho status -->
+      <div class="bg-white border rounded p-4">
+        <div class="flex justify-between items-center mb-3">
+          <div class="font-semibold text-slate-800">🏢 Zoho Connection — Per Organization</div>
+          <button class="text-xs border border-slate-300 px-3 py-1 rounded hover:bg-slate-100">🔄 Refresh All</button>
+        </div>
+        <table class="w-full text-sm">
+          <thead class="bg-slate-100 text-slate-700 text-xs">
+            <tr>
+              <th class="text-left p-2">Organization</th>
+              <th class="text-left p-2">Connection</th>
+              <th class="text-left p-2">Token Expires</th>
+              <th class="text-left p-2">Last Sync</th>
+              <th class="text-left p-2">API Quota Used (today)</th>
+              <th class="text-left p-2">Customers · Items</th>
+              <th class="text-left p-2">Actions</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y text-slate-700">
+            <tr>
+              <td class="p-2 font-medium">ExcelTech India</td>
+              <td class="p-2"><span class="bg-emerald-100 text-emerald-800 px-2 rounded text-xs">✓ active</span></td>
+              <td class="p-2 font-mono text-xs">in 47 min</td>
+              <td class="p-2 text-xs">2 min ago</td>
+              <td class="p-2">
+                <div class="flex items-center gap-2">
+                  <div class="bg-slate-200 rounded-full w-24 h-2 overflow-hidden">
+                    <div class="bg-emerald-500 h-2" style="width:38%"></div>
+                  </div>
+                  <span class="text-xs">3,072 / 8,000</span>
+                </div>
+              </td>
+              <td class="p-2 text-xs">142 · 25</td>
+              <td class="p-2 text-xs"><button class="text-blue-600">Sync</button> · <button class="text-slate-600">Test</button></td>
+            </tr>
+            <tr>
+              <td class="p-2 font-medium">ExcelTech Cloud Services</td>
+              <td class="p-2"><span class="bg-emerald-100 text-emerald-800 px-2 rounded text-xs">✓ active</span></td>
+              <td class="p-2 font-mono text-xs">in 52 min</td>
+              <td class="p-2 text-xs">5 min ago</td>
+              <td class="p-2">
+                <div class="flex items-center gap-2">
+                  <div class="bg-slate-200 rounded-full w-24 h-2 overflow-hidden">
+                    <div class="bg-emerald-500 h-2" style="width:24%"></div>
+                  </div>
+                  <span class="text-xs">1,920 / 8,000</span>
+                </div>
+              </td>
+              <td class="p-2 text-xs">87 · 18</td>
+              <td class="p-2 text-xs"><button class="text-blue-600">Sync</button> · <button class="text-slate-600">Test</button></td>
+            </tr>
+            <tr class="bg-red-50">
+              <td class="p-2 font-medium">ExcelTech Solutions</td>
+              <td class="p-2"><span class="bg-red-200 text-red-800 px-2 rounded text-xs">⚠ expired</span></td>
+              <td class="p-2 font-mono text-xs text-red-700">expired 2h ago</td>
+              <td class="p-2 text-xs">3h ago</td>
+              <td class="p-2 text-xs text-slate-500">—</td>
+              <td class="p-2 text-xs">61 · 14</td>
+              <td class="p-2 text-xs"><button class="bg-red-600 text-white px-2 py-1 rounded">Reconnect</button></td>
+            </tr>
+            <tr>
+              <td class="p-2 font-medium">ExcelTech Global</td>
+              <td class="p-2"><span class="bg-emerald-100 text-emerald-800 px-2 rounded text-xs">✓ active</span></td>
+              <td class="p-2 font-mono text-xs">in 38 min</td>
+              <td class="p-2 text-xs">8 min ago</td>
+              <td class="p-2">
+                <div class="flex items-center gap-2">
+                  <div class="bg-slate-200 rounded-full w-24 h-2 overflow-hidden">
+                    <div class="bg-amber-500 h-2" style="width:71%"></div>
+                  </div>
+                  <span class="text-xs">5,680 / 8,000</span>
+                </div>
+              </td>
+              <td class="p-2 text-xs">52 · 11</td>
+              <td class="p-2 text-xs"><button class="text-blue-600">Sync</button> · <button class="text-slate-600">Test</button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Job queue + Webhook events grid -->
+      <div class="grid grid-cols-2 gap-3">
+        <!-- Background jobs -->
+        <div class="bg-white border rounded p-4">
+          <div class="font-semibold text-slate-800 mb-3">⚙️ Background Job Queue (BullMQ)</div>
+          <div class="grid grid-cols-3 gap-2 text-center mb-3">
+            <div class="bg-slate-50 p-3 rounded">
+              <div class="text-2xl font-bold text-slate-700">12</div>
+              <div class="text-xs text-slate-500">Pending</div>
+            </div>
+            <div class="bg-blue-50 p-3 rounded">
+              <div class="text-2xl font-bold text-blue-700">3</div>
+              <div class="text-xs text-blue-500">Processing</div>
+            </div>
+            <div class="bg-red-50 p-3 rounded">
+              <div class="text-2xl font-bold text-red-700">2</div>
+              <div class="text-xs text-red-500">Failed</div>
+            </div>
+          </div>
+          <div class="text-xs space-y-1 text-slate-600">
+            <div class="flex justify-between"><span>Renewal reminder dispatcher</span><span class="font-mono">queued · 8</span></div>
+            <div class="flex justify-between"><span>PDF generator</span><span class="font-mono">processing · 2</span></div>
+            <div class="flex justify-between"><span>Lead conversion job</span><span class="font-mono">processing · 1</span></div>
+            <div class="flex justify-between"><span>Zoho daily sync</span><span class="text-emerald-600">next: 03:00 IST</span></div>
+          </div>
+          <button class="mt-3 text-xs border border-slate-300 px-3 py-1 rounded hover:bg-slate-100">View All Jobs →</button>
+        </div>
+
+        <!-- Webhook events -->
+        <div class="bg-white border rounded p-4">
+          <div class="font-semibold text-slate-800 mb-3">🪝 Webhook Events (last 24h)</div>
+          <div class="grid grid-cols-2 gap-2 text-center mb-3">
+            <div class="bg-emerald-50 p-3 rounded">
+              <div class="text-2xl font-bold text-emerald-700">247</div>
+              <div class="text-xs text-emerald-500">Processed</div>
+            </div>
+            <div class="bg-red-50 p-3 rounded">
+              <div class="text-2xl font-bold text-red-700">3</div>
+              <div class="text-xs text-red-500">Failed</div>
+            </div>
+          </div>
+          <div class="text-xs space-y-1 text-slate-600">
+            <div class="flex justify-between"><span>estimate_accepted</span><span class="font-mono">14</span></div>
+            <div class="flex justify-between"><span>invoice_paid</span><span class="font-mono">22</span></div>
+            <div class="flex justify-between"><span>estimate_viewed</span><span class="font-mono">63</span></div>
+            <div class="flex justify-between text-red-600"><span>invoice_paid (failed)</span><span class="font-mono">3</span></div>
+          </div>
+          <button class="mt-3 text-xs border border-slate-300 px-3 py-1 rounded hover:bg-slate-100">View Event Log → Retry Failed</button>
+        </div>
+      </div>
+
+      <!-- Failed jobs / events table -->
+      <div class="bg-white border rounded p-4">
+        <div class="flex justify-between items-center mb-3">
+          <div class="font-semibold text-slate-800">🔴 Failed Items — Awaiting Action</div>
+          <button class="text-xs text-slate-600 hover:underline">Show all</button>
+        </div>
+        <table class="w-full text-xs">
+          <thead class="bg-slate-100 text-slate-700">
+            <tr>
+              <th class="text-left p-2">Type</th>
+              <th class="text-left p-2">Identifier</th>
+              <th class="text-left p-2">Error</th>
+              <th class="text-left p-2">Retries</th>
+              <th class="text-left p-2">Failed At</th>
+              <th class="text-left p-2">Actions</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y text-slate-700">
+            <tr>
+              <td class="p-2">webhook</td>
+              <td class="p-2 font-mono">invoice_paid · INV-2026-1234</td>
+              <td class="p-2 text-red-600">cf_business_type missing — handler rejected</td>
+              <td class="p-2">5/5</td>
+              <td class="p-2">14 May, 18:42</td>
+              <td class="p-2">
+                <button class="bg-blue-600 text-white px-2 py-1 rounded">Retry</button>
+                <button class="text-slate-600 ml-1">Inspect</button>
+              </td>
+            </tr>
+            <tr>
+              <td class="p-2">job</td>
+              <td class="p-2 font-mono">renewal_reminder · SUB-2026-0011</td>
+              <td class="p-2 text-red-600">Email delivery failed: 550 mailbox full</td>
+              <td class="p-2">3/5</td>
+              <td class="p-2">15 May, 06:01</td>
+              <td class="p-2">
+                <button class="bg-blue-600 text-white px-2 py-1 rounded">Retry</button>
+                <button class="text-slate-600 ml-1">Inspect</button>
+              </td>
+            </tr>
+            <tr>
+              <td class="p-2">conversion</td>
+              <td class="p-2 font-mono">LD-2026-0117 → ExcelTech Solutions</td>
+              <td class="p-2 text-red-600">Zoho token expired during Step 2 (contact create)</td>
+              <td class="p-2">3/3</td>
+              <td class="p-2">15 May, 08:14</td>
+              <td class="p-2">
+                <button class="bg-blue-600 text-white px-2 py-1 rounded">Retry</button>
+                <button class="text-slate-600 ml-1">Inspect</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- DB + Cache stats -->
+      <div class="grid grid-cols-2 gap-3">
+        <div class="bg-white border rounded p-4">
+          <div class="font-semibold text-slate-800 mb-3">🗄️ Database Statistics</div>
+          <div class="grid grid-cols-2 gap-2 text-xs text-slate-700">
+            <div class="flex justify-between"><span>Leads</span><span class="font-mono">412</span></div>
+            <div class="flex justify-between"><span>Quick Quotes</span><span class="font-mono">1,287</span></div>
+            <div class="flex justify-between"><span>Subscriptions</span><span class="font-mono">823</span></div>
+            <div class="flex justify-between"><span>Renewal History</span><span class="font-mono">2,041</span></div>
+            <div class="flex justify-between"><span>Domains</span><span class="font-mono">287</span></div>
+            <div class="flex justify-between"><span>Webhook Events</span><span class="font-mono">28,419</span></div>
+            <div class="flex justify-between"><span>Audit Log Entries</span><span class="font-mono">9,847</span></div>
+            <div class="flex justify-between"><span>DB Size</span><span class="font-mono">3.2 GB</span></div>
+          </div>
+        </div>
+        <div class="bg-white border rounded p-4">
+          <div class="font-semibold text-slate-800 mb-3">⚡ Cache (Redis) Statistics</div>
+          <div class="grid grid-cols-2 gap-2 text-xs text-slate-700">
+            <div class="flex justify-between"><span>Hit Rate</span><span class="font-mono text-emerald-600">94.2%</span></div>
+            <div class="flex justify-between"><span>Keys Stored</span><span class="font-mono">12,841</span></div>
+            <div class="flex justify-between"><span>Memory Used</span><span class="font-mono">187 MB</span></div>
+            <div class="flex justify-between"><span>Evictions (24h)</span><span class="font-mono">204</span></div>
+            <div class="flex justify-between"><span>Stale Records</span><span class="font-mono">18</span></div>
+            <div class="flex justify-between"><span>Settings cache TTL</span><span class="font-mono">5 min</span></div>
+          </div>
+          <button class="mt-3 text-xs border border-slate-300 px-3 py-1 rounded hover:bg-slate-100">🗑️ Flush Cache</button>
+        </div>
+      </div>
+
+      <!-- Recent application errors -->
+      <details class="bg-white border rounded">
+        <summary class="cursor-pointer p-3 font-semibold text-slate-800">📜 Recent Application Errors (click to expand)</summary>
+        <div class="p-3 border-t font-mono text-xs space-y-2 text-slate-700 max-h-48 overflow-y-auto">
+          <div><span class="text-red-600">[ERROR]</span> 15 May 08:14:22 · ZohoApiClient · 401 — token refresh failed for org 60000000789</div>
+          <div><span class="text-red-600">[ERROR]</span> 15 May 06:01:13 · EmailService · 550 mailbox full · recipient: ops@acme.com</div>
+          <div><span class="text-amber-600">[WARN]</span>  14 May 22:30:08 · RateLimiter · org 60000000456 hit 80/min throttle, slowing</div>
+          <div><span class="text-red-600">[ERROR]</span> 14 May 18:42:55 · WebhookProcessor · invoice_paid rejected: cf_business_type missing</div>
+          <div><span class="text-amber-600">[WARN]</span>  14 May 14:11:00 · LeadConversionService · idempotent contact reuse for LD-2026-0098</div>
+        </div>
+      </details>
+    </div>
+
+    <p class="text-sm text-slate-500 mt-3 italic">
+      💡 इस page पर सब कुछ <strong>read-only diagnostic</strong> है except Retry / Sync / Reconnect / Flush Cache buttons. Failed webhook handler errors यहीं से retry होते हैं, बिना terminal access के।
+    </p>
+  </section>
+
+  <!-- =================================================================
+       13. CUSTOMER DETAIL PAGE (PRD §3.3 — Cross-sell trigger point)
+       ================================================================= -->
+  <section id="customer-detail" class="screen bg-white rounded-lg shadow p-6">
+    <div class="flex justify-between items-center mb-4 pb-3 border-b-2 border-slate-200">
+      <h2 class="text-2xl font-bold">1️⃣3️⃣ Customer Detail Page</h2>
+      <span class="text-sm text-slate-500">Zoho customer profile + cross-sell launch point</span>
+    </div>
+
+    <!-- Context banner -->
+    <div class="bg-blue-50 border-l-4 border-blue-500 p-3 rounded mb-4 text-sm">
+      💡 यह screen <strong>existing Zoho customers</strong> के लिए है। नया subscription manually create नहीं होता — "Send New Quote" से Type 2 (Cross-sell) Quote builder open होगा, और invoice paid होने पर subscription auto-create होगी।
+    </div>
+
+    <div class="wireframe-box rounded-lg p-4 bg-slate-50 space-y-4">
+
+      <!-- Header card -->
+      <div class="bg-white border rounded p-4">
+        <div class="flex justify-between items-start">
+          <div>
+            <div class="text-xs text-slate-500">ZOHO CUSTOMER</div>
+            <h3 class="text-2xl font-bold text-slate-900 mt-1">Acme Corporation</h3>
+            <div class="text-sm text-slate-600 mt-1">📧 billing@acme.com · 📞 +91 22 6789 0123</div>
+            <div class="flex gap-3 mt-2 text-xs">
+              <span class="bg-slate-100 px-2 py-1 rounded">Org: <strong>ExcelTech India</strong></span>
+              <span class="bg-slate-100 px-2 py-1 rounded">Zoho ID: <code>cust_98345621</code></span>
+              <span class="bg-emerald-100 text-emerald-800 px-2 py-1 rounded">✓ Active customer</span>
+            </div>
+          </div>
+          <div class="flex flex-col gap-2 items-end">
+            <button class="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 font-semibold">📄 Send New Quote (Cross-sell) →</button>
+            <button class="text-sm border border-slate-300 px-3 py-1.5 rounded hover:bg-white">🔗 View in Zoho Books ↗</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Profile + Stats grid -->
+      <div class="grid grid-cols-3 gap-3">
+        <!-- Profile -->
+        <div class="bg-white border rounded p-4 col-span-2">
+          <div class="font-semibold text-slate-800 mb-3">📋 Customer Profile</div>
+          <div class="grid grid-cols-2 gap-3 text-sm">
+            <div>
+              <div class="text-xs text-slate-500">Contact Person</div>
+              <div class="font-medium">Rakesh Sharma (Finance Head)</div>
+            </div>
+            <div>
+              <div class="text-xs text-slate-500">GSTIN</div>
+              <div class="font-mono">27AAAPL1234C1Z5</div>
+            </div>
+            <div>
+              <div class="text-xs text-slate-500">PAN</div>
+              <div class="font-mono">AAAPL1234C</div>
+            </div>
+            <div>
+              <div class="text-xs text-slate-500">State (Place of Supply)</div>
+              <div>Maharashtra (27) — Intra-state</div>
+            </div>
+            <div class="col-span-2">
+              <div class="text-xs text-slate-500">Billing Address</div>
+              <div>Plot 42, MIDC Industrial Area, Andheri (E), Mumbai — 400093</div>
+            </div>
+          </div>
+        </div>
+        <!-- Quick stats -->
+        <div class="bg-white border rounded p-4">
+          <div class="font-semibold text-slate-800 mb-3">📊 At a Glance</div>
+          <div class="space-y-3 text-sm">
+            <div class="flex justify-between"><span class="text-slate-600">Active Subs</span><span class="font-bold text-blue-700">3</span></div>
+            <div class="flex justify-between"><span class="text-slate-600">Domains Mapped</span><span class="font-bold">1</span></div>
+            <div class="flex justify-between"><span class="text-slate-600">Lifetime Value</span><span class="font-bold text-emerald-700">₹4,82,000</span></div>
+            <div class="flex justify-between"><span class="text-slate-600">Last Quote</span><span class="font-mono text-xs">QQ-2026-0042</span></div>
+            <div class="flex justify-between"><span class="text-slate-600">Last Invoice</span><span class="font-mono text-xs">INV-2026-0089</span></div>
+            <div class="flex justify-between"><span class="text-slate-600">Customer since</span><span>Mar 2024</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Domains -->
+      <div class="bg-white border rounded p-4">
+        <div class="flex justify-between items-center mb-3">
+          <div class="font-semibold text-slate-800">🌐 Mapped Domains (1)</div>
+          <a href="#domains" class="text-xs text-blue-600 hover:underline">Open Domain Mapping →</a>
+        </div>
+        <div class="border rounded p-3 bg-slate-50 flex justify-between items-center">
+          <div>
+            <div class="font-medium text-blue-700">acme.com</div>
+            <div class="text-xs text-slate-500">Active · 3 subscriptions</div>
+          </div>
+          <button class="text-xs text-slate-600 hover:underline">View subs</button>
+        </div>
+      </div>
+
+      <!-- Active subscriptions -->
+      <div class="bg-white border rounded p-4">
+        <div class="flex justify-between items-center mb-3">
+          <div class="font-semibold text-slate-800">📋 Active Subscriptions (3)</div>
+          <span class="text-xs text-slate-500">Subs are created via quote acceptance — no manual add</span>
+        </div>
+        <table class="w-full text-sm">
+          <thead class="bg-slate-100 text-slate-700 text-xs">
+            <tr>
+              <th class="text-left p-2">Sub #</th>
+              <th class="text-left p-2">Item</th>
+              <th class="text-left p-2">Domain</th>
+              <th class="text-center p-2">Qty</th>
+              <th class="text-left p-2">Term</th>
+              <th class="text-left p-2">Status</th>
+              <th class="text-left p-2">Actions</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y text-slate-700">
+            <tr>
+              <td class="p-2 font-mono">SUB-2026-0042</td>
+              <td class="p-2">Google Workspace Business Standard</td>
+              <td class="p-2 text-blue-600">acme.com</td>
+              <td class="p-2 text-center">10</td>
+              <td class="p-2 text-xs">01 Apr 2026 → 31 Mar 2027</td>
+              <td class="p-2"><span class="bg-emerald-100 text-emerald-800 px-2 rounded text-xs">Active</span></td>
+              <td class="p-2 text-xs">
+                <button class="text-blue-600 hover:underline">Renew</button> ·
+                <a href="#prorata" class="text-blue-600 hover:underline">Pro-rata</a>
+              </td>
+            </tr>
+            <tr class="bg-amber-50">
+              <td class="p-2 font-mono">SUB-2026-0067</td>
+              <td class="p-2">Microsoft 365 Business Basic</td>
+              <td class="p-2 text-blue-600">acme.com</td>
+              <td class="p-2 text-center">5</td>
+              <td class="p-2 text-xs">15 Jun 2025 → 15 Jun 2026</td>
+              <td class="p-2"><span class="bg-amber-100 text-amber-800 px-2 rounded text-xs">⏰ 28 days</span></td>
+              <td class="p-2 text-xs">
+                <button class="text-blue-600 hover:underline font-semibold">Renew Now</button> ·
+                <a href="#prorata" class="text-blue-600 hover:underline">Pro-rata</a>
+              </td>
+            </tr>
+            <tr>
+              <td class="p-2 font-mono">SUB-2025-0218</td>
+              <td class="p-2">Zoho One</td>
+              <td class="p-2 text-blue-600">acme.com</td>
+              <td class="p-2 text-center">8</td>
+              <td class="p-2 text-xs">10 Dec 2025 → 10 Dec 2026</td>
+              <td class="p-2"><span class="bg-emerald-100 text-emerald-800 px-2 rounded text-xs">Active</span></td>
+              <td class="p-2 text-xs">
+                <button class="text-blue-600 hover:underline">Renew</button> ·
+                <a href="#prorata" class="text-blue-600 hover:underline">Pro-rata</a>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Recent activity 2-col -->
+      <div class="grid grid-cols-2 gap-3">
+        <!-- Recent quotes -->
+        <div class="bg-white border rounded p-4">
+          <div class="font-semibold text-slate-800 mb-3">📄 Recent Quotes</div>
+          <div class="space-y-2 text-sm">
+            <div class="flex justify-between border-b pb-2">
+              <div>
+                <div class="font-mono text-xs">QQ-2026-0042</div>
+                <div class="text-xs text-slate-500">Cross-sell · 14 May 2026</div>
+              </div>
+              <div class="text-right">
+                <div class="font-semibold">₹1,06,200</div>
+                <span class="text-xs bg-emerald-100 text-emerald-800 px-2 rounded">Accepted</span>
+              </div>
+            </div>
+            <div class="flex justify-between border-b pb-2">
+              <div>
+                <div class="font-mono text-xs">QQ-2026-0011</div>
+                <div class="text-xs text-slate-500">Cross-sell · 02 Feb 2026</div>
+              </div>
+              <div class="text-right">
+                <div class="font-semibold">₹74,400</div>
+                <span class="text-xs bg-blue-100 text-blue-800 px-2 rounded">Pushed to Zoho</span>
+              </div>
+            </div>
+            <div class="flex justify-between">
+              <div>
+                <div class="font-mono text-xs">QQ-2025-0241</div>
+                <div class="text-xs text-slate-500">Cross-sell · 18 Oct 2025</div>
+              </div>
+              <div class="text-right">
+                <div class="font-semibold">₹52,000</div>
+                <span class="text-xs bg-slate-200 text-slate-700 px-2 rounded">Expired</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Recent invoices (from Zoho) -->
+        <div class="bg-white border rounded p-4">
+          <div class="font-semibold text-slate-800 mb-3">🧾 Recent Invoices (Zoho)</div>
+          <div class="space-y-2 text-sm">
+            <div class="flex justify-between border-b pb-2">
+              <div>
+                <div class="font-mono text-xs">INV-2026-0089</div>
+                <div class="text-xs text-slate-500">15 May 2026 · Pro-rata</div>
+              </div>
+              <div class="text-right">
+                <div class="font-semibold">₹46,698</div>
+                <span class="text-xs bg-emerald-100 text-emerald-800 px-2 rounded">Paid</span>
+              </div>
+            </div>
+            <div class="flex justify-between border-b pb-2">
+              <div>
+                <div class="font-mono text-xs">INV-2026-0061</div>
+                <div class="text-xs text-slate-500">12 Mar 2026 · Renewal</div>
+              </div>
+              <div class="text-right">
+                <div class="font-semibold">₹1,06,200</div>
+                <span class="text-xs bg-emerald-100 text-emerald-800 px-2 rounded">Paid</span>
+              </div>
+            </div>
+            <div class="flex justify-between">
+              <div>
+                <div class="font-mono text-xs">INV-2026-0018</div>
+                <div class="text-xs text-slate-500">22 Jan 2026 · Fresh sale</div>
+              </div>
+              <div class="text-right">
+                <div class="font-semibold">₹74,400</div>
+                <span class="text-xs bg-emerald-100 text-emerald-800 px-2 rounded">Paid</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Internal notes -->
+      <div class="bg-white border rounded p-4">
+        <div class="flex justify-between items-center mb-2">
+          <div class="font-semibold text-slate-800">📝 Internal Notes</div>
+          <button class="text-xs text-blue-600 hover:underline">+ Add note</button>
+        </div>
+        <div class="space-y-2 text-sm">
+          <div class="bg-slate-50 p-2 rounded text-xs">
+            <div class="text-slate-500">Hitesh · 02 May 2026</div>
+            <div>Finance team confirmed Q2 budget; expect 5 additional licenses next month — set Pro-rata reminder.</div>
+          </div>
+          <div class="bg-slate-50 p-2 rounded text-xs">
+            <div class="text-slate-500">Hitesh · 14 Mar 2026</div>
+            <div>Customer prefers email-only communication; CC: rakesh@acme.com on all quotes.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p class="text-sm text-slate-500 mt-3 italic">
+      💡 No "+ New Subscription" or "Convert to Customer" CTAs on this page — customer is already in Zoho (PRD §3.2 customer hygiene boundary). All new business flows through the unified Quote Builder via "Send New Quote (Cross-sell)" button.
+    </p>
+  </section>
+
+  <!-- =================================================================
+       14. RENEWAL BATCHES HISTORY
+       ================================================================= -->
+  <section id="renewal-batches" class="screen bg-white rounded-lg shadow p-6">
+    <div class="flex justify-between items-center mb-4 pb-3 border-b-2 border-slate-200">
+      <h2 class="text-2xl font-bold">1️⃣4️⃣ Renewal Batches History</h2>
+      <span class="text-sm text-slate-500">Bulk renewal runs — Subscriptions → "Generate Bulk Quotes" का परिणाम</span>
+    </div>
+
+    <div class="wireframe-box rounded-lg p-4 bg-slate-50 space-y-4">
+
+      <!-- Page header + CTA -->
+      <div class="flex justify-between items-center">
+        <div>
+          <h3 class="text-lg font-bold text-slate-800">📦 Renewal Batches</h3>
+          <p class="text-sm text-slate-500 mt-0.5">हर batch = एक "Generate Bulk Quotes" run में बना एक group (customer + item + billing cycle + month)</p>
+        </div>
+        <a href="#subscriptions" class="bg-purple-600 text-white px-4 py-2 rounded text-sm hover:bg-purple-700 font-semibold">
+          + Generate New Bulk Renewal →
+        </a>
+      </div>
+
+      <!-- Summary stats row -->
+      <div class="grid grid-cols-4 gap-3">
+        <div class="bg-white border rounded p-3">
+          <div class="text-xs text-slate-500">Total Batches</div>
+          <div class="text-2xl font-bold text-slate-800">47</div>
+          <div class="text-xs text-slate-500 mt-1">all time</div>
+        </div>
+        <div class="bg-purple-50 border border-purple-200 rounded p-3">
+          <div class="text-xs text-purple-700">This Month</div>
+          <div class="text-2xl font-bold text-purple-700">8</div>
+          <div class="text-xs text-purple-600 mt-1">June 2026</div>
+        </div>
+        <div class="bg-emerald-50 border border-emerald-200 rounded p-3">
+          <div class="text-xs text-emerald-700">Total Estimates Created</div>
+          <div class="text-2xl font-bold text-emerald-700">47</div>
+          <div class="text-xs text-emerald-600 mt-1">in Zoho Books</div>
+        </div>
+        <div class="bg-blue-50 border border-blue-200 rounded p-3">
+          <div class="text-xs text-blue-700">Total Amount (this month)</div>
+          <div class="text-2xl font-bold text-blue-700">₹48.2L</div>
+          <div class="text-xs text-blue-600 mt-1">across 8 batches</div>
+        </div>
+      </div>
+
+      <!-- Filters bar -->
+      <div class="bg-white border rounded p-3 flex gap-3 flex-wrap items-center">
+        <input type="text" placeholder="🔍 Customer name search..."
+               class="border px-3 py-2 rounded text-sm flex-1 max-w-xs" />
+        <select class="border px-3 py-2 rounded text-sm bg-white">
+          <option>All Billing Cycles</option>
+          <option>Annual</option>
+          <option>Monthly</option>
+          <option>Quarterly</option>
+        </select>
+        <select class="border px-3 py-2 rounded text-sm bg-white">
+          <option>All Time</option>
+          <option>This Month</option>
+          <option>Last Month</option>
+          <option>Last 3 Months</option>
+          <option>Custom Range...</option>
+        </select>
+        <select class="border px-3 py-2 rounded text-sm bg-white">
+          <option>All Items</option>
+          <option>Google Workspace</option>
+          <option>Microsoft 365</option>
+          <option>Zoho One</option>
+        </select>
+        <label class="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
+          <input type="checkbox" /> Annexure only
+        </label>
+        <button class="border border-slate-300 px-3 py-2 rounded text-sm bg-white hover:bg-slate-100">📤 Export CSV</button>
+      </div>
+
+      <!-- Batches Table -->
+      <div class="bg-white border border-slate-300 rounded overflow-hidden">
+        <table class="w-full text-sm">
+          <thead class="bg-slate-100 text-slate-700 text-xs">
+            <tr>
+              <th class="text-left p-3 w-8"></th>
+              <th class="text-left p-3">Generated On</th>
+              <th class="text-left p-3">Customer</th>
+              <th class="text-left p-3">Item / Service</th>
+              <th class="text-left p-3">Billing Cycle</th>
+              <th class="text-right p-3">Domains</th>
+              <th class="text-right p-3">Unit Price</th>
+              <th class="text-right p-3">Total Amount</th>
+              <th class="text-left p-3">Zoho Estimate</th>
+              <th class="text-left p-3">Annexure</th>
+              <th class="text-left p-3">By</th>
+              <th class="text-left p-3">Actions</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y">
+
+            <!-- Row 1 — Expanded (annexure batch) -->
+            <tr class="bg-purple-50">
+              <td class="p-3 text-center cursor-pointer text-purple-700 font-bold">▼</td>
+              <td class="p-3 text-xs">
+                <div class="font-medium">01 Jul 2026</div>
+                <div class="text-slate-500">11:32 AM</div>
+              </td>
+              <td class="p-3">
+                <div class="font-medium">Acme Corporation</div>
+                <div class="text-xs text-slate-500">ExcelTech India</div>
+              </td>
+              <td class="p-3 text-xs">Google Workspace Business Standard</td>
+              <td class="p-3"><span class="bg-blue-100 text-blue-800 px-2 py-0.5 rounded text-xs">Annual</span></td>
+              <td class="p-3 text-right font-semibold text-purple-700">143</td>
+              <td class="p-3 text-right font-mono text-xs">₹9,000</td>
+              <td class="p-3 text-right font-semibold">₹12,87,000</td>
+              <td class="p-3">
+                <a href="#" class="text-blue-600 hover:underline text-xs font-mono">EST-2026-0481</a>
+                <div class="text-xs text-slate-500">↗ Zoho</div>
+              </td>
+              <td class="p-3">
+                <span class="bg-purple-100 text-purple-800 px-2 py-0.5 rounded text-xs font-medium">📎 PDF Ready</span>
+              </td>
+              <td class="p-3 text-xs text-slate-600">Hitesh</td>
+              <td class="p-3">
+                <button class="text-xs text-blue-600 hover:underline block">View Estimate ↗</button>
+                <button class="text-xs text-purple-600 hover:underline block mt-1">⬇ Annexure PDF</button>
+              </td>
+            </tr>
+            <!-- Expanded row: domain list for batch 1 -->
+            <tr class="bg-purple-50">
+              <td colspan="12" class="px-6 pb-4 pt-0">
+                <div class="bg-white border border-purple-200 rounded p-3">
+                  <div class="flex justify-between items-center mb-2">
+                    <div class="text-xs font-semibold text-slate-700">📋 143 Domains in this Batch</div>
+                    <div class="flex gap-2">
+                      <span class="text-xs text-purple-700 bg-purple-100 px-2 py-0.5 rounded">≥100 domains → Annexure auto-generated</span>
+                      <button class="text-xs border border-slate-300 px-2 py-0.5 rounded hover:bg-slate-100">⬇ Download Domain List CSV</button>
+                    </div>
+                  </div>
+                  <div class="text-xs text-slate-600 italic mb-2">
+                    Full domain list is in the Technical Annexure PDF attached to Zoho Estimate EST-2026-0481. Preview (first 5):
+                  </div>
+                  <div class="grid grid-cols-5 gap-1 text-xs font-mono text-slate-700">
+                    <div class="bg-slate-50 border px-2 py-1 rounded">acme-site1.com</div>
+                    <div class="bg-slate-50 border px-2 py-1 rounded">acme-portal.in</div>
+                    <div class="bg-slate-50 border px-2 py-1 rounded">acme-app.io</div>
+                    <div class="bg-slate-50 border px-2 py-1 rounded">acme-cloud.co.in</div>
+                    <div class="bg-slate-50 border px-2 py-1 rounded text-slate-400">+ 138 more...</div>
+                  </div>
+                  <div class="mt-2 grid grid-cols-3 gap-3 text-xs text-slate-600 border-t pt-2">
+                    <div><span class="text-slate-500">Renewal Month:</span> <strong>July 2026</strong></div>
+                    <div><span class="text-slate-500">Batch ID:</span> <code class="bg-slate-100 px-1 rounded">f3a2-91bc-...</code></div>
+                    <div><span class="text-slate-500">Process Status:</span> <span class="bg-amber-100 text-amber-800 px-2 rounded">Renewal_Quoted</span></div>
+                  </div>
+                </div>
+              </td>
+            </tr>
+
+            <!-- Row 2 — Collapsed (small batch, no annexure) -->
+            <tr class="hover:bg-slate-50">
+              <td class="p-3 text-center cursor-pointer text-slate-400">▶</td>
+              <td class="p-3 text-xs">
+                <div class="font-medium">01 Jul 2026</div>
+                <div class="text-slate-500">11:32 AM</div>
+              </td>
+              <td class="p-3">
+                <div class="font-medium">TechCorp Pvt Ltd</div>
+                <div class="text-xs text-slate-500">ExcelTech Cloud</div>
+              </td>
+              <td class="p-3 text-xs">Microsoft 365 Business Premium</td>
+              <td class="p-3"><span class="bg-blue-100 text-blue-800 px-2 py-0.5 rounded text-xs">Annual</span></td>
+              <td class="p-3 text-right font-semibold">25</td>
+              <td class="p-3 text-right font-mono text-xs">₹12,600</td>
+              <td class="p-3 text-right font-semibold">₹3,15,000</td>
+              <td class="p-3">
+                <a href="#" class="text-blue-600 hover:underline text-xs font-mono">EST-2026-0482</a>
+                <div class="text-xs text-slate-500">↗ Zoho</div>
+              </td>
+              <td class="p-3">
+                <span class="text-xs text-slate-400">— None</span>
+              </td>
+              <td class="p-3 text-xs text-slate-600">Hitesh</td>
+              <td class="p-3">
+                <button class="text-xs text-blue-600 hover:underline block">View Estimate ↗</button>
+              </td>
+            </tr>
+
+            <!-- Row 3 — Different billing cycle -->
+            <tr class="hover:bg-slate-50">
+              <td class="p-3 text-center cursor-pointer text-slate-400">▶</td>
+              <td class="p-3 text-xs">
+                <div class="font-medium">28 Jun 2026</div>
+                <div class="text-slate-500">03:15 PM</div>
+              </td>
+              <td class="p-3">
+                <div class="font-medium">StartupCo</div>
+                <div class="text-xs text-slate-500">ExcelTech India</div>
+              </td>
+              <td class="p-3 text-xs">Google Workspace Business Starter</td>
+              <td class="p-3"><span class="bg-amber-100 text-amber-800 px-2 py-0.5 rounded text-xs">Monthly</span></td>
+              <td class="p-3 text-right font-semibold">12</td>
+              <td class="p-3 text-right font-mono text-xs">₹750</td>
+              <td class="p-3 text-right font-semibold">₹9,000</td>
+              <td class="p-3">
+                <a href="#" class="text-blue-600 hover:underline text-xs font-mono">EST-2026-0471</a>
+                <div class="text-xs text-slate-500">↗ Zoho</div>
+              </td>
+              <td class="p-3">
+                <span class="text-xs text-slate-400">— None</span>
+              </td>
+              <td class="p-3 text-xs text-slate-600">Hitesh</td>
+              <td class="p-3">
+                <button class="text-xs text-blue-600 hover:underline block">View Estimate ↗</button>
+              </td>
+            </tr>
+
+            <!-- Row 4 — Large batch with annexure (older) -->
+            <tr class="hover:bg-slate-50">
+              <td class="p-3 text-center cursor-pointer text-slate-400">▶</td>
+              <td class="p-3 text-xs">
+                <div class="font-medium">15 Jun 2026</div>
+                <div class="text-slate-500">10:08 AM</div>
+              </td>
+              <td class="p-3">
+                <div class="font-medium">Globex Industries</div>
+                <div class="text-xs text-slate-500">ExcelTech Cloud</div>
+              </td>
+              <td class="p-3 text-xs">Acronis Cyber Protect Cloud</td>
+              <td class="p-3"><span class="bg-blue-100 text-blue-800 px-2 py-0.5 rounded text-xs">Annual</span></td>
+              <td class="p-3 text-right font-semibold text-purple-700">218</td>
+              <td class="p-3 text-right font-mono text-xs">₹4,500</td>
+              <td class="p-3 text-right font-semibold">₹9,81,000</td>
+              <td class="p-3">
+                <a href="#" class="text-blue-600 hover:underline text-xs font-mono">EST-2026-0412</a>
+                <div class="text-xs text-slate-500">↗ Zoho</div>
+              </td>
+              <td class="p-3">
+                <span class="bg-purple-100 text-purple-800 px-2 py-0.5 rounded text-xs font-medium">📎 PDF Ready</span>
+              </td>
+              <td class="p-3 text-xs text-slate-600">Hitesh</td>
+              <td class="p-3">
+                <button class="text-xs text-blue-600 hover:underline block">View Estimate ↗</button>
+                <button class="text-xs text-purple-600 hover:underline block mt-1">⬇ Annexure PDF</button>
+              </td>
+            </tr>
+
+          </tbody>
+        </table>
+
+        <!-- Pagination -->
+        <div class="bg-slate-50 px-4 py-2 text-xs flex justify-between text-slate-600 border-t">
+          <div>Showing 1–4 of 47 batches</div>
+          <div class="flex gap-1">
+            <button class="border px-2 py-1 rounded">‹ Prev</button>
+            <button class="border px-2 py-1 rounded bg-slate-900 text-white">1</button>
+            <button class="border px-2 py-1 rounded">2</button>
+            <button class="border px-2 py-1 rounded">3</button>
+            <span class="px-1">…</span>
+            <button class="border px-2 py-1 rounded">12</button>
+            <button class="border px-2 py-1 rounded">Next ›</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Legend -->
+      <div class="bg-white border rounded p-3 flex flex-wrap gap-4 text-xs text-slate-600">
+        <div class="font-semibold text-slate-700">Legend:</div>
+        <div class="flex items-center gap-1">
+          <span class="bg-purple-100 text-purple-800 px-2 py-0.5 rounded font-medium">📎 PDF Ready</span>
+          <span>→ ≥100 domains — Technical Annexure PDF attached to Zoho Estimate</span>
+        </div>
+        <div class="flex items-center gap-1">
+          <span class="text-slate-400">— None</span>
+          <span>→ &lt;100 domains — domain list inline in estimate description</span>
+        </div>
+        <div class="flex items-center gap-1">
+          <span class="font-semibold text-purple-700">143</span>
+          <span>→ Purple domain count = bulk batch (annexure generated)</span>
+        </div>
+      </div>
+
+      <!-- Empty state (shown when no batches exist) -->
+      <details class="bg-white border border-dashed border-slate-300 rounded">
+        <summary class="cursor-pointer p-3 text-xs text-slate-500">▶ Preview: Empty state (click to expand)</summary>
+        <div class="p-8 text-center border-t">
+          <div class="text-4xl mb-3">📦</div>
+          <div class="text-slate-600 font-medium">अभी तक कोई Renewal Batch नहीं बनी</div>
+          <div class="text-sm text-slate-500 mt-1 mb-4">Subscriptions page पर जाएँ → subscriptions select करें → "Generate Bulk Quotes" दबाएँ</div>
+          <a href="#subscriptions" class="bg-purple-600 text-white px-4 py-2 rounded text-sm hover:bg-purple-700">
+            Subscriptions पर जाएँ →
+          </a>
+        </div>
+      </details>
+
+    </div>
+
+    <p class="text-sm text-slate-500 mt-3 italic">
+      💡 हर row एक <code class="bg-slate-100 px-1 rounded">RenewalBatch</code> record है। ▶ click करने पर उस batch में शामिल domains और subscription IDs expand होते हैं। ≥100 domains वाले batches में Zoho Estimate से Technical Annexure PDF attached होती है।
+      <br><span class="text-purple-700">API: <code class="bg-slate-100 px-1 rounded">GET /api/subscriptions/renewal-batches</code> (pending implementation)</span>
+    </p>
+  </section>
+
+  <!-- End Note -->
+  <section class="bg-white rounded-lg shadow p-6 text-center">
+    <h2 class="text-xl font-bold mb-3">🎨 Next: High-Fidelity Designs</h2>
+    <p class="text-slate-600 max-w-2xl mx-auto">
+      ये wireframes <strong>structure और flow</strong> demonstrate करते हैं। Phase 1 के Week 1-2 में designer के साथ काम करके:
+    </p>
+    <ul class="text-sm text-slate-600 mt-3 space-y-1">
+      <li>• Final color palette और typography</li>
+      <li>• High-fidelity Figma mockups</li>
+      <li>• Component library (shadcn/ui customization)</li>
+      <li>• Micro-interactions और animations</li>
+      <li>• Mobile responsive variations</li>
+    </ul>
+  </section>
+
+</div>
+
+</body>
+</html>

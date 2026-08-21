@@ -1,0 +1,39 @@
+{
+  "folders": [
+    {
+      "name": "📋 Root (docs + monorepo config)",
+      "path": "."
+    },
+    {
+      "name": "🚀 API (NestJS · :3001)",
+      "path": "apps/api"
+    },
+    {
+      "name": "🎨 Web (Next.js · :3000)",
+      "path": "apps/web"
+    },
+    {
+      "name": "🗄️ Database (Prisma)",
+      "path": "packages/db"
+    }
+  ],
+  "settings": {
+    "//": "Workspace-level overrides — root .vscode/settings.json is the main config; these are tweaks for multi-root mode.",
+    "files.exclude": {
+      "**/node_modules": true,
+      "**/.next": true,
+      "**/dist": true,
+      "**/.turbo": true,
+      "**/tsconfig.tsbuildinfo": true
+    },
+    "git.openRepositoryInParentFolders": "always"
+  },
+  "extensions": {
+    "recommendations": [
+      "prisma.prisma",
+      "bradlc.vscode-tailwindcss",
+      "dbaeumer.vscode-eslint",
+      "esbenp.prettier-vscode"
+    ]
+  }
+}

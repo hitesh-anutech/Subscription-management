@@ -1,0 +1,2153 @@
+# =====================================================================
+# Subscription Management Tool — API Contracts (OpenAPI 3.0)
+# =====================================================================
+# Version: 1.0
+# Date:    14 May 2026
+# Part of: Path B — Pre-Implementation Specification Package
+#
+# This OpenAPI specification defines all REST API endpoints for the
+# Central App. Use this file to:
+#   - Generate TypeScript types/clients (e.g., via openapi-typescript)
+#   - Generate API documentation (e.g., via Swagger UI / Redoc)
+#   - Frontend and backend can parallel-develop with confidence
+#
+# View this file with:
+#   - Swagger UI: https://editor.swagger.io (paste content)
+#   - Redoc:      https://redocly.github.io/redoc/
+# =====================================================================
+
+openapi: 3.0.3
+
+info:
+  title: Subscription Management Tool API
+  description: |
+    REST API for managing subscriptions, leads, quick quotes, and Zoho Books
+    integration. All endpoints require authentication unless marked as public.
+
+    v1.1 additions (15 May 2026) — addresses pre-implementation audit gaps:
+      - PATCH /organizations/{id}, DELETE /organizations/{id}
+      - POST /organizations/{id}/disconnect-zoho, /reconnect-zoho
+      - POST /quick-quotes/{id}/push-to-zoho
+      - POST /public/quote/{token}/view (view tracker)
+      - GET /settings/audit-log + SettingsAuditLogEntry schema
+      - GET /lead-conversions/{id} (poll async conversion)
+      - GET /webhook-events, POST /webhook-events/{id}/retry
+      - Typed /settings/{category} responses (no more `type: object`)
+      - QuickQuote schema: GST breakdown fields, all timestamps, revision tracking
+      - OrgBranding: columnar address (not flat string) + bank fields
+  version: "1.1.0"
+  contact:
+    name: Excel Technologies
+    email: hitesh@exceltechnologies.in
+
+servers:
+  - url: http://localhost:3000/api
+    description: Local development
+  - url: https://app.exceltechnologies.in/api
+    description: Production (self-hosted)
+
+# =====================================================================
+# Security
+# =====================================================================
+security:
+  - BearerAuth: []
+
+# =====================================================================
+# Tags (logical grouping)
+# =====================================================================
+tags:
+  - name: Auth
+    description: Authentication and user session
+  - name: Organizations
+    description: Zoho Books organizations management
+  - name: Customers
+    description: Read-only access to cached Zoho customers
+  - name: Items
+    description: Read-only access to cached Zoho items
+  - name: Leads
+    description: Prospects / un-converted customers (Central-only)
+  - name: Domains
+    description: Domain-to-customer-to-org mapping
+  - name: Subscriptions
+    description: Subscription lifecycle management
+  - name: Quick Quotes
+    description: Quote management (fresh sales — Lead and Cross-sell)
+  - name: Renewal History
+    description: Renewal & Pro-rata events
+  - name: Public Quote
+    description: Public-facing quote view (no auth required)
+  - name: Search
+    description: Universal quick search
+  - name: Settings
+    description: App configuration
+  - name: Webhooks
+    description: Incoming webhooks from Zoho
+
+# =====================================================================
+# Paths
+# =====================================================================
+paths:
+
+  # -------------------------------------------------------------------
+  # Auth
+  # -------------------------------------------------------------------
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Login with email + password
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  minLength: 12
+      responses:
+        '200':
+          description: Success — returns session token
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user: { $ref: '#/components/schemas/User' }
+                  token: { type: string }
+                  expires_at: { type: string, format: date-time }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Logout current session
+      responses:
+        '204':
+          description: Logged out
+
+  /me:
+    get:
+      tags: [Auth]
+      summary: Get current user profile
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  # -------------------------------------------------------------------
+  # Organizations
+  # -------------------------------------------------------------------
+  /organizations:
+    get:
+      tags: [Organizations]
+      summary: List all Zoho organizations
+      responses:
+        '200':
+          description: Organizations list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  organizations:
+                    type: array
+                    items: { $ref: '#/components/schemas/Organization' }
+
+    post:
+      tags: [Organizations]
+      summary: Add a new Zoho organization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, zoho_org_id]
+              properties:
+                name: { type: string, maxLength: 150 }
+                zoho_org_id: { type: string, maxLength: 50 }
+                data_center: { type: string, default: 'in', enum: [in, com, eu, com.au, jp, sa] }
+                base_currency: { type: string, default: 'INR' }
+      responses:
+        '201':
+          description: Organization created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Organization' }
+
+  /organizations/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    patch:
+      tags: [Organizations]
+      summary: Edit organization (name, branding-meta — does not touch OAuth tokens)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, maxLength: 150 }
+                is_active: { type: boolean }
+                metadata: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: Organization updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Organization' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Organizations]
+      summary: Remove organization (soft-delete — sets is_active=false; OAuth tokens revoked)
+      responses:
+        '204':
+          description: Organization removed
+        '409':
+          description: Cannot delete — active subscriptions exist for this org
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /organizations/{id}/connect-zoho:
+    post:
+      tags: [Organizations]
+      summary: Initiate OAuth flow for this org
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: OAuth authorization URL
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  authorize_url: { type: string, format: uri }
+
+  /organizations/{id}/disconnect-zoho:
+    post:
+      tags: [Organizations]
+      summary: Revoke OAuth tokens and disconnect this org from Zoho
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Disconnected (connection_status set to 'disconnected', tokens nulled)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  organization_id: { type: string, format: uuid }
+                  disconnected_at: { type: string, format: date-time }
+
+  /organizations/{id}/reconnect-zoho:
+    post:
+      tags: [Organizations]
+      summary: Re-initiate OAuth flow when tokens have expired/revoked
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: New OAuth authorization URL
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  authorize_url: { type: string, format: uri }
+                  reason: { type: string, description: 'Why reconnect was needed (expired/revoked/error)' }
+
+  /auth/zoho/callback:
+    get:
+      tags: [Organizations]
+      summary: OAuth callback (browser redirect)
+      security: []
+      parameters:
+        - { name: code, in: query, required: true, schema: { type: string } }
+        - { name: state, in: query, required: true, schema: { type: string } }
+      responses:
+        '302':
+          description: Redirect to Settings page with success/error
+
+  /organizations/{id}/sync:
+    post:
+      tags: [Organizations]
+      summary: Manually trigger full sync from Zoho
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '202':
+          description: Sync job queued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job_id: { type: string }
+
+  /organizations/{id}/health:
+    get:
+      tags: [Organizations]
+      summary: Connection health for this org
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Health status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [active, expired, error] }
+                  last_sync_at: { type: string, format: date-time }
+                  token_expires_at: { type: string, format: date-time }
+                  customer_count: { type: integer }
+                  item_count: { type: integer }
+
+  # -------------------------------------------------------------------
+  # Customers (Read-only from Zoho cache)
+  # -------------------------------------------------------------------
+  /customers:
+    get:
+      tags: [Customers]
+      summary: List cached customers across orgs
+      parameters:
+        - { name: organization_id, in: query, schema: { type: string, format: uuid } }
+        - { name: q, in: query, schema: { type: string }, description: "Free-text search" }
+        - { name: page, in: query, schema: { type: integer, default: 1, minimum: 1 } }
+        - { name: per_page, in: query, schema: { type: integer, default: 25, maximum: 100 } }
+      responses:
+        '200':
+          description: Customer list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  customers:
+                    type: array
+                    items: { $ref: '#/components/schemas/CachedCustomer' }
+                  pagination: { $ref: '#/components/schemas/Pagination' }
+
+  /customers/{zohoId}:
+    get:
+      tags: [Customers]
+      summary: Live fetch customer detail from Zoho
+      parameters:
+        - { name: zohoId, in: path, required: true, schema: { type: string } }
+        - { name: organization_id, in: query, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Customer detail (live from Zoho)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ZohoCustomerDetail' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # -------------------------------------------------------------------
+  # Items (Read-only from Zoho cache)
+  # -------------------------------------------------------------------
+  /items:
+    get:
+      tags: [Items]
+      summary: List cached items
+      parameters:
+        - { name: organization_id, in: query, schema: { type: string, format: uuid } }
+        - { name: q, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: Item list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/CachedItem' }
+
+  /items/{zohoId}:
+    get:
+      tags: [Items]
+      summary: Live fetch item detail
+      parameters:
+        - { name: zohoId, in: path, required: true, schema: { type: string } }
+        - { name: organization_id, in: query, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Item detail
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ZohoItemDetail' }
+
+  # -------------------------------------------------------------------
+  # Leads
+  # -------------------------------------------------------------------
+  /leads:
+    get:
+      tags: [Leads]
+      summary: List leads with filters
+      parameters:
+        - { name: status, in: query, schema: { type: string } }
+        - { name: q, in: query, schema: { type: string } }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: per_page, in: query, schema: { type: integer, default: 25 } }
+      responses:
+        '200':
+          description: Lead list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  leads:
+                    type: array
+                    items: { $ref: '#/components/schemas/Lead' }
+                  pagination: { $ref: '#/components/schemas/Pagination' }
+
+    post:
+      tags: [Leads]
+      summary: Create a new lead
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LeadCreateInput' }
+      responses:
+        '201':
+          description: Lead created (may include duplicate warning)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  lead: { $ref: '#/components/schemas/Lead' }
+                  duplicate_warning:
+                    type: object
+                    nullable: true
+                    properties:
+                      matched_lead_id: { type: string, format: uuid }
+                      match_field: { type: string, enum: [email, company_name] }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /leads/{id}:
+    get:
+      tags: [Leads]
+      summary: Get lead with quotes history
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Lead detail
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  lead: { $ref: '#/components/schemas/Lead' }
+                  quotes:
+                    type: array
+                    items: { $ref: '#/components/schemas/QuickQuoteSummary' }
+
+    patch:
+      tags: [Leads]
+      summary: Update lead fields
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LeadUpdateInput' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Lead' }
+
+    delete:
+      tags: [Leads]
+      summary: Archive (soft delete) lead
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '204':
+          description: Archived
+
+  /leads/{id}/convert:
+    post:
+      tags: [Leads]
+      summary: Convert lead to Zoho customer (push to Zoho)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [target_organization_id, quick_quote_id]
+              properties:
+                target_organization_id: { type: string, format: uuid }
+                quick_quote_id:
+                  type: string
+                  format: uuid
+                  description: The accepted quote to convert to estimate in Zoho
+      responses:
+        '202':
+          description: Conversion job queued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  conversion_id: { type: string, format: uuid }
+                  status: { type: string, enum: [queued] }
+        '409':
+          description: Already converted
+
+  /leads/{id}/mark-lost:
+    post:
+      tags: [Leads]
+      summary: Mark lead as lost
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                lost_reason: { type: string }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Lead' }
+
+  # -------------------------------------------------------------------
+  # Domains
+  # -------------------------------------------------------------------
+  /domains:
+    get:
+      tags: [Domains]
+      summary: List domains
+      parameters:
+        - { name: organization_id, in: query, schema: { type: string, format: uuid } }
+        - { name: q, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: Domain list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  domains:
+                    type: array
+                    items: { $ref: '#/components/schemas/Domain' }
+
+    post:
+      tags: [Domains]
+      summary: Create domain mapping
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [domain_name, organization_id, zoho_customer_id]
+              properties:
+                domain_name: { type: string, pattern: '^[a-z0-9.-]+\.[a-z]{2,}$' }
+                organization_id: { type: string, format: uuid }
+                zoho_customer_id: { type: string }
+                notes: { type: string }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Domain' }
+
+  /domains/{id}:
+    get:
+      tags: [Domains]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Domain detail with subscriptions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  domain: { $ref: '#/components/schemas/Domain' }
+                  subscriptions:
+                    type: array
+                    items: { $ref: '#/components/schemas/SubscriptionSummary' }
+
+    patch:
+      tags: [Domains]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                organization_id: { type: string, format: uuid }
+                zoho_customer_id: { type: string }
+                status: { type: string, enum: [active, inactive, suspended] }
+                notes: { type: string }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Domain' }
+
+  /domains/resolve:
+    get:
+      tags: [Domains]
+      summary: Resolve domain to org and customer
+      parameters:
+        - { name: domain, in: query, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Resolved
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Domain' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # -------------------------------------------------------------------
+  # Subscriptions
+  # -------------------------------------------------------------------
+  /subscriptions:
+    get:
+      tags: [Subscriptions]
+      summary: List subscriptions with filters
+      parameters:
+        - { name: organization_id, in: query, schema: { type: string, format: uuid } }
+        - { name: lifecycle_status, in: query, schema: { type: string } }
+        - { name: process_status, in: query, schema: { type: string } }
+        - { name: domain, in: query, schema: { type: string } }
+        - { name: expiring_within_days, in: query, schema: { type: integer } }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: per_page, in: query, schema: { type: integer, default: 25 } }
+        - { name: sort, in: query, schema: { type: string, enum: [next_renewal_date, end_date, created_at] } }
+      responses:
+        '200':
+          description: Subscription list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subscriptions:
+                    type: array
+                    items: { $ref: '#/components/schemas/Subscription' }
+                  pagination: { $ref: '#/components/schemas/Pagination' }
+
+  /subscriptions/{id}:
+    get:
+      tags: [Subscriptions]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Subscription detail with renewal history
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subscription: { $ref: '#/components/schemas/Subscription' }
+                  renewal_history:
+                    type: array
+                    items: { $ref: '#/components/schemas/RenewalHistoryEvent' }
+
+    patch:
+      tags: [Subscriptions]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                auto_renew: { type: boolean }
+                next_renewal_price: { type: number }
+                notes: { type: string }
+                process_status: { type: string }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Subscription' }
+
+  /subscriptions/{id}/generate-renewal-quote:
+    post:
+      tags: [Subscriptions]
+      summary: Generate Renewal Quote (Quote Type 3)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                quantity: { type: number, description: "Override quantity (default = current)" }
+                price: { type: number, description: "Override price (default = next_renewal_price)" }
+                service_start_date: { type: string, format: date }
+                service_end_date: { type: string, format: date }
+                notes_to_customer: { type: string }
+      responses:
+        '202':
+          description: Quote generation job queued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  renewal_history_id: { type: string, format: uuid }
+                  job_id: { type: string }
+
+  /subscriptions/{id}/generate-prorata-quote:
+    post:
+      tags: [Subscriptions]
+      summary: Generate Pro-rata Quote (Quote Type 4)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [additional_licenses, effective_date]
+              properties:
+                additional_licenses: { type: number, minimum: 1 }
+                effective_date: { type: string, format: date }
+                notes_to_customer: { type: string }
+      responses:
+        '202':
+          description: Pro-rata quote generation queued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  renewal_history_id: { type: string, format: uuid }
+                  prorata_preview:
+                    type: object
+                    properties:
+                      period_days: { type: integer }
+                      per_license_daily_rate: { type: number }
+                      subtotal: { type: number }
+                      tax: { type: number }
+                      total: { type: number }
+
+  /subscriptions/{id}/cancel:
+    post:
+      tags: [Subscriptions]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string }
+      responses:
+        '200':
+          description: Cancelled
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Subscription' }
+
+  # -------------------------------------------------------------------
+  # Quick Quotes
+  # -------------------------------------------------------------------
+  /quick-quotes:
+    get:
+      tags: [Quick Quotes]
+      summary: List quick quotes with filters
+      parameters:
+        - { name: customer_type, in: query, schema: { type: string, enum: [lead, existing] } }
+        - { name: status, in: query, schema: { type: string } }
+        - { name: organization_id, in: query, schema: { type: string, format: uuid } }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: per_page, in: query, schema: { type: integer, default: 25 } }
+      responses:
+        '200':
+          description: Quick Quote list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  quotes:
+                    type: array
+                    items: { $ref: '#/components/schemas/QuickQuote' }
+                  pagination: { $ref: '#/components/schemas/Pagination' }
+
+    post:
+      tags: [Quick Quotes]
+      summary: Create Quick Quote (draft)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/QuickQuoteCreateInput' }
+      responses:
+        '201':
+          description: Draft quote created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QuickQuote' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /quick-quotes/{id}:
+    get:
+      tags: [Quick Quotes]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Quote detail with line items
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  quote: { $ref: '#/components/schemas/QuickQuote' }
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/QuickQuoteItem' }
+
+    patch:
+      tags: [Quick Quotes]
+      summary: Update quote (Draft only)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/QuickQuoteUpdateInput' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QuickQuote' }
+        '409':
+          description: Cannot edit quote in current status
+
+  /quick-quotes/{id}/items:
+    post:
+      tags: [Quick Quotes]
+      summary: Add line item
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/QuickQuoteItemInput' }
+      responses:
+        '201':
+          description: Line item added
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QuickQuoteItem' }
+
+  /quick-quotes/{id}/items/{itemId}:
+    patch:
+      tags: [Quick Quotes]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: itemId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/QuickQuoteItemInput' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QuickQuoteItem' }
+
+    delete:
+      tags: [Quick Quotes]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: itemId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '204':
+          description: Removed
+
+  /quick-quotes/{id}/generate-pdf:
+    post:
+      tags: [Quick Quotes]
+      summary: Generate (or regenerate) PDF
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: PDF generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pdf_url: { type: string, format: uri }
+                  generated_at: { type: string, format: date-time }
+
+  /quick-quotes/{id}/send:
+    post:
+      tags: [Quick Quotes]
+      summary: Send quote (Mode A → Zoho, Mode B → public link email)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email_subject_override: { type: string }
+                email_body_override: { type: string }
+                cc_emails: { type: array, items: { type: string, format: email } }
+      responses:
+        '202':
+          description: Send job queued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job_id: { type: string }
+                  public_token: { type: string, nullable: true, description: "Only for Lead mode" }
+                  zoho_estimate_id: { type: string, nullable: true, description: "Only for Existing customer mode" }
+
+  /quick-quotes/{id}/push-to-zoho:
+    post:
+      tags: [Quick Quotes]
+      summary: Push a Lead-mode quote to Zoho as Estimate after acceptance (PRD §7.1)
+      description: |
+        Used post-acceptance for Lead Quotes (Type 1) — after lead is converted, the quote
+        is mirrored into Zoho as an Estimate. Idempotent via `cf_central_quote_id` pre-check
+        on Zoho side (per Zoho Spec §15.4).
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '202':
+          description: Push job queued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job_id: { type: string }
+                  zoho_estimate_id: { type: string, nullable: true, description: "Set if already pushed (idempotent reuse)" }
+        '409':
+          description: Quote not in pushable state (e.g., still Draft)
+
+  /quick-quotes/{id}/revise:
+    post:
+      tags: [Quick Quotes]
+      summary: Create a revision of this quote
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '201':
+          description: New draft quote created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QuickQuote' }
+
+  /quick-quotes/{id}/cancel:
+    post:
+      tags: [Quick Quotes]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Cancelled
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QuickQuote' }
+
+  # -------------------------------------------------------------------
+  # Public Quote (No Auth)
+  # -------------------------------------------------------------------
+  /public/quote/{token}:
+    get:
+      tags: [Public Quote]
+      summary: View quote via public token (no auth)
+      security: []
+      parameters:
+        - { name: token, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Quote view data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  quote: { $ref: '#/components/schemas/PublicQuoteView' }
+                  branding: { $ref: '#/components/schemas/OrgBranding' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '410':
+          description: Token expired
+
+  /public/quote/{token}/view:
+    post:
+      tags: [Public Quote]
+      summary: Track that the public quote link was viewed (increments view_count)
+      description: |
+        Called by the public viewer page on first paint. Updates `viewed_at` (first view only)
+        and increments `view_count`. Fires `estimate_viewed` style notification to the sales user.
+      security: []
+      parameters:
+        - { name: token, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: View recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  view_count: { type: integer }
+                  first_viewed_at: { type: string, format: date-time }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '410': { description: Token expired }
+
+  /public/quote/{token}/accept:
+    post:
+      tags: [Public Quote]
+      security: []
+      parameters:
+        - { name: token, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [accepted] }
+
+  /public/quote/{token}/reject:
+    post:
+      tags: [Public Quote]
+      security: []
+      parameters:
+        - { name: token, in: path, required: true, schema: { type: string } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                rejection_reason: { type: string }
+      responses:
+        '200':
+          description: Rejected
+
+  # -------------------------------------------------------------------
+  # Renewal History
+  # -------------------------------------------------------------------
+  /renewal-history:
+    get:
+      tags: [Renewal History]
+      parameters:
+        - { name: subscription_id, in: query, schema: { type: string, format: uuid } }
+        - { name: status, in: query, schema: { type: string } }
+        - { name: business_type, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: Renewal history events
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  events:
+                    type: array
+                    items: { $ref: '#/components/schemas/RenewalHistoryEvent' }
+
+  /renewal-history/{id}:
+    get:
+      tags: [Renewal History]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Event detail
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RenewalHistoryEvent' }
+
+  # -------------------------------------------------------------------
+  # Universal Search
+  # -------------------------------------------------------------------
+  /search:
+    get:
+      tags: [Search]
+      summary: Universal search across all entities
+      parameters:
+        - { name: q, in: query, required: true, schema: { type: string, minLength: 2 } }
+        - name: types
+          in: query
+          schema:
+            type: array
+            items: { type: string, enum: [lead, customer, domain, subscription, quick_quote, invoice] }
+          style: form
+          explode: false
+        - { name: limit, in: query, schema: { type: integer, default: 20 } }
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items: { $ref: '#/components/schemas/SearchResult' }
+                  total: { type: integer }
+
+  /search/suggestions:
+    get:
+      tags: [Search]
+      summary: Auto-complete suggestions
+      parameters:
+        - { name: q, in: query, required: true, schema: { type: string, minLength: 1 } }
+      responses:
+        '200':
+          description: Suggestions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  suggestions:
+                    type: array
+                    items: { type: string }
+
+  # -------------------------------------------------------------------
+  # Settings
+  # -------------------------------------------------------------------
+  /settings:
+    get:
+      tags: [Settings]
+      summary: Get all settings (grouped by category)
+      responses:
+        '200':
+          description: All settings
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SettingsAllResponse' }
+
+  /settings/{category}:
+    get:
+      tags: [Settings]
+      parameters:
+        - { name: category, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Category settings
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SettingsCategoryResponse' }
+
+    patch:
+      tags: [Settings]
+      parameters:
+        - { name: category, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: |
+                Map of setting_key → setting_value for the given category. Server validates
+                each key exists with the correct value_type. Insert into settings_audit_log
+                on success.
+              additionalProperties: true
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SettingsCategoryResponse' }
+
+  /settings/test-email:
+    post:
+      tags: [Settings]
+      summary: Send test email to verify config
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [to_email]
+              properties:
+                to_email: { type: string, format: email }
+      responses:
+        '200':
+          description: Email sent
+
+  /settings/test-zoho-connection/{orgId}:
+    post:
+      tags: [Settings]
+      parameters:
+        - { name: orgId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Connection test result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  org_name: { type: string }
+                  error: { type: string, nullable: true }
+
+  /settings/email-templates:
+    get:
+      tags: [Settings]
+      responses:
+        '200':
+          description: Email templates list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  templates:
+                    type: array
+                    items: { $ref: '#/components/schemas/EmailTemplate' }
+
+  /settings/email-templates/{id}:
+    patch:
+      tags: [Settings]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EmailTemplateUpdateInput' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmailTemplate' }
+
+  /settings/master-data/{listType}:
+    get:
+      tags: [Settings]
+      parameters:
+        - { name: listType, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: List items
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/MasterDataItem' }
+
+    patch:
+      tags: [Settings]
+      parameters:
+        - { name: listType, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                items:
+                  type: array
+                  items: { $ref: '#/components/schemas/MasterDataItem' }
+      responses:
+        '200':
+          description: Updated
+
+  /settings/audit-log:
+    get:
+      tags: [Settings]
+      summary: Settings change history (PRD §5A.1 audit requirement)
+      parameters:
+        - { name: entity_type, in: query, schema: { type: string, enum: [app_settings, org_settings, email_templates, master_data_lists, organizations, users] } }
+        - { name: user_id, in: query, schema: { type: string, format: uuid } }
+        - { name: category, in: query, schema: { type: string } }
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, default: 50 } }
+      responses:
+        '200':
+          description: Audit log entries (paginated, newest first)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  entries:
+                    type: array
+                    items: { $ref: '#/components/schemas/SettingsAuditLogEntry' }
+                  pagination: { $ref: '#/components/schemas/Pagination' }
+
+  /settings/system-health:
+    get:
+      tags: [Settings]
+      responses:
+        '200':
+          description: System health
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SystemHealth' }
+
+  # -------------------------------------------------------------------
+  # Lead Conversions (async job poll)
+  # -------------------------------------------------------------------
+  /lead-conversions/{id}:
+    get:
+      tags: [Leads]
+      summary: Poll a lead-conversion job result (returned as 202 from /leads/{id}/convert)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Conversion job status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LeadConversion' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /lead-conversions:
+    get:
+      tags: [Leads]
+      summary: List recent conversion attempts (admin diagnostic)
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [pending, success, failed, partial] } }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, default: 50 } }
+      responses:
+        '200':
+          description: Conversion attempts list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  conversions:
+                    type: array
+                    items: { $ref: '#/components/schemas/LeadConversion' }
+                  pagination: { $ref: '#/components/schemas/Pagination' }
+
+  # -------------------------------------------------------------------
+  # Webhook Events (admin diagnostic / replay)
+  # -------------------------------------------------------------------
+  /webhook-events:
+    get:
+      tags: [Webhooks]
+      summary: List webhook events (PRD §5A.3.13 Failed jobs replay interface)
+      parameters:
+        - { name: organization_id, in: query, schema: { type: string, format: uuid } }
+        - { name: processing_status, in: query, schema: { type: string, enum: [pending, processing, success, failed] } }
+        - { name: event_type, in: query, schema: { type: string } }
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, default: 50 } }
+      responses:
+        '200':
+          description: Webhook events list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  events:
+                    type: array
+                    items: { $ref: '#/components/schemas/WebhookEvent' }
+                  pagination: { $ref: '#/components/schemas/Pagination' }
+
+  /webhook-events/{id}/retry:
+    post:
+      tags: [Webhooks]
+      summary: Manually retry a failed webhook event
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '202':
+          description: Retry queued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job_id: { type: string }
+        '409':
+          description: Event not in failed state
+
+  # -------------------------------------------------------------------
+  # Webhooks (Incoming from Zoho — no auth, signature verification)
+  # -------------------------------------------------------------------
+  /webhooks/zoho/contacts:
+    post:
+      tags: [Webhooks]
+      security: []
+      summary: Zoho customer create/update webhook
+      parameters:
+        - { name: X-Webhook-Secret, in: header, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        '204':
+          description: Accepted
+
+  /webhooks/zoho/items:
+    post:
+      tags: [Webhooks]
+      security: []
+      parameters:
+        - { name: X-Webhook-Secret, in: header, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        '204':
+          description: Accepted
+
+  /webhooks/zoho/estimates:
+    post:
+      tags: [Webhooks]
+      security: []
+      parameters:
+        - { name: X-Webhook-Secret, in: header, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        '204':
+          description: Accepted
+
+  /webhooks/zoho/invoices:
+    post:
+      tags: [Webhooks]
+      security: []
+      parameters:
+        - { name: X-Webhook-Secret, in: header, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        '204':
+          description: Accepted
+
+  /webhooks/zoho/payments:
+    post:
+      tags: [Webhooks]
+      security: []
+      parameters:
+        - { name: X-Webhook-Secret, in: header, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        '204':
+          description: Accepted
+
+# =====================================================================
+# Components — Schemas
+# =====================================================================
+components:
+
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid auth
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    ValidationError:
+      description: Validation failed
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ValidationErrorResponse' }
+
+  schemas:
+
+    # -----------------------------------------------------------------
+    # Shared
+    # -----------------------------------------------------------------
+    Pagination:
+      type: object
+      properties:
+        page: { type: integer }
+        per_page: { type: integer }
+        total: { type: integer }
+        has_more: { type: boolean }
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code: { type: string }
+            message: { type: string }
+            details: { type: object, nullable: true }
+
+    ValidationErrorResponse:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code: { type: string, example: validation_failed }
+            message: { type: string }
+            fields:
+              type: array
+              items:
+                type: object
+                properties:
+                  field: { type: string }
+                  message: { type: string }
+
+    # -----------------------------------------------------------------
+    # User
+    # -----------------------------------------------------------------
+    User:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        name: { type: string }
+        role: { type: string, enum: [Admin, Sales, Manager, Viewer] }
+
+    # -----------------------------------------------------------------
+    # Organization
+    # -----------------------------------------------------------------
+    Organization:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        zoho_org_id: { type: string }
+        data_center: { type: string }
+        base_currency: { type: string }
+        connection_status: { type: string, enum: [active, expired, revoked, error, disconnected] }
+        last_sync_at: { type: string, format: date-time, nullable: true }
+        is_active: { type: boolean }
+
+    # -----------------------------------------------------------------
+    # Cached Customer / Item
+    # -----------------------------------------------------------------
+    CachedCustomer:
+      type: object
+      properties:
+        zoho_id: { type: string }
+        organization_id: { type: string, format: uuid }
+        display_name: { type: string }
+        email: { type: string, format: email, nullable: true }
+        phone: { type: string, nullable: true }
+        gstin: { type: string, nullable: true }
+        last_synced_at: { type: string, format: date-time }
+
+    CachedItem:
+      type: object
+      properties:
+        zoho_id: { type: string }
+        organization_id: { type: string, format: uuid }
+        display_name: { type: string }
+        last_synced_at: { type: string, format: date-time }
+        extra:
+          type: object
+          properties:
+            rate: { type: number }
+            tax_percentage: { type: number }
+            hsn_or_sac: { type: string }
+
+    ZohoCustomerDetail:
+      type: object
+      description: Live-fetched detail from Zoho
+      additionalProperties: true
+
+    ZohoItemDetail:
+      type: object
+      additionalProperties: true
+
+    # -----------------------------------------------------------------
+    # Lead
+    # -----------------------------------------------------------------
+    Lead:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        lead_number: { type: string }
+        company_name: { type: string }
+        contact_name: { type: string, nullable: true }
+        email: { type: string, format: email }
+        phone: { type: string, nullable: true }
+        primary_domain: { type: string, nullable: true }
+        gstin: { type: string, nullable: true }
+        status:
+          type: string
+          enum: [New, Contacted, Quoted, Negotiating, Won, Converted, Lost, Archived]
+        target_organization_id: { type: string, format: uuid, nullable: true }
+        estimated_value: { type: number, nullable: true }
+        estimated_close_date: { type: string, format: date, nullable: true }
+        converted_to_zoho_customer_id: { type: string, nullable: true }
+        converted_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    LeadCreateInput:
+      type: object
+      required: [company_name, email]
+      properties:
+        company_name: { type: string, maxLength: 250 }
+        contact_name: { type: string, maxLength: 200 }
+        email: { type: string, format: email }
+        phone: { type: string }
+        designation: { type: string }
+        primary_domain: { type: string }
+        industry: { type: string }
+        lead_source: { type: string }
+        gstin: { type: string }
+        pan: { type: string }
+        billing_address_line1: { type: string }
+        city: { type: string }
+        state: { type: string }
+        state_code: { type: string }
+        postal_code: { type: string }
+        country: { type: string, default: India }
+        target_organization_id: { type: string, format: uuid }
+        estimated_close_date: { type: string, format: date }
+        estimated_value: { type: number }
+        notes: { type: string }
+
+    LeadUpdateInput:
+      type: object
+      properties:
+        company_name: { type: string }
+        contact_name: { type: string }
+        email: { type: string, format: email }
+        phone: { type: string }
+        primary_domain: { type: string }
+        status: { type: string }
+        target_organization_id: { type: string, format: uuid }
+        notes: { type: string }
+
+    # -----------------------------------------------------------------
+    # Domain
+    # -----------------------------------------------------------------
+    Domain:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        domain_name: { type: string }
+        organization_id: { type: string, format: uuid }
+        zoho_customer_id: { type: string }
+        zoho_customer_name: { type: string, nullable: true }
+        status: { type: string, enum: [active, inactive, transferred, lost] }
+        notes: { type: string, nullable: true }
+
+    # -----------------------------------------------------------------
+    # Subscription
+    # -----------------------------------------------------------------
+    Subscription:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        subscription_number: { type: string }
+        organization_id: { type: string, format: uuid }
+        domain_id: { type: string, format: uuid }
+        zoho_customer_id: { type: string }
+        zoho_customer_name: { type: string }
+        zoho_item_id: { type: string }
+        zoho_item_name: { type: string }
+        quantity: { type: number }
+        subscription_price: { type: number }
+        next_renewal_price: { type: number, nullable: true }
+        billing_cycle: { type: string }
+        start_date: { type: string, format: date }
+        end_date: { type: string, format: date }
+        next_renewal_date: { type: string, format: date, nullable: true }
+        auto_renew: { type: boolean }
+        lifecycle_status: { type: string }
+        process_status: { type: string }
+        business_type: { type: string }
+        last_quote_number: { type: string, nullable: true }
+        last_invoice_number: { type: string, nullable: true }
+        origin_lead_id: { type: string, format: uuid, nullable: true }
+        origin_quick_quote_id: { type: string, format: uuid, nullable: true }
+
+    SubscriptionSummary:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        subscription_number: { type: string }
+        zoho_item_name: { type: string }
+        quantity: { type: number }
+        end_date: { type: string, format: date }
+        lifecycle_status: { type: string }
+
+    # -----------------------------------------------------------------
+    # Renewal History
+    # -----------------------------------------------------------------
+    RenewalHistoryEvent:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        subscription_id: { type: string, format: uuid }
+        business_type: { type: string, enum: [Renewal, Pro-rata, Fresh] }
+        service_start_date: { type: string, format: date, nullable: true }
+        service_end_date: { type: string, format: date, nullable: true }
+        quantity: { type: number }
+        selling_price: { type: number }
+        subtotal_amount: { type: number }
+        renewal_status: { type: string, enum: [Quoted, Invoiced, Paid, Cancelled, Expired] }
+        quote_number: { type: string, nullable: true }
+        invoice_number: { type: string, nullable: true }
+        invoice_date: { type: string, format: date, nullable: true }
+        payment_date: { type: string, format: date, nullable: true }
+        created_at: { type: string, format: date-time }
+
+    # -----------------------------------------------------------------
+    # Quick Quote
+    # -----------------------------------------------------------------
+    QuickQuote:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        quote_number: { type: string }
+        customer_type: { type: string, enum: [lead, existing] }
+        lead_id: { type: string, format: uuid, nullable: true }
+        zoho_customer_id: { type: string, nullable: true }
+        zoho_customer_name: { type: string, nullable: true }
+        target_organization_id: { type: string, format: uuid }
+        quote_date: { type: string, format: date }
+        validity_days: { type: integer }
+        expiry_date: { type: string, format: date }
+        subtotal: { type: number }
+        discount_amount: { type: number }
+        tax_amount: { type: number }
+        total_amount: { type: number }
+        currency: { type: string }
+        # GST breakdown (India tax compliance — required on quote PDFs)
+        is_intra_state: { type: boolean, nullable: true }
+        cgst_rate: { type: number, nullable: true }
+        sgst_rate: { type: number, nullable: true }
+        igst_rate: { type: number, nullable: true }
+        status:
+          type: string
+          enum: [Draft, Sent, Viewed, Accepted, Rejected, Expired, Revised, Pushed_To_Zoho, Cancelled]
+        sent_at: { type: string, format: date-time, nullable: true }
+        viewed_at: { type: string, format: date-time, nullable: true }
+        view_count: { type: integer }
+        accepted_at: { type: string, format: date-time, nullable: true }
+        rejected_at: { type: string, format: date-time, nullable: true }
+        rejection_reason: { type: string, nullable: true }
+        public_token: { type: string, nullable: true, description: "Only set for Lead-mode quotes" }
+        public_token_expires_at: { type: string, format: date-time, nullable: true }
+        revision_of_quote_id: { type: string, format: uuid, nullable: true }
+        zoho_estimate_id: { type: string, nullable: true }
+        zoho_estimate_number: { type: string, nullable: true }
+        pushed_to_zoho_at: { type: string, format: date-time, nullable: true }
+        pdf_storage_path: { type: string, nullable: true }
+        pdf_generated_at: { type: string, format: date-time, nullable: true }
+        terms_and_conditions: { type: string }
+        notes_to_customer: { type: string }
+        internal_notes: { type: string }
+        created_by_user_id: { type: string, format: uuid, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    QuickQuoteSummary:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        quote_number: { type: string }
+        status: { type: string }
+        total_amount: { type: number }
+        quote_date: { type: string, format: date }
+        expiry_date: { type: string, format: date }
+
+    QuickQuoteCreateInput:
+      type: object
+      required: [customer_type, target_organization_id]
+      properties:
+        customer_type: { type: string, enum: [lead, existing] }
+        lead_id:
+          type: string
+          format: uuid
+          description: "Required when customer_type = 'lead'"
+        zoho_customer_id:
+          type: string
+          description: "Required when customer_type = 'existing'"
+        target_organization_id: { type: string, format: uuid }
+        validity_days: { type: integer, default: 15 }
+        terms_and_conditions: { type: string }
+        notes_to_customer: { type: string }
+        internal_notes: { type: string }
+
+    QuickQuoteUpdateInput:
+      type: object
+      properties:
+        validity_days: { type: integer }
+        terms_and_conditions: { type: string }
+        notes_to_customer: { type: string }
+        internal_notes: { type: string }
+
+    QuickQuoteItem:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        line_order: { type: integer }
+        zoho_item_id: { type: string, nullable: true }
+        item_name: { type: string }
+        item_description: { type: string, nullable: true }
+        hsn_or_sac: { type: string, nullable: true }
+        quantity: { type: number }
+        unit_price: { type: number }
+        discount_percent: { type: number }
+        discount_amount: { type: number }
+        tax_rate: { type: number }
+        line_subtotal: { type: number }
+        line_tax: { type: number }
+        line_total: { type: number }
+        is_subscription: { type: boolean }
+        billing_cycle: { type: string, nullable: true }
+        service_start_date: { type: string, format: date, nullable: true }
+        service_end_date: { type: string, format: date, nullable: true }
+        primary_domain: { type: string, nullable: true }
+
+    QuickQuoteItemInput:
+      type: object
+      required: [item_name, quantity, unit_price]
+      properties:
+        zoho_item_id: { type: string }
+        item_name: { type: string }
+        item_description: { type: string }
+        hsn_or_sac: { type: string }
+        quantity: { type: number, minimum: 0.01 }
+        unit_price: { type: number, minimum: 0 }
+        discount_percent: { type: number, minimum: 0, maximum: 100 }
+        tax_rate: { type: number, minimum: 0, maximum: 100, default: 18 }
+        is_subscription: { type: boolean, default: true }
+        billing_cycle: { type: string }
+        service_start_date: { type: string, format: date }
+        service_end_date: { type: string, format: date }
+        primary_domain: { type: string }
+
+    # -----------------------------------------------------------------
+    # Public Quote View
+    # -----------------------------------------------------------------
+    PublicQuoteView:
+      type: object
+      properties:
+        quote_number: { type: string }
+        quote_date: { type: string, format: date }
+        expiry_date: { type: string, format: date }
+        customer_name: { type: string }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/QuickQuoteItem' }
+        subtotal: { type: number }
+        tax_amount: { type: number }
+        total_amount: { type: number }
+        currency: { type: string }
+        terms_and_conditions: { type: string }
+        notes_to_customer: { type: string }
+        status: { type: string }
+        pdf_url: { type: string, format: uri }
+
+    OrgBranding:
+      type: object
+      properties:
+        legal_name: { type: string }
+        display_name: { type: string, nullable: true }
+        logo_url: { type: string, format: uri, nullable: true }
+        brand_color: { type: string }
+        # Columnar address mirrors org_settings columns (PRD §5A.3.3 + schema.sql §7.2)
+        address_line1: { type: string, nullable: true }
+        address_line2: { type: string, nullable: true }
+        city: { type: string, nullable: true }
+        state: { type: string, nullable: true }
+        state_code: { type: string, nullable: true }
+        postal_code: { type: string, nullable: true }
+        country: { type: string, nullable: true }
+        phone: { type: string, nullable: true }
+        email: { type: string, format: email, nullable: true }
+        website: { type: string, format: uri, nullable: true }
+        gstin: { type: string, nullable: true }
+        pan: { type: string, nullable: true }
+        # PDF footer / payment details
+        pdf_footer_text: { type: string, nullable: true }
+        bank_name: { type: string, nullable: true }
+        bank_account_number: { type: string, nullable: true }
+        bank_ifsc: { type: string, nullable: true }
+
+    # -----------------------------------------------------------------
+    # Search
+    # -----------------------------------------------------------------
+    SearchResult:
+      type: object
+      properties:
+        type: { type: string, enum: [lead, customer, domain, subscription, quick_quote, invoice] }
+        id: { type: string }
+        title: { type: string }
+        subtitle: { type: string }
+        meta: { type: object }
+        url: { type: string }
+
+    # -----------------------------------------------------------------
+    # Settings — Email Template, Master Data
+    # -----------------------------------------------------------------
+    EmailTemplate:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        organization_id: { type: string, format: uuid, nullable: true }
+        template_key: { type: string }
+        template_name: { type: string }
+        category: { type: string }
+        language: { type: string }
+        subject: { type: string }
+        body_html: { type: string }
+        body_text: { type: string, nullable: true }
+        available_placeholders:
+          type: array
+          items: { type: string }
+        is_active: { type: boolean }
+        is_system: { type: boolean }
+
+    EmailTemplateUpdateInput:
+      type: object
+      properties:
+        template_name: { type: string }
+        subject: { type: string }
+        body_html: { type: string }
+        body_text: { type: string }
+        is_active: { type: boolean }
+
+    MasterDataItem:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        list_type: { type: string }
+        item_value: { type: string }
+        item_label: { type: string, nullable: true }
+        display_order: { type: integer }
+        is_active: { type: boolean }
+        is_system: { type: boolean }
+
+    SystemHealth:
+      type: object
+      properties:
+        organizations:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string, format: uuid }
+              name: { type: string }
+              connection_status: { type: string }
+              last_sync_at: { type: string, format: date-time, nullable: true }
+        background_jobs:
+          type: object
+          properties:
+            pending: { type: integer }
+            processing: { type: integer }
+            failed: { type: integer }
+        webhook_events_last_24h:
+          type: object
+          properties:
+            processed: { type: integer }
+            failed: { type: integer }
+        database:
+          type: object
+          properties:
+            leads: { type: integer }
+            subscriptions: { type: integer }
+            quick_quotes: { type: integer }
+        cache:
+          type: object
+          properties:
+            hit_rate: { type: number }
+            stale_records: { type: integer }
+
+    # -----------------------------------------------------------------
+    # Settings — Typed responses (replaces untyped /settings/{category})
+    # -----------------------------------------------------------------
+    AppSetting:
+      type: object
+      properties:
+        category: { type: string }
+        setting_key: { type: string }
+        setting_value: {}                       # JSON — could be string|number|boolean|array|object
+        value_type: { type: string, enum: [string, number, boolean, json, array, date] }
+        description: { type: string, nullable: true }
+        is_sensitive: { type: boolean }
+        is_system: { type: boolean }
+        updated_by_user_id: { type: string, format: uuid, nullable: true }
+        updated_at: { type: string, format: date-time }
+
+    SettingsCategoryResponse:
+      type: object
+      description: |
+        Typed response for GET /settings/{category}. Returns all settings within the category.
+      properties:
+        category: { type: string }
+        settings:
+          type: array
+          items: { $ref: '#/components/schemas/AppSetting' }
+
+    SettingsAllResponse:
+      type: object
+      description: Typed response for GET /settings — all categories grouped.
+      properties:
+        categories:
+          type: array
+          items:
+            type: object
+            properties:
+              category: { type: string }
+              count: { type: integer }
+              settings:
+                type: array
+                items: { $ref: '#/components/schemas/AppSetting' }
+
+    # -----------------------------------------------------------------
+    # Settings — Audit Log
+    # -----------------------------------------------------------------
+    SettingsAuditLogEntry:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        entity_type:
+          type: string
+          enum: [app_settings, org_settings, email_templates, master_data_lists, organizations, users]
+        entity_id: { type: string, format: uuid, nullable: true }
+        setting_category: { type: string, nullable: true }
+        setting_key: { type: string, nullable: true }
+        user_id: { type: string, format: uuid, nullable: true }
+        user_email_snapshot: { type: string, format: email, nullable: true }
+        action: { type: string, enum: [create, update, delete] }
+        old_value: { nullable: true }
+        new_value: { nullable: true }
+        change_summary: { type: string, nullable: true }
+        ip_address: { type: string, nullable: true }
+        user_agent: { type: string, nullable: true }
+        request_id: { type: string, format: uuid, nullable: true }
+        created_at: { type: string, format: date-time }
+
+    # -----------------------------------------------------------------
+    # Lead Conversion (async job result)
+    # -----------------------------------------------------------------
+    LeadConversion:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        lead_id: { type: string, format: uuid }
+        quick_quote_id: { type: string, format: uuid, nullable: true }
+        organization_id: { type: string, format: uuid }
+        zoho_customer_id: { type: string, nullable: true }
+        zoho_estimate_id: { type: string, nullable: true }
+        zoho_estimate_number: { type: string, nullable: true }
+        subscription_ids:
+          type: array
+          items: { type: string, format: uuid }
+        conversion_status:
+          type: string
+          enum: [pending, success, failed, partial]
+        error_message: { type: string, nullable: true }
+        converted_by_user_id: { type: string, format: uuid, nullable: true }
+        converted_at: { type: string, format: date-time }
+
+    # -----------------------------------------------------------------
+    # Webhook Event (admin diagnostic / replay)
+    # -----------------------------------------------------------------
+    WebhookEvent:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        organization_id: { type: string, format: uuid, nullable: true }
+        event_source: { type: string, example: 'zoho_books' }
+        event_type: { type: string, nullable: true }
+        zoho_entity_id: { type: string, nullable: true }
+        processing_status:
+          type: string
+          enum: [pending, processing, success, failed]
+        retry_count: { type: integer }
+        error_message: { type: string, nullable: true }
+        processed_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
