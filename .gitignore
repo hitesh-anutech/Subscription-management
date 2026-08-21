@@ -41,6 +41,9 @@ packages/db/prisma/migrations/dev.db*
 .turbo/
 *.pem
 
+# Claude Code local settings (may contain local paths/credentials)
+.claude/settings.local.json
+
 # Local PDF storage (dev only)
 apps/api/storage/
 apps/web/.env.production
