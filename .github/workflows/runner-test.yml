@@ -1,0 +1,45 @@
+name: Runner Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: self-hosted
+
+    steps:
+      - name: Runner information
+        run: |
+          echo "===== HOST ====="
+          hostname
+
+          echo "===== USER ====="
+          whoami
+
+          echo "===== NODE ====="
+          node --version
+
+          echo "===== NPM ====="
+          npm --version
+
+          echo "===== PNPM ====="
+          pnpm --version
+
+      - name: Check application directory
+        run: |
+          test -d /opt/Subscription-management
+          echo "Application directory exists"
+
+      - name: Check API service
+        run: |
+          systemctl is-active --quiet subscription-api
+          echo "subscription-api is running"
+
+      - name: Check Web service
+        run: |
+          systemctl is-active --quiet subscription-web
+          echo "subscription-web is running"
+
+      - name: Check production API
+        run: |
+          curl -fsS https://subs.anutech.in/api/health
