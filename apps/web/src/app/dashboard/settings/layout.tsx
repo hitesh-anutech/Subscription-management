@@ -1,6 +1,11 @@
 import Link from 'next/link';
 
-const sections = [
+const sections:{
+  href: string;
+  label: string;
+  mvp: boolean;
+  disabled?: boolean;
+}[]  = [
   { href: '/dashboard/settings/organizations', label: '🏢 Organizations & Zoho', mvp: true },
   { href: '/dashboard/settings/email', label: '📧 Email Configuration', mvp: true },
   { href: '/dashboard/settings/zoho', label: '🔑 Zoho App Credentials', mvp: true },

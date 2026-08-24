@@ -43,3 +43,4 @@ packages/db/prisma/migrations/dev.db*
 
 # Local PDF storage (dev only)
 apps/api/storage/
+apps/web/.env.production
