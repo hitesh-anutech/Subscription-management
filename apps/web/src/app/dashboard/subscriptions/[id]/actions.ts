@@ -62,20 +62,30 @@ export async function updateSubscriptionAction(
   subscriptionId: string,
   formData: FormData,
 ): Promise<{ success?: boolean; error?: string }> {
-  const billingCycle     = formData.get('billing_cycle') as string | null;
-  const price            = formData.get('subscription_price') as string | null;
-  const nextRenewalPrice = formData.get('next_renewal_price') as string | null;
-  const startDate        = formData.get('start_date') as string | null;
-  const endDate          = formData.get('end_date') as string | null;
-  const autoRenew        = formData.get('auto_renew');
+  const quantity          = formData.get('quantity') as string | null;
+  const currency          = formData.get('currency') as string | null;
+  const exchangeRate      = formData.get('exchange_rate') as string | null;
+  const billingCycle      = formData.get('billing_cycle') as string | null;
+  const price             = formData.get('subscription_price') as string | null;
+  const nextRenewalPrice  = formData.get('next_renewal_price') as string | null;
+  const startDate         = formData.get('start_date') as string | null;
+  const endDate           = formData.get('end_date') as string | null;
+  const autoRenew         = formData.get('auto_renew');
+  const lastQuoteNumber   = (formData.get('last_quote_number') as string | null)?.trim() || null;
+  const lastInvoiceNumber = (formData.get('last_invoice_number') as string | null)?.trim() || null;
 
   const body: Record<string, unknown> = {};
-  if (billingCycle)                              body.billingCycle      = billingCycle;
-  if (price !== null && price !== '')            body.subscriptionPrice = Number(price);
+  if (quantity !== null && quantity !== '')                body.quantity          = Number(quantity);
+  if (currency)                                            body.currency          = currency;
+  if (exchangeRate !== null && exchangeRate !== '')        body.exchangeRate      = Number(exchangeRate);
+  if (billingCycle)                                        body.billingCycle      = billingCycle;
+  if (price !== null && price !== '')                      body.subscriptionPrice = Number(price);
   if (nextRenewalPrice !== null && nextRenewalPrice !== '') body.nextRenewalPrice = Number(nextRenewalPrice);
-  if (startDate)                                 body.startDate         = startDate;
-  if (endDate)                                   body.endDate           = endDate;
+  if (startDate)                                           body.startDate         = startDate;
+  if (endDate)                                             body.endDate           = endDate;
   body.autoRenew = autoRenew === 'on' || autoRenew === 'true';
+  if (lastQuoteNumber)   body.lastQuoteNumber   = lastQuoteNumber;
+  if (lastInvoiceNumber) body.lastInvoiceNumber = lastInvoiceNumber;
 
   if (startDate && endDate && new Date(endDate) < new Date(startDate)) {
     return { error: 'End date, start date se pehle nahi ho sakti' };

@@ -5,8 +5,9 @@ import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { format } from 'date-fns';
 import { api, API_BASE } from '@/lib/api';
-import { Eye, Power, Trash2 } from 'lucide-react';
+import { Eye, Trash2 } from 'lucide-react';
 import { deleteMultipleSubscriptionsAction } from '../actions';
+import { TruncatedTooltip } from '@/components/truncated-tooltip';
 
 interface Subscription {
   id: string;
@@ -282,21 +283,6 @@ export function SubscriptionsTable({
     }
   };
 
-  const handleToggleStatus = async (id: string, currentStatus: string) => {
-    const newStatus = currentStatus === 'Active' ? 'Inactive' : 'Active';
-    if (!confirm(`Are you sure you want to change the status to ${newStatus}?`)) return;
-
-    try {
-      await api.post('/subscriptions/bulk-update-status', {
-        subscriptionIds: [id],
-        status: newStatus,
-      });
-      router.refresh();
-    } catch (err: any) {
-      alert(`Error: ${err.message}`);
-    }
-  };
-
   const handlePasteSelect = () => {
     const domainsToSelect = pasteText.split(/[\n,]+/).map(d => d.trim().toLowerCase()).filter(Boolean);
     const idsToSelect = subscriptions
@@ -500,7 +486,7 @@ export function SubscriptionsTable({
                     </p>
                   </td>
                   <td className="px-4 py-3">
-                    <p className="text-slate-700 truncate max-w-48">{sub.zohoItemName ?? '—'}</p>
+                    <TruncatedTooltip text={sub.zohoItemName ?? '—'} className="text-slate-700" />
                     <p className="text-xs text-slate-400">{sub.billingCycle}</p>
                   </td>
                   <td className="px-4 py-3 text-right text-slate-700">{sub.quantity}</td>
@@ -521,26 +507,13 @@ export function SubscriptionsTable({
                     <StatusBadge status={sub.lifecycleStatus} endDate={sub.endDate} />
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <div className="flex items-center justify-end gap-2.5">
-                      <button
-                        onClick={() => handleToggleStatus(sub.id, sub.lifecycleStatus)}
-                        title={sub.lifecycleStatus === 'Active' ? 'Deactivate' : 'Activate'}
-                        className={`p-1.5 rounded-xl border transition-all active:scale-95 ${
-                          sub.lifecycleStatus === 'Active'
-                            ? 'border-red-100 bg-red-50/50 text-red-600 hover:bg-red-50 hover:text-red-700'
-                            : 'border-emerald-100 bg-emerald-50/50 text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700'
-                        }`}
-                      >
-                        <Power className="w-4 h-4" />
-                      </button>
-                      <Link
-                        href={`/dashboard/subscriptions/${sub.id}`}
-                        title="View Details"
-                        className="p-1.5 rounded-xl border border-blue-100 bg-blue-50/50 text-blue-600 hover:bg-blue-50 hover:text-blue-700 transition-all active:scale-95"
-                      >
-                        <Eye className="w-4 h-4" />
-                      </Link>
-                    </div>
+                    <Link
+                      href={`/dashboard/subscriptions/${sub.id}`}
+                      title="View Details"
+                      className="p-1.5 rounded-xl border border-blue-100 bg-blue-50/50 text-blue-600 hover:bg-blue-50 hover:text-blue-700 transition-all active:scale-95 inline-flex"
+                    >
+                      <Eye className="w-4 h-4" />
+                    </Link>
                   </td>
                 </tr>
               );

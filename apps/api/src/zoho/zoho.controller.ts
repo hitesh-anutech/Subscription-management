@@ -10,6 +10,7 @@ import {
   Res,
   HttpCode,
   HttpStatus,
+  Patch,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Response } from 'express';
@@ -188,6 +189,52 @@ export class ZohoController {
     @Param('zohoId') zohoId: string,
   ) {
     return this.zoho.getCustomerDetail(id, zohoId);
+  }
+
+  /** GET /api/organizations/:id/customers/:zohoId/zoho-documents — live Zoho quote+invoice list, paired + linked-sub annotation + DB persist */
+  @Get('organizations/:id/customers/:zohoId/zoho-documents')
+  getCustomerZohoDocs(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('zohoId') zohoId: string,
+  ) {
+    return this.zoho.getCustomerZohoDocs(id, zohoId);
+  }
+
+  /** GET /api/organizations/:id/customers/:zohoId/zoho-documents-cached — instant load from DB cache */
+  @Get('organizations/:id/customers/:zohoId/zoho-documents-cached')
+  getCachedZohoDocs(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('zohoId') zohoId: string,
+  ) {
+    return this.zoho.getCachedZohoDocs(id, zohoId);
+  }
+
+  /**
+   * POST /api/organizations/:id/create-doc-history
+   * Create / upsert RenewalHistory rows from Zoho document line-item mappings.
+   */
+  @Post('organizations/:id/create-doc-history')
+  @HttpCode(HttpStatus.OK)
+  createDocHistory(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: {
+      quoteId?: string; quoteNumber?: string; quoteDate?: string; quoteStatus?: string;
+      invoiceId?: string; invoiceNumber?: string; invoiceDate?: string; invoiceStatus?: string;
+      businessType?: string;
+      mappings: Array<{ subId: string; startDate: string; endDate: string; qty: number; rate: number }>;
+    },
+  ) {
+    return this.zoho.createDocHistory(id, body);
+  }
+
+  /** GET /api/organizations/:id/zoho-doc-line-items?kind=invoice|estimate&doc_id=... */
+  @Get('organizations/:id/zoho-doc-line-items')
+  getZohoDocLineItems(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('kind') kind: 'estimate' | 'invoice',
+    @Query('doc_id') docId: string,
+  ) {
+    return this.zoho.getZohoDocLineItems(id, kind, docId);
   }
 
   /** POST /api/organizations/:id/customers/:zohoId/sync — pull single customer */

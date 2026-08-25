@@ -40,6 +40,7 @@ interface RenewalHistory {
   quoteDate: string | null;
   invoiceId: string | null;
   invoiceNumber: string | null;
+  invoiceDate: string | null;
   zohoEstimateStatus: string | null;
   zohoInvoiceStatus: string | null;
   sentAt: string | null;
@@ -58,6 +59,7 @@ interface Subscription {
   nextRenewalPrice: string | null;
   costPrice: string;
   currency: string;
+  exchangeRate: string | null;
   billingCycle: string;
   startDate: string;
   endDate: string;
@@ -162,7 +164,11 @@ export default async function SubscriptionDetailPage({ params }: { params: Promi
   // subscription's own origin-quote/last-invoice linkage so the first sale shows.
   const timeline: TimelineRow[] = [...sub.renewalHistory];
   const hasFreshRow = sub.renewalHistory.some((h) => h.businessType === 'Fresh');
-  if (!hasFreshRow && (sub.originQuickQuote || sub.lastInvoiceNumber || sub.lastQuoteNumber)) {
+  // Don't synthesize if lastQuote/lastInvoice is already present in a real history row
+  const lastQuoteCovered   = sub.lastQuoteNumber   && sub.renewalHistory.some((h) => h.quoteNumber   === sub.lastQuoteNumber);
+  const lastInvoiceCovered = sub.lastInvoiceNumber && sub.renewalHistory.some((h) => h.invoiceNumber === sub.lastInvoiceNumber);
+  const docsCovered = lastQuoteCovered || lastInvoiceCovered;
+  if (!hasFreshRow && !docsCovered && (sub.originQuickQuote || sub.lastInvoiceNumber || sub.lastQuoteNumber)) {
     timeline.push({
       id: 'fresh-origin',
       synthetic: true,
@@ -243,14 +249,30 @@ export default async function SubscriptionDetailPage({ params }: { params: Promi
       </div>
 
       {/* Expiry alert */}
-      {daysLeft <= 30 && daysLeft >= 0 && (
-        <div className="px-4 py-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-sm flex items-center gap-2 shadow-sm font-medium">
-          <span>⚠️</span>
-          <span>
-            Subscription will expire in <strong className="bg-amber-100/80 border border-amber-300 px-2 py-0.5 rounded-lg text-amber-900 font-extrabold mx-0.5 shadow-sm">{daysLeft === 0 ? 'today' : `${daysLeft} days`}</strong> (on <strong className="bg-amber-100/80 border border-amber-300 px-2 py-0.5 rounded-lg text-amber-900 font-extrabold mx-0.5 shadow-sm">{fmt(sub.endDate)}</strong>) — please generate a renewal quote.
-          </span>
-        </div>
-      )}
+      {daysLeft <= 30 && daysLeft >= 0 && (() => {
+        const latestRenewalDoc = sub.renewalHistory.find(
+          (h) => h.businessType === 'Renewal' && (h.quoteNumber || h.invoiceNumber),
+        );
+        const pill = (text: string) => (
+          <strong className="bg-amber-100/80 border border-amber-300 px-2 py-0.5 rounded-lg text-amber-900 font-extrabold mx-0.5 shadow-sm font-mono">
+            {text}
+          </strong>
+        );
+        return (
+          <div className="px-4 py-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-sm flex items-center gap-2 shadow-sm font-medium">
+            <span>⚠️</span>
+            <span>
+              Subscription will expire in <strong className="bg-amber-100/80 border border-amber-300 px-2 py-0.5 rounded-lg text-amber-900 font-extrabold mx-0.5 shadow-sm">{daysLeft === 0 ? 'today' : `${daysLeft} days`}</strong> (on <strong className="bg-amber-100/80 border border-amber-300 px-2 py-0.5 rounded-lg text-amber-900 font-extrabold mx-0.5 shadow-sm">{fmt(sub.endDate)}</strong>){' '}
+              {latestRenewalDoc
+                ? latestRenewalDoc.invoiceNumber
+                  ? <>— Invoice {pill(latestRenewalDoc.invoiceNumber)} is generated on {pill(fmt(latestRenewalDoc.invoiceDate ?? latestRenewalDoc.createdAt))}.</>
+                  : <>— Quote {pill(latestRenewalDoc.quoteNumber!)} is generated on {pill(fmt(latestRenewalDoc.quoteDate ?? latestRenewalDoc.createdAt))}.</>
+                : '— please generate a renewal quote.'
+              }
+            </span>
+          </div>
+        );
+      })()}
       {daysLeft < 0 && (
         <div className="px-4 py-3.5 rounded-xl bg-red-50 border border-red-200 text-red-800 text-sm flex items-center gap-2 shadow-sm">
           <span>❌</span>
@@ -271,12 +293,17 @@ export default async function SubscriptionDetailPage({ params }: { params: Promi
                 <EditSubscriptionButton
                   subscriptionId={sub.id}
                   itemName={sub.zohoItemName ?? sub.zohoItemId}
+                  quantity={Number(sub.quantity)}
+                  currency={sub.currency || 'INR'}
+                  exchangeRate={sub.exchangeRate ? Number(sub.exchangeRate) : 1}
                   billingCycle={sub.billingCycle}
                   price={Number(sub.subscriptionPrice)}
                   nextRenewalPrice={sub.nextRenewalPrice ? Number(sub.nextRenewalPrice) : null}
                   startDate={sub.startDate}
                   endDate={sub.endDate}
                   autoRenew={sub.autoRenew}
+                  lastQuoteNumber={sub.lastQuoteNumber ?? null}
+                  lastInvoiceNumber={sub.lastInvoiceNumber ?? null}
                 />
                 <DeactivateSubscriptionButton subscriptionId={sub.id} currentStatus={sub.lifecycleStatus} />
               </div>

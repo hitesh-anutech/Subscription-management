@@ -10,6 +10,7 @@ export class CreateDomainDto {
 }
 
 export class UpdateDomainDto {
+  @IsOptional() @IsString() @MaxLength(255) domainName?: string;
   @IsOptional() @IsEnum(DomainStatus) status?: DomainStatus;
   @IsOptional() @IsString() @MaxLength(250) zohoCustomerName?: string;
   @IsOptional() @IsString() @MaxLength(2000) notes?: string;

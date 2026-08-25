@@ -3,11 +3,15 @@ import { ValidationPipe, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
+import { json, urlencoded } from 'express';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  // Disable built-in body parser so we can set a higher limit (screenshots are large base64 strings)
+  const app = await NestFactory.create(AppModule, { bufferLogs: true, bodyParser: false });
+  app.use(json({ limit: '15mb' }));
+  app.use(urlencoded({ extended: true, limit: '15mb' }));
   const config = app.get(ConfigService);
   const logger = new Logger('Bootstrap');
 

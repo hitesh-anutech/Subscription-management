@@ -54,7 +54,9 @@ export class DomainsService {
               subscriptionNumber: true,
               zohoItemName: true,
               quantity: true,
+              subscriptionPrice: true,
               billingCycle: true,
+              startDate: true,
               endDate: true,
               lifecycleStatus: true,
               processStatus: true,
@@ -137,10 +139,10 @@ export class DomainsService {
   }
 
   async create(dto: CreateDomainDto, user: AuthUser) {
-    const existing = await this.prisma.domain.findUnique({
-      where: { domainName: dto.domainName },
+    const existing = await this.prisma.domain.findFirst({
+      where: { domainName: dto.domainName, organizationId: dto.organizationId, zohoCustomerId: dto.zohoCustomerId },
     });
-    if (existing) throw new ConflictException(`Domain "${dto.domainName}" already exists`);
+    if (existing) throw new ConflictException(`Domain "${dto.domainName}" already exists for this customer`);
 
     const domain = await this.prisma.domain.create({
       data: {
@@ -168,9 +170,26 @@ export class DomainsService {
 
   async update(id: string, dto: UpdateDomainDto, user: AuthUser) {
     const existing = await this.findOne(id);
+
+    // If renaming, check no other domain record for the same org+customer already has that name
+    if (dto.domainName && dto.domainName !== existing.domainName) {
+      const conflict = await this.prisma.domain.findFirst({
+        where: {
+          domainName:    dto.domainName,
+          organizationId: existing.organizationId,
+          zohoCustomerId: existing.zohoCustomerId,
+          NOT: { id },
+        },
+      });
+      if (conflict) {
+        throw new ConflictException(`Domain "${dto.domainName}" already exists for this customer`);
+      }
+    }
+
     const domain = await this.prisma.domain.update({
       where: { id },
       data: {
+        ...(dto.domainName       !== undefined && { domainName: dto.domainName }),
         ...(dto.status           !== undefined && { status: dto.status }),
         ...(dto.zohoCustomerName !== undefined && { zohoCustomerName: dto.zohoCustomerName }),
         ...(dto.notes            !== undefined && { notes: dto.notes }),
@@ -182,7 +201,9 @@ export class DomainsService {
       entityType: 'domain',
       entityId: id,
       action: 'update',
-      changeSummary: `Domain ${existing.domainName} updated`,
+      changeSummary: dto.domainName && dto.domainName !== existing.domainName
+        ? `Domain renamed from "${existing.domainName}" to "${dto.domainName}"`
+        : `Domain ${existing.domainName} updated`,
       newValue: domain,
       userId: user.id,
       userEmailSnapshot: user.email,

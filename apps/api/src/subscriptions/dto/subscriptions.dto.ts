@@ -49,6 +49,20 @@ export class UpdateSubscriptionDto {
   @IsOptional() @IsDateString() nextRenewalDate?: string;
   @IsOptional() @IsBoolean() autoRenew?: boolean;
   @IsOptional() @IsString() @MaxLength(2000) notes?: string;
+
+  // Billing currency + exchange rate (1 unit of currency = exchangeRate INR)
+  @IsOptional() @IsString() @MaxLength(10) currency?: string;
+  @IsOptional() @IsNumber() exchangeRate?: number;
+
+  // Manually link existing Zoho documents — backend will lookup ID + date from Zoho
+  @IsOptional() @IsString() @MaxLength(80) lastQuoteNumber?: string;
+  @IsOptional() @IsString() @MaxLength(80) lastInvoiceNumber?: string;
+}
+
+export class BulkTransferCustomerDto {
+  @IsArray() @IsString({ each: true }) subscriptionIds!: string[];
+  @IsString() zohoCustomerId!: string;
+  @IsString() zohoCustomerName!: string;
 }
 
 export class RenewalQuoteDto {

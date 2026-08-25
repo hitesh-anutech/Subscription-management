@@ -5,6 +5,18 @@ import { cookies } from 'next/headers';
 import { revalidatePath } from 'next/cache';
 
 
+export async function renameDomainAction(id: string, domainName: string) {
+  const cookieStore = await cookies();
+  const api = createServerApi(cookieStore.get(SESSION_COOKIE)?.value ?? '');
+  try {
+    await api.patch(`/domains/${id}`, { domainName: domainName.trim() });
+    revalidatePath('/dashboard/domains');
+    return { error: null };
+  } catch (err: any) {
+    return { error: err.message ?? 'Rename failed' };
+  }
+}
+
 export async function bulkDeleteDomainsAction(ids: string[]) {
   const cookieStore = await cookies();
   const api = createServerApi(cookieStore.get(SESSION_COOKIE)?.value ?? '');

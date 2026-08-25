@@ -15,15 +15,36 @@ const BILLING_CYCLES: { value: string; label: string }[] = [
   { value: 'one_time',    label: 'One-Time' },
 ];
 
+const CURRENCIES: { code: string; label: string; symbol: string }[] = [
+  { code: 'INR', label: 'INR — Indian Rupee',        symbol: '₹'    },
+  { code: 'AED', label: 'AED — UAE Dirham',           symbol: 'AED'  },
+  { code: 'USD', label: 'USD — US Dollar',            symbol: '$'    },
+  { code: 'EUR', label: 'EUR — Euro',                 symbol: '€'    },
+  { code: 'GBP', label: 'GBP — British Pound',        symbol: '£'    },
+  { code: 'SGD', label: 'SGD — Singapore Dollar',     symbol: 'S$'   },
+  { code: 'AUD', label: 'AUD — Australian Dollar',    symbol: 'A$'   },
+  { code: 'CAD', label: 'CAD — Canadian Dollar',      symbol: 'C$'   },
+  { code: 'JPY', label: 'JPY — Japanese Yen',         symbol: '¥'    },
+];
+
+function currencySymbol(code: string) {
+  return CURRENCIES.find((c) => c.code === code)?.symbol ?? code;
+}
+
 interface Props {
   subscriptionId: string;
   itemName: string;
+  quantity: number;
+  currency: string;
+  exchangeRate: number;
   billingCycle: string;
   price: number;
   nextRenewalPrice: number | null;
   startDate: string;   // ISO
   endDate: string;     // ISO
   autoRenew: boolean;
+  lastQuoteNumber: string | null;
+  lastInvoiceNumber: string | null;
 }
 
 function toDateInput(iso: string) {
@@ -44,8 +65,12 @@ function SaveBtn() {
 }
 
 export function EditSubscriptionButton(props: Props) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen]         = useState(false);
+  const [currency, setCurrency] = useState(props.currency || 'INR');
   const router = useRouter();
+
+  const sym = currencySymbol(currency);
+  const isNonINR = currency !== 'INR';
 
   const boundAction = updateSubscriptionAction.bind(null, props.subscriptionId);
   const [state, action] = useFormState(
@@ -74,7 +99,7 @@ export function EditSubscriptionButton(props: Props) {
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
           onClick={(e) => { if (e.target === e.currentTarget) setOpen(false); }}
         >
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
               <h2 className="text-base font-semibold text-slate-800">Edit Subscription</h2>
               <button onClick={() => setOpen(false)} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
@@ -118,9 +143,52 @@ export function EditSubscriptionButton(props: Props) {
                 </div>
               </div>
 
+              {/* Currency selector */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Price (₹)</label>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Currency</label>
+                  <select
+                    name="currency"
+                    value={currency}
+                    onChange={(e) => setCurrency(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    {CURRENCIES.map((c) => (
+                      <option key={c.code} value={c.code}>{c.label}</option>
+                    ))}
+                  </select>
+                </div>
+                {isNonINR && (
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">
+                      Exchange Rate <span className="text-slate-400 font-normal">(1 {currency} = ? INR)</span>
+                    </label>
+                    <input
+                      name="exchange_rate"
+                      type="number"
+                      min={0}
+                      step={0.0001}
+                      defaultValue={props.exchangeRate !== 1 ? props.exchangeRate : ''}
+                      placeholder="e.g. 23.50"
+                      className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Quantity + Price + Renewal Price */}
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Quantity</label>
+                  <input
+                    name="quantity"
+                    type="number" min={1} step={1}
+                    defaultValue={props.quantity}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Price ({sym})</label>
                   <input
                     name="subscription_price"
                     type="number" min={0} step={0.01}
@@ -129,7 +197,7 @@ export function EditSubscriptionButton(props: Props) {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Renewal Price (₹)</label>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Renewal Price ({sym})</label>
                   <input
                     name="next_renewal_price"
                     type="number" min={0} step={0.01}
@@ -158,6 +226,38 @@ export function EditSubscriptionButton(props: Props) {
                     defaultValue={toDateInput(props.endDate)}
                     className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
+                </div>
+              </div>
+
+              {/* Zoho Document Linking */}
+              <div className="pt-2 border-t border-slate-200">
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">
+                  Link Zoho Documents (Optional)
+                </p>
+                <p className="text-xs text-slate-400 mb-3">
+                  Naya number enter karo → Zoho se verify hokar entry ban jaayegi. Same number phir se save karo → renewal period dates update ho jaayengi.
+                </p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Last Quote Number</label>
+                    <input
+                      name="last_quote_number"
+                      type="text"
+                      defaultValue={props.lastQuoteNumber ?? ''}
+                      placeholder="EST-000123"
+                      className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Last Invoice Number</label>
+                    <input
+                      name="last_invoice_number"
+                      type="text"
+                      defaultValue={props.lastInvoiceNumber ?? ''}
+                      placeholder="INV-000456"
+                      className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                    />
+                  </div>
                 </div>
               </div>
 

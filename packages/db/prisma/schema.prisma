@@ -236,6 +236,26 @@ enum VerificationTokenPurpose {
   twofa_setup @map("2fa_setup")
 }
 
+enum BugReportType {
+  Bug
+  Feature
+  UIPolish @map("UI Polish")
+}
+
+enum BugSeverity {
+  Low
+  Medium
+  High
+  Critical
+}
+
+enum BugReportStatus {
+  Open
+  InProgress @map("In Progress")
+  Resolved
+  Closed
+}
+
 // =====================================================================
 // CORE TABLES
 // =====================================================================
@@ -266,6 +286,7 @@ model Organization {
   // Relations
   zohoCache                   ZohoCache[]
   zohoDocumentPdfs            ZohoDocumentPdf[]
+  zohoCustomerDocs            ZohoCustomerDoc[]
   leads                       Lead[]
   domains                     Domain[]
   quickQuotes                 QuickQuote[]
@@ -331,6 +352,67 @@ model ZohoDocumentPdf {
   @@unique([organizationId, entityType, zohoDocId], name: "uq_zoho_document_pdf")
   @@index([organizationId, entityType])
   @@map("zoho_document_pdf")
+}
+
+// ---------------------------------------------------------------------
+// ZohoCustomerDoc — Cached Zoho quote+invoice pairs per customer.
+// Populated (upserted) each time the customer's Zoho Documents panel is
+// synced. Rows are never deleted on re-sync — new docs are added and
+// existing ones are updated so re-visiting the page is instant.
+// ---------------------------------------------------------------------
+model ZohoCustomerDoc {
+  id              String    @id @default(uuid()) @db.Uuid
+  organizationId  String    @map("organization_id") @db.Uuid
+  zohoCustomerId  String    @map("zoho_customer_id") @db.VarChar(80)
+  /// Primary key within Zoho: quoteId when paired, invoiceId for standalone invoices.
+  docKey          String    @map("doc_key") @db.VarChar(80)
+
+  quoteId         String?   @map("quote_id") @db.VarChar(80)
+  quoteNumber     String?   @map("quote_number") @db.VarChar(80)
+  quoteDate       String?   @map("quote_date") @db.VarChar(20)
+  quoteStatus     String?   @map("quote_status") @db.VarChar(30)
+  quoteTotal      Float?    @map("quote_total")
+
+  invoiceId       String?   @map("invoice_id") @db.VarChar(80)
+  invoiceNumber   String?   @map("invoice_number") @db.VarChar(80)
+  invoiceDate     String?   @map("invoice_date") @db.VarChar(20)
+  invoiceStatus   String?   @map("invoice_status") @db.VarChar(30)
+  invoiceTotal    Float?    @map("invoice_total")
+
+  businessType    String?   @map("business_type") @db.VarChar(50)
+
+  syncedAt        DateTime  @default(now()) @map("synced_at") @db.Timestamptz
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  organization    Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  lines           ZohoCustomerDocLine[]
+
+  @@unique([organizationId, zohoCustomerId, docKey], name: "uq_zoho_customer_doc")
+  @@index([organizationId, zohoCustomerId])
+  @@map("zoho_customer_docs")
+}
+
+// ---------------------------------------------------------------------
+// ZohoCustomerDocLine — Line items for a cached Zoho document.
+// Populated on first "hover" or "Map" of a document — DB-first,
+// Zoho API fallback. Subsequent hovers are instant from DB.
+// ---------------------------------------------------------------------
+model ZohoCustomerDocLine {
+  id          String   @id @default(uuid()) @db.Uuid
+  docId       String   @map("doc_id") @db.Uuid
+  lineOrder   Int      @default(0) @map("line_order")
+  name        String   @db.VarChar(250)
+  qty         Float    @default(0)
+  rate        Float    @default(0)
+  domain      String?  @db.VarChar(255)
+  startDate   String?  @map("start_date") @db.VarChar(20)
+  endDate     String?  @map("end_date") @db.VarChar(20)
+
+  doc         ZohoCustomerDoc @relation(fields: [docId], references: [id], onDelete: Cascade)
+
+  @@index([docId])
+  @@map("zoho_customer_doc_lines")
 }
 
 // ---------------------------------------------------------------------
@@ -403,7 +485,7 @@ model Lead {
 // ---------------------------------------------------------------------
 model Domain {
   id                  String   @id @default(uuid()) @db.Uuid
-  domainName          String   @unique @map("domain_name") @db.VarChar(255)
+  domainName          String   @map("domain_name") @db.VarChar(255)
   organizationId      String   @map("organization_id") @db.Uuid
   zohoCustomerId      String   @map("zoho_customer_id") @db.VarChar(80)
   zohoCustomerName    String?  @map("zoho_customer_name") @db.VarChar(250)
@@ -417,6 +499,7 @@ model Domain {
   subscriptions       Subscription[]
   renewalHistory      RenewalHistory[]
 
+  @@unique([organizationId, zohoCustomerId, domainName], name: "uq_domain_org_customer_name", map: "uq_domain_org_customer_name")
   @@index([organizationId, zohoCustomerId])
   @@index([status])
   @@map("domains")
@@ -1046,6 +1129,7 @@ model User {
   orgSettingsUpdated       OrgSettings[]       @relation("OrgSettingsUpdatedByUser")
   emailTemplatesUpdated    EmailTemplate[]     @relation("EmailTemplatesUpdatedByUser")
   auditLogEntries          SettingsAuditLog[]
+  bugReports               BugReport[]
 
   @@index([email])
   @@index([isActive])
@@ -1147,6 +1231,32 @@ model SettingsAuditLog {
   @@index([settingCategory, settingKey])
   @@index([createdAt(sort: Desc)])
   @@map("settings_audit_log")
+}
+
+// ---------------------------------------------------------------------
+// BugReport — In-app feedback & bug tracking (test-mode tool)
+// ---------------------------------------------------------------------
+model BugReport {
+  id           String          @id @default(uuid()) @db.Uuid
+  bugNumber    Int             @default(autoincrement()) @map("bug_number")
+  type         BugReportType   @default(Bug)
+  severity     BugSeverity     @default(Medium)
+  details      String          @db.Text
+  pageUrl      String?         @map("page_url") @db.VarChar(500)
+  screenshots  Json            @default("[]")
+  status       BugReportStatus @default(Open)
+  adminNote    String?         @map("admin_note") @db.Text
+  reportedById String?         @map("reported_by_id") @db.Uuid
+  createdAt    DateTime        @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  reportedBy   User?           @relation(fields: [reportedById], references: [id], onDelete: SetNull)
+
+  @@unique([bugNumber])
+  @@index([status])
+  @@index([type, severity])
+  @@index([createdAt(sort: Desc)])
+  @@map("bug_reports")
 }
 
 // =====================================================================

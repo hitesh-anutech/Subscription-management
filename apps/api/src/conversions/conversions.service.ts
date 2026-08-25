@@ -266,7 +266,9 @@ export class ConversionsService {
       this.logger.log(`Step 1 ✓ Zoho customer: ${zohoCustomerId}`);
 
       // ── Step 2: Create domain record ──────────────────────────────────
-      let domain = await this.prisma.domain.findUnique({ where: { domainName } });
+      let domain = await this.prisma.domain.findFirst({
+        where: { domainName, organizationId: dto.organizationId, zohoCustomerId },
+      });
       if (!domain) {
         domain = await this.prisma.domain.create({
           data: { domainName, organizationId: dto.organizationId, zohoCustomerId, zohoCustomerName: lead.companyName },
@@ -423,7 +425,9 @@ export class ConversionsService {
     let domainId: string | null = null;
 
     // Domain record (find/create) for this customer + domain
-    let domain = await this.prisma.domain.findUnique({ where: { domainName } });
+    let domain = await this.prisma.domain.findFirst({
+      where: { domainName, organizationId: orgId, zohoCustomerId },
+    });
     if (!domain) {
       domain = await this.prisma.domain.create({
         data: { domainName, organizationId: orgId, zohoCustomerId, zohoCustomerName },

@@ -9,7 +9,7 @@ import {
   CreateSubscriptionDto, UpdateSubscriptionDto,
   RenewalQuoteDto, ProrataQuoteDto, StartSubscriptionDto,
   ImportSubscriptionsBatchDto, BulkUpdatePriceDto, BulkRenewalQuoteDto,
-  CombinedRenewalQuoteDto, BulkCreateFromQuoteDto,
+  CombinedRenewalQuoteDto, BulkCreateFromQuoteDto, BulkTransferCustomerDto,
 } from './dto/subscriptions.dto';
 import { CurrentUser, AuthUser } from '../auth/decorators/current-user.decorator';
 
@@ -196,6 +196,12 @@ export class SubscriptionsController {
   @Post('bulk-update-status')
   bulkUpdateStatus(@Body() dto: { subscriptionIds: string[], status: string }, @CurrentUser() user: AuthUser) {
     return this.service.bulkUpdateStatus(dto, user);
+  }
+
+  /** POST /api/subscriptions/bulk-transfer-customer */
+  @Post('bulk-transfer-customer')
+  bulkTransferCustomer(@Body() dto: BulkTransferCustomerDto, @CurrentUser() user: AuthUser) {
+    return this.service.bulkTransferCustomer(dto, user);
   }
 
   /** POST /api/subscriptions/import-csv — bulk UPDATE existing subs (matched by ID column) */

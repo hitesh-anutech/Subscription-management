@@ -4,7 +4,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { BillingCycle, BusinessType, Prisma, SubscriptionLifecycleStatus } from '@prisma/client';
+import { BillingCycle, BusinessType, Prisma, RenewalStatus, SubscriptionLifecycleStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ZohoService } from '../zoho/zoho.service';
 import { AnnexureService } from './annexure.service';
@@ -1274,7 +1274,9 @@ export class SubscriptionsService {
     let domainId = dto.domainId;
 
     if (!domainId && dto.domainName) {
-      let domain = await this.prisma.domain.findUnique({ where: { domainName: dto.domainName } });
+      let domain = await this.prisma.domain.findFirst({
+        where: { domainName: dto.domainName, organizationId: dto.organizationId, zohoCustomerId: dto.zohoCustomerId },
+      });
       if (!domain) {
         domain = await this.prisma.domain.create({
           data: {
@@ -1583,7 +1585,9 @@ export class SubscriptionsService {
     opts: { lifecycleStatusOnCreate?: SubscriptionLifecycleStatus; originQuickQuoteId?: string } = {},
   ): Promise<'created' | 'enriched' | 'skipped'> {
     // 1. Resolve / create domain
-    let domain = await this.prisma.domain.findUnique({ where: { domainName: item.domainName } });
+    let domain = await this.prisma.domain.findFirst({
+      where: { domainName: item.domainName, organizationId: item.organizationId, zohoCustomerId: item.zohoCustomerId },
+    });
     if (!domain) {
       domain = await this.prisma.domain.create({
         data: {
@@ -1743,6 +1747,33 @@ export class SubscriptionsService {
   // ------------------------------------------------------------------
   async update(id: string, dto: UpdateSubscriptionDto, user: AuthUser) {
     const existing = await this.findOne(id);
+
+    // --- Zoho document lookup (if lastQuoteNumber or lastInvoiceNumber provided) ---
+    let quoteData: { estimateId: string; estimateNumber: string; date: string } | null = null;
+    let invoiceData: { invoiceId: string; invoiceNumber: string; date: string } | null = null;
+
+    // Only lookup + create history when the document number has actually changed.
+    // This prevents duplicate renewal_history rows if the user saves the form twice
+    // with the same numbers, or saves without touching the document fields.
+    const quoteChanged   = dto.lastQuoteNumber   && dto.lastQuoteNumber.trim()   !== (existing.lastQuoteNumber   ?? '');
+    const invoiceChanged = dto.lastInvoiceNumber && dto.lastInvoiceNumber.trim() !== (existing.lastInvoiceNumber ?? '');
+    // Same number re-submitted → update existing history row's service dates
+    const quoteSame   = !quoteChanged   && dto.lastQuoteNumber   && dto.lastQuoteNumber.trim()   === (existing.lastQuoteNumber   ?? '') && !!existing.lastQuoteNumber;
+    const invoiceSame = !invoiceChanged && dto.lastInvoiceNumber && dto.lastInvoiceNumber.trim() === (existing.lastInvoiceNumber ?? '') && !!existing.lastInvoiceNumber;
+
+    if (quoteChanged || invoiceChanged) {
+      const internalOrgId = existing.organizationId;  // clientFor() expects our internal UUID
+      const contactId = existing.zohoCustomerId;
+
+      if (quoteChanged) {
+        quoteData = await this.zoho.lookupEstimateByNumber(internalOrgId, dto.lastQuoteNumber!.trim(), contactId);
+      }
+      if (invoiceChanged) {
+        invoiceData = await this.zoho.lookupInvoiceByNumber(internalOrgId, dto.lastInvoiceNumber!.trim(), contactId);
+      }
+    }
+
+    // --- Core fields + snapshot update ---
     const updated = await this.prisma.subscription.update({
       where: { id },
       data: {
@@ -1756,9 +1787,91 @@ export class SubscriptionsService {
         ...(dto.nextRenewalDate   !== undefined && { nextRenewalDate: new Date(dto.nextRenewalDate) }),
         ...(dto.autoRenew         !== undefined && { autoRenew: dto.autoRenew }),
         ...(dto.notes             !== undefined && { notes: dto.notes }),
+        ...(dto.currency          !== undefined && { currency: dto.currency.toUpperCase() }),
+        ...(dto.exchangeRate      !== undefined && { exchangeRate: dto.exchangeRate }),
+        ...(quoteData && {
+          lastQuoteId:     quoteData.estimateId,
+          lastQuoteNumber: quoteData.estimateNumber,
+          lastQuoteDate:   new Date(quoteData.date),
+        }),
+        ...(invoiceData && {
+          lastInvoiceId:     invoiceData.invoiceId,
+          lastInvoiceNumber: invoiceData.invoiceNumber,
+          lastInvoiceDate:   new Date(invoiceData.date),
+        }),
         updatedAt: new Date(),
       },
     });
+
+    // --- Recalculate service dates when same document number is re-submitted ---
+    // Lets the user re-save the Edit form with the same quote/invoice number to
+    // fix previously wrong serviceStartDate / serviceEndDate in the history row.
+    if (quoteSame || invoiceSame) {
+      const effectiveEndDate = dto.endDate ? new Date(dto.endDate) : new Date(existing.endDate);
+      const effectiveCycle   = (dto.billingCycle ?? existing.billingCycle) as BillingCycle;
+      const renewStart = new Date(effectiveEndDate);
+      renewStart.setDate(renewStart.getDate() + 1);
+      const renewEndRaw = this.addBillingCycle(renewStart, effectiveCycle);
+      const renewEnd = new Date(renewEndRaw);
+      renewEnd.setDate(renewEnd.getDate() - 1);
+
+      const orClauses: Prisma.RenewalHistoryWhereInput[] = [];
+      if (quoteSame)   orClauses.push({ quoteNumber:   dto.lastQuoteNumber!.trim() });
+      if (invoiceSame) orClauses.push({ invoiceNumber: dto.lastInvoiceNumber!.trim() });
+
+      await this.prisma.renewalHistory.updateMany({
+        where: { subscriptionId: id, OR: orClauses },
+        data:  { serviceStartDate: renewStart, serviceEndDate: renewEnd },
+      });
+      this.logger.log(
+        `renewal_history dates re-synced for sub ${id}: ${renewStart.toISOString()} → ${renewEnd.toISOString()}`,
+      );
+    }
+
+    // --- Create renewal_history entry when documents are linked ---
+    if (quoteData || invoiceData) {
+      const renewalStatus: RenewalStatus = invoiceData ? RenewalStatus.Invoiced : RenewalStatus.Quoted;
+      const qty = Number(existing.quantity);
+      // Renewal price, not current price
+      const price = Number(existing.nextRenewalPrice ?? existing.subscriptionPrice);
+      // Next renewal period: day after current end → end + 1 billing cycle - 1 day
+      const renewalStart = new Date(existing.endDate);
+      renewalStart.setDate(renewalStart.getDate() + 1);
+      const renewalEndRaw = this.addBillingCycle(renewalStart, existing.billingCycle as BillingCycle);
+      const renewalEnd = new Date(renewalEndRaw);
+      renewalEnd.setDate(renewalEnd.getDate() - 1);
+      await this.prisma.renewalHistory.create({
+        data: {
+          subscriptionId: id,
+          organizationId: existing.organizationId,
+          domainId:       existing.domainId,
+          businessType:   BusinessType.Renewal,
+          billingCycle:   existing.billingCycle,
+          serviceStartDate: renewalStart,
+          serviceEndDate:   renewalEnd,
+          quantity:       qty,
+          sellingPrice:   price,
+          costPrice:      existing.costPrice ?? null,
+          subtotalAmount: qty * price,
+          renewalStatus,
+          ...(quoteData && {
+            quoteId:     quoteData.estimateId,
+            quoteNumber: quoteData.estimateNumber,
+            quoteDate:   new Date(quoteData.date),
+          }),
+          ...(invoiceData && {
+            invoiceId:     invoiceData.invoiceId,
+            invoiceNumber: invoiceData.invoiceNumber,
+            invoiceDate:   new Date(invoiceData.date),
+          }),
+        },
+      });
+      this.logger.log(
+        `renewal_history created for sub ${id}: ${renewalStatus}` +
+        (quoteData   ? ` quote=${quoteData.estimateNumber}`   : '') +
+        (invoiceData ? ` invoice=${invoiceData.invoiceNumber}` : ''),
+      );
+    }
 
     await this.auditLogs.logAction({
       entityType: 'subscription',
@@ -2486,13 +2599,13 @@ export class SubscriptionsService {
             const payDate = payment.date ?? inv.last_payment_date;
             if (payDate) data.paymentDate = new Date(payDate);
           }
-          if (inv.status === 'paid') {
+          if (inv.status === 'paid' || inv.status === 'partially_paid') {
             if (row.renewalStatus !== 'Paid') {
               isPaidTransition = true;
             }
             data.renewalStatus = 'Paid';
           }
-          else if (['sent', 'overdue', 'partially_paid'].includes(inv.status ?? '') && row.renewalStatus === 'Quoted') {
+          else if (['sent', 'overdue'].includes(inv.status ?? '') && row.renewalStatus === 'Quoted') {
             data.renewalStatus = 'Invoiced';
           }
         }
@@ -3011,8 +3124,8 @@ export class SubscriptionsService {
             const payDate = payment.date ?? inv.last_payment_date;
             if (payDate) data.paymentDate = new Date(payDate);
           }
-          if (inv.status === 'paid') renewalStatus = 'Paid';
-          else if (['sent', 'overdue', 'partially_paid'].includes(inv.status ?? '')) renewalStatus = renewalStatus ?? 'Invoiced';
+          if (inv.status === 'paid' || inv.status === 'partially_paid') renewalStatus = 'Paid';
+          else if (['sent', 'overdue'].includes(inv.status ?? '')) renewalStatus = renewalStatus ?? 'Invoiced';
         }
       } catch (err) {
         this.logger.warn(`Batch ${batchId} invoice ${invoiceId} status sync failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -3077,6 +3190,71 @@ export class SubscriptionsService {
       renewalStatus,
       status: this.deriveBatchStatus(estimateStatus, zohoInvoiceStatus),
     };
+  }
+
+  async bulkTransferCustomer(
+    dto: { subscriptionIds: string[]; zohoCustomerId: string; zohoCustomerName: string },
+    user: AuthUser,
+  ) {
+    const { subscriptionIds, zohoCustomerId, zohoCustomerName } = dto;
+    if (!subscriptionIds.length) throw new BadRequestException('No subscriptions selected');
+
+    // Fetch subscriptions with their current domain info
+    const subscriptions = await this.prisma.subscription.findMany({
+      where: { id: { in: subscriptionIds } },
+      include: { domain: true },
+    });
+
+    // For each unique source domain, find or create the equivalent domain record
+    // under the target customer so the same mapped domain name can exist per-customer.
+    const domainMapping = new Map<string, string>(); // source domainId → target domainId
+
+    for (const sub of subscriptions) {
+      if (domainMapping.has(sub.domainId)) continue;
+
+      const { domainName, organizationId, status, notes } = sub.domain;
+
+      let targetDomain = await this.prisma.domain.findFirst({
+        where: { domainName, organizationId, zohoCustomerId },
+      });
+
+      if (!targetDomain) {
+        targetDomain = await this.prisma.domain.create({
+          data: { domainName, organizationId, zohoCustomerId, zohoCustomerName, status, notes: notes ?? undefined },
+        });
+        this.logger.log(`Transfer: created domain "${domainName}" for customer ${zohoCustomerId}`);
+      }
+
+      domainMapping.set(sub.domainId, targetDomain.id);
+    }
+
+    // Update each subscription: new customer + re-mapped domainId
+    let count = 0;
+    for (const sub of subscriptions) {
+      const newDomainId = domainMapping.get(sub.domainId) ?? sub.domainId;
+      const domainChanged = newDomainId !== sub.domainId;
+
+      await this.prisma.subscription.update({
+        where: { id: sub.id },
+        data: { zohoCustomerId, zohoCustomerName, domainId: newDomainId },
+      });
+
+      await this.auditLogs.logAction({
+        entityType: 'subscription',
+        entityId: sub.id,
+        action: 'update',
+        changeSummary: `Customer transferred to "${zohoCustomerName}" (${zohoCustomerId})${domainChanged ? '; domain record re-mapped' : ''}`,
+        userId: user.id,
+        userEmailSnapshot: user.email,
+      });
+
+      count++;
+    }
+
+    this.logger.log(
+      `Bulk customer transfer: ${count} subs → ${zohoCustomerName} (${zohoCustomerId}) by ${user.email}`,
+    );
+    return { success: true, count };
   }
 
   async remove(id: string, user: AuthUser) {

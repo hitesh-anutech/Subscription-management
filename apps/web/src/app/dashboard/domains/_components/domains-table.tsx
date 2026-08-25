@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { Fragment, useState, useTransition } from 'react';
 import { Trash } from 'lucide-react';
-import { bulkDeleteDomainsAction } from '../actions';
+import { bulkDeleteDomainsAction, renameDomainAction } from '../actions';
 import { HistoryDialog } from '@/components/history-dialog';
 
 /** Zoho data-center → Books domain TLD. */
@@ -36,7 +36,9 @@ export interface LinkedSub {
   subscriptionNumber: string;
   zohoItemName: string | null;
   quantity: string;
+  subscriptionPrice: string;
   billingCycle: string;
+  startDate: string;
   endDate: string;
   lifecycleStatus: string;
   processStatus: string;
@@ -149,9 +151,39 @@ function LastDocLink({ sub, org }: { sub: LinkedSub; org: Domain['organization']
 }
 
 export function DomainsTable({ domains }: { domains: Domain[] }) {
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [expandedId, setExpandedId]   = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isBulkDeleting, startBulkDelete] = useTransition();
+
+  // Inline rename state
+  const [renamingId,    setRenamingId]    = useState<string | null>(null);
+  const [renameValue,   setRenameValue]   = useState('');
+  const [renameError,   setRenameError]   = useState<string | null>(null);
+  const [isSavingRename, startRenameTransition] = useTransition();
+
+  const startRename = (d: Domain, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setRenamingId(d.id);
+    setRenameValue(d.domainName);
+    setRenameError(null);
+  };
+
+  const cancelRename = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setRenamingId(null);
+    setRenameError(null);
+  };
+
+  const saveRename = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const trimmed = renameValue.trim();
+    if (!trimmed) { setRenameError('Domain name खाली नहीं हो सकता'); return; }
+    startRenameTransition(async () => {
+      const res = await renameDomainAction(id, trimmed);
+      if (res.error) { setRenameError(res.error); return; }
+      setRenamingId(null);
+    });
+  };
 
   const eligibleDomains = domains.filter(d => d.activeSubsCount === 0);
   const allEligibleSelected = eligibleDomains.length > 0 && eligibleDomains.every(d => selectedIds.has(d.id));
@@ -257,12 +289,51 @@ export function DomainsTable({ domains }: { domains: Domain[] }) {
                         <span onClick={() => setExpandedId(isOpen ? null : d.id)} className={`mt-0.5 text-slate-400 transition-transform duration-200 cursor-pointer ${isOpen ? 'rotate-90 text-blue-600' : ''}`}>
                           ›
                         </span>
-                        <span>
-                          <span className="flex items-center gap-1.5">
-                            <span onClick={() => setExpandedId(isOpen ? null : d.id)} className="font-semibold text-blue-700 font-mono text-xs cursor-pointer">{d.domainName}</span>
-                            <HistoryDialog entityType="domain" entityId={d.id} title={`Domain History: ${d.domainName}`} />
-                          </span>
-                          <span className="block text-[11px] text-slate-500 mt-0.5">Added {fmt(d.createdAt)}</span>
+                        <span className="min-w-0">
+                          {renamingId === d.id ? (
+                            <span className="flex flex-col gap-1">
+                              <span className="flex items-center gap-1">
+                                <input
+                                  autoFocus
+                                  value={renameValue}
+                                  onChange={(e) => { setRenameValue(e.target.value); setRenameError(null); }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') saveRename(d.id, e as any);
+                                    if (e.key === 'Escape') cancelRename(e as any);
+                                  }}
+                                  onClick={(e) => e.stopPropagation()}
+                                  disabled={isSavingRename}
+                                  className="font-mono text-xs px-2 py-1 border border-blue-400 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 w-48 disabled:opacity-50"
+                                />
+                                <button
+                                  onClick={(e) => saveRename(d.id, e)}
+                                  disabled={isSavingRename}
+                                  className="text-emerald-600 hover:text-emerald-800 disabled:opacity-40 font-bold text-base leading-none px-1"
+                                  title="Save"
+                                >✓</button>
+                                <button
+                                  onClick={cancelRename}
+                                  disabled={isSavingRename}
+                                  className="text-slate-400 hover:text-slate-600 disabled:opacity-40 font-bold text-base leading-none px-1"
+                                  title="Cancel"
+                                >✕</button>
+                              </span>
+                              {renameError && <span className="text-red-500 text-[11px]">{renameError}</span>}
+                            </span>
+                          ) : (
+                            <span>
+                              <span className="flex items-center gap-1.5">
+                                <span onClick={() => setExpandedId(isOpen ? null : d.id)} className="font-semibold text-blue-700 font-mono text-xs cursor-pointer">{d.domainName}</span>
+                                <button
+                                  onClick={(e) => startRename(d, e)}
+                                  className="text-slate-300 hover:text-slate-500 transition-colors leading-none"
+                                  title="Domain rename karo"
+                                >✏️</button>
+                                <HistoryDialog entityType="domain" entityId={d.id} title={`Domain History: ${d.domainName}`} />
+                              </span>
+                              <span className="block text-[11px] text-slate-500 mt-0.5">Added {fmt(d.createdAt)}</span>
+                            </span>
+                          )}
                         </span>
                       </div>
                     </td>
@@ -309,7 +380,8 @@ export function DomainsTable({ domains }: { domains: Domain[] }) {
                                     <th className="py-1.5 pr-4 font-medium">Sub #</th>
                                     <th className="py-1.5 pr-4 font-medium">Item</th>
                                     <th className="py-1.5 pr-4 font-medium text-right">Qty</th>
-                                    <th className="py-1.5 pr-4 font-medium">End Date</th>
+                                    <th className="py-1.5 pr-4 font-medium text-right">Pricing</th>
+                                    <th className="py-1.5 pr-4 font-medium">Subs. Period</th>
                                     <th className="py-1.5 pr-4 font-medium">Status</th>
                                     <th className="py-1.5 pr-4 font-medium">Last Invoice/Quote</th>
                                     <th className="py-1.5 pr-4 font-medium">Last Doc Status</th>
@@ -329,7 +401,12 @@ export function DomainsTable({ domains }: { domains: Domain[] }) {
                                       </td>
                                       <td className="py-2 pr-4">{s.zohoItemName ?? '—'}</td>
                                       <td className="py-2 pr-4 text-right">{Number(s.quantity)}</td>
-                                      <td className="py-2 pr-4">{fmt(s.endDate)}</td>
+                                      <td className="py-2 pr-4 text-right font-mono">
+                                        {Number(s.subscriptionPrice).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                                      </td>
+                                      <td className="py-2 pr-4 whitespace-nowrap">
+                                        {fmt(s.startDate)} → {fmt(s.endDate)}
+                                      </td>
                                       <td className="py-2 pr-4"><SubStatusBadge status={s.lifecycleStatus} /></td>
                                       <td className="py-2 pr-4"><LastDocLink sub={s} org={d.organization} /></td>
                                       <td className="py-2 pr-4"><ProcessStatusBadge status={s.processStatus} /></td>

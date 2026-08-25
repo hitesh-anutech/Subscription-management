@@ -112,6 +112,62 @@ export class ZohoService {
     return data ?? null;
   }
 
+  /**
+   * Lookup a Zoho estimate by its display number (e.g. "EST-000123").
+   * Validates that the document belongs to the expected customer contact.
+   * Used when manually linking a quote to an imported subscription via the Edit form.
+   */
+  async lookupEstimateByNumber(
+    orgId: string,
+    estimateNumber: string,
+    expectedContactId: string,
+  ): Promise<{ estimateId: string; estimateNumber: string; date: string }> {
+    const client = await this.clientFor(orgId);
+    const resp = await client.get<{
+      estimates: Array<{ estimate_id: string; estimate_number: string; customer_id: string; date: string }>;
+    }>('/estimates', { estimate_number: estimateNumber });
+
+    const estimates = resp?.estimates ?? [];
+    if (!estimates.length) {
+      throw new BadRequestException(`Estimate "${estimateNumber}" Zoho Books mein nahi mila`);
+    }
+    const est = estimates[0];
+    if (est.customer_id !== expectedContactId) {
+      throw new BadRequestException(
+        `Estimate "${estimateNumber}" is subscription ke customer se match nahi karta`,
+      );
+    }
+    return { estimateId: est.estimate_id, estimateNumber: est.estimate_number, date: est.date };
+  }
+
+  /**
+   * Lookup a Zoho invoice by its display number (e.g. "INV-000456").
+   * Validates that the document belongs to the expected customer contact.
+   * Used when manually linking an invoice to an imported subscription via the Edit form.
+   */
+  async lookupInvoiceByNumber(
+    orgId: string,
+    invoiceNumber: string,
+    expectedContactId: string,
+  ): Promise<{ invoiceId: string; invoiceNumber: string; date: string }> {
+    const client = await this.clientFor(orgId);
+    const resp = await client.get<{
+      invoices: Array<{ invoice_id: string; invoice_number: string; customer_id: string; date: string }>;
+    }>('/invoices', { invoice_number: invoiceNumber });
+
+    const invoices = resp?.invoices ?? [];
+    if (!invoices.length) {
+      throw new BadRequestException(`Invoice "${invoiceNumber}" Zoho Books mein nahi mila`);
+    }
+    const inv = invoices[0];
+    if (inv.customer_id !== expectedContactId) {
+      throw new BadRequestException(
+        `Invoice "${invoiceNumber}" is subscription ke customer se match nahi karta`,
+      );
+    }
+    return { invoiceId: inv.invoice_id, invoiceNumber: inv.invoice_number, date: inv.date };
+  }
+
   /** Drop a cached estimate/invoice detail (called from the webhook path — PERF_PLAN #3). */
   invalidateDocCache(orgId: string | null | undefined, kind: 'estimate' | 'invoice', id: string) {
     if (!id) return;
@@ -1140,7 +1196,7 @@ export class ZohoService {
       }
     }
 
-    const [subscriptions, domains, quotes] = await Promise.all([
+    const [subscriptions, quotes] = await Promise.all([
       this.prisma.subscription.findMany({
         where: { organizationId: orgId, zohoCustomerId: zohoId },
         orderBy: { endDate: 'asc' },
@@ -1158,13 +1214,11 @@ export class ZohoService {
           lastInvoiceId: true,
           lastInvoiceNumber: true,
           lastInvoiceDate: true,
-          domain: { select: { id: true, domainName: true } },
+          lastQuoteId: true,
+          lastQuoteNumber: true,
+          lastQuoteDate: true,
+          domain: { select: { id: true, domainName: true, createdAt: true } },
         },
-      }),
-      this.prisma.domain.findMany({
-        where: { organizationId: orgId, zohoCustomerId: zohoId },
-        orderBy: { domainName: 'asc' },
-        select: { id: true, domainName: true, createdAt: true },
       }),
       this.prisma.quickQuote.findMany({
         where: { targetOrganizationId: orgId, zohoCustomerId: zohoId },
@@ -1179,6 +1233,21 @@ export class ZohoService {
         },
       }),
     ]);
+
+    // Derive unique domains from subscriptions rather than querying the domains table
+    // by zohoCustomerId — this correctly handles transferred subscriptions whose
+    // domainId still points to a domain record owned by the previous customer.
+    const domainMap = new Map<string, { id: string; domainName: string; createdAt: Date }>();
+    for (const sub of subscriptions) {
+      if (sub.domain && !domainMap.has(sub.domain.domainName)) {
+        domainMap.set(sub.domain.domainName, {
+          id:         sub.domain.id,
+          domainName: sub.domain.domainName,
+          createdAt:  sub.domain.createdAt,
+        });
+      }
+    }
+    const domains = [...domainMap.values()].sort((a, b) => a.domainName.localeCompare(b.domainName));
 
     // Per-domain active subscription count
     const domainSubCounts: Record<string, number> = {};
@@ -1226,16 +1295,39 @@ export class ZohoService {
       })
       .slice(0, 5);
 
+    // Build recent document pairs (quote + invoice) from subscription data.
+    // Deduplicated by quoteNumber (or invoiceNumber), sorted newest-doc-first, capped at 5.
+    const docMap = new Map<string, {
+      quoteId: string | null; quoteNumber: string | null; quoteDate: string | null;
+      invoiceId: string | null; invoiceNumber: string | null; invoiceDate: string | null;
+      domain: string | null;
+    }>();
+    const subsByRecent = [...subscriptions].sort((a, b) => {
+      const ad = (a.lastInvoiceDate ?? a.lastQuoteDate ?? a.endDate) as Date | string;
+      const bd = (b.lastInvoiceDate ?? b.lastQuoteDate ?? b.endDate) as Date | string;
+      return new Date(bd).getTime() - new Date(ad).getTime();
+    });
+    for (const sub of subsByRecent) {
+      const key = (sub.lastQuoteNumber ?? sub.lastInvoiceNumber) as string | null;
+      if (!key || docMap.has(key)) continue;
+      docMap.set(key, {
+        quoteId:       (sub.lastQuoteId   as string | null) ?? null,
+        quoteNumber:   (sub.lastQuoteNumber as string | null) ?? null,
+        quoteDate:     sub.lastQuoteDate   ? (sub.lastQuoteDate as Date).toISOString() : null,
+        invoiceId:     (sub.lastInvoiceId  as string | null) ?? null,
+        invoiceNumber: (sub.lastInvoiceNumber as string | null) ?? null,
+        invoiceDate:   sub.lastInvoiceDate ? (sub.lastInvoiceDate as Date).toISOString() : null,
+        domain:        sub.domain?.domainName ?? null,
+      });
+    }
+    const recentDocuments = [...docMap.values()].slice(0, 5);
+
     // At a Glance stats
     const activeSubs = subscriptions.filter(s => s.lifecycleStatus === 'Active').length;
-    const lastQuote = quotes[0] ?? null;
-    const lastInvoice = recentInvoices[0] ?? null;
 
     const atAGlance = {
       activeSubs,
       domainsMapped: domains.length,
-      lastQuoteNumber: lastQuote?.quoteNumber ?? null,
-      lastInvoiceNumber: lastInvoice?.invoiceNumber ?? null,
     };
 
     return {
@@ -1244,9 +1336,471 @@ export class ZohoService {
       domains,
       quotes,
       recentInvoices,
+      recentDocuments,
       domainSubCounts,
       atAGlance,
     };
+  }
+
+  /**
+   * Fetch all Zoho quotes (estimates) + invoices for a specific customer,
+   * pair them (primary: invoice.estimate_id; secondary: "invoiced" estimate + same-total standalone
+   * invoice within 90 days), annotate with any linked subscription in our DB,
+   * and persist/upsert every row into zoho_customer_docs for offline cache.
+   */
+  async getCustomerZohoDocs(orgId: string, zohoCustomerId: string) {
+    const client = await this.clientFor(orgId);
+
+    // Load field mappings to resolve business_type CF name per module
+    const [estFm, invFm] = await Promise.all([
+      this.getItemFieldMappings(orgId, 'estimates'),
+      this.getItemFieldMappings(orgId, 'invoices'),
+    ]);
+    const estBtCf = estFm.business_type as string | undefined;
+    const invBtCf = invFm.business_type as string | undefined;
+
+    type CfEntry = { api_name: string; value: string | number };
+    const cfStr = (cfs: CfEntry[] | undefined, key: string | undefined): string | null => {
+      if (!key || !cfs?.length) return null;
+      const f = cfs.find(c => c.api_name === key);
+      return f?.value != null ? String(f.value) : null;
+    };
+
+    type EstItem = {
+      estimate_id: string; estimate_number: string; date: string; status: string; total: number;
+      custom_fields?: CfEntry[];
+    };
+    type InvItem = {
+      invoice_id: string; invoice_number: string; date: string; status: string; total: number;
+      estimate_id?: string; custom_fields?: CfEntry[];
+    };
+
+    const [estRes, invRes] = await Promise.allSettled([
+      client.get<{ estimates: EstItem[] }>('/estimates', {
+        customer_id: zohoCustomerId, sort_column: 'created_time', sort_order: 'D', per_page: 100,
+      }),
+      client.get<{ invoices: InvItem[] }>('/invoices', {
+        customer_id: zohoCustomerId, sort_column: 'created_time', sort_order: 'D', per_page: 100,
+      }),
+    ]);
+
+    const estimates = estRes.status === 'fulfilled' ? (estRes.value?.estimates ?? []) : [];
+    const invoices  = invRes.status  === 'fulfilled' ? (invRes.value?.invoices  ?? []) : [];
+
+    // ── Primary pairing: invoice.estimate_id → estimate ──────────────────
+    const invByEstId = new Map<string, InvItem>();
+    for (const inv of invoices) {
+      if (inv.estimate_id) invByEstId.set(inv.estimate_id, inv);
+    }
+
+    // ── Secondary pairing: "invoiced" estimates + standalone invoices by total+date ──
+    // Covers cases where Zoho didn't set estimate_id on the converted invoice
+    // (e.g. invoice created manually after the estimate was marked invoiced).
+    const primaryPairedInvIds = new Set([...invByEstId.values()].map(i => i.invoice_id));
+    const standaloneInvoices  = invoices.filter(inv => !inv.estimate_id && !primaryPairedInvIds.has(inv.invoice_id));
+    const usedSecondaryInvIds = new Set<string>();
+
+    for (const est of estimates) {
+      if (invByEstId.has(est.estimate_id)) continue; // already paired
+      if (est.status !== 'invoiced') continue;       // only pair "invoiced" estimates
+
+      const estDate = new Date(est.date).getTime();
+      const candidates = standaloneInvoices
+        .filter(inv =>
+          !usedSecondaryInvIds.has(inv.invoice_id) &&
+          Math.abs((inv.total ?? 0) - (est.total ?? 0)) < 1 &&           // same amount
+          Math.abs(new Date(inv.date).getTime() - estDate) < 90 * 86_400_000, // within 90 days
+        )
+        .sort((a, b) =>
+          Math.abs(new Date(a.date).getTime() - estDate) - Math.abs(new Date(b.date).getTime() - estDate),
+        );
+
+      if (candidates.length > 0) {
+        invByEstId.set(est.estimate_id, candidates[0]);
+        usedSecondaryInvIds.add(candidates[0].invoice_id);
+      }
+    }
+
+    // ── Build final docs array ────────────────────────────────────────────
+    type DocRow = {
+      quoteId: string | null; quoteNumber: string | null; quoteDate: string | null;
+      quoteStatus: string | null; quoteTotal: number | null;
+      invoiceId: string | null; invoiceNumber: string | null; invoiceDate: string | null;
+      invoiceStatus: string | null; invoiceTotal: number | null;
+      businessType: string | null;
+    };
+
+    const pairedInvIds = new Set<string>();
+    const docs: DocRow[] = [];
+
+    for (const est of estimates) {
+      const inv = invByEstId.get(est.estimate_id) ?? null;
+      if (inv) pairedInvIds.add(inv.invoice_id);
+      // Business type: prefer estimate CF, fall back to invoice CF
+      const businessType =
+        cfStr(est.custom_fields, estBtCf) ??
+        (inv ? cfStr(inv.custom_fields, invBtCf) : null);
+      docs.push({
+        quoteId:       est.estimate_id,      quoteNumber: est.estimate_number,
+        quoteDate:     est.date,             quoteStatus: est.status,
+        quoteTotal:    est.total ?? null,
+        invoiceId:     inv?.invoice_id   ?? null, invoiceNumber: inv?.invoice_number ?? null,
+        invoiceDate:   inv?.date         ?? null, invoiceStatus: inv?.status         ?? null,
+        invoiceTotal:  inv?.total        ?? null,
+        businessType,
+      });
+    }
+
+    // Invoices not paired with any estimate
+    for (const inv of invoices) {
+      if (!pairedInvIds.has(inv.invoice_id)) {
+        docs.push({
+          quoteId: null, quoteNumber: null, quoteDate: null, quoteStatus: null, quoteTotal: null,
+          invoiceId:    inv.invoice_id,    invoiceNumber: inv.invoice_number,
+          invoiceDate:  inv.date,          invoiceStatus: inv.status,
+          invoiceTotal: inv.total ?? null,
+          businessType: cfStr(inv.custom_fields, invBtCf),
+        });
+      }
+    }
+
+    docs.sort((a, b) =>
+      (b.quoteDate ?? b.invoiceDate ?? '').localeCompare(a.quoteDate ?? a.invoiceDate ?? ''));
+
+    // ── Persist to DB (upsert — never delete, additive) ───────────────────
+    const now = new Date();
+    await Promise.allSettled(docs.map(doc => {
+      const docKey = doc.quoteId ?? doc.invoiceId!;
+      return this.prisma.zohoCustomerDoc.upsert({
+        where: { uq_zoho_customer_doc: { organizationId: orgId, zohoCustomerId, docKey } },
+        create: { organizationId: orgId, zohoCustomerId, docKey, ...doc, syncedAt: now },
+        update: { ...doc, syncedAt: now },
+      });
+    }));
+
+    // ── Annotate with DB-linked subscriptions ─────────────────────────────
+    return { docs: await this.annotateWithLinkedSubs(orgId, zohoCustomerId, docs), fromCache: false };
+  }
+
+  /**
+   * Return cached Zoho docs from DB (instant, no Zoho call). Used for initial
+   * page load — client calls this first, then optionally Re-syncs from Zoho.
+   */
+  async getCachedZohoDocs(orgId: string, zohoCustomerId: string) {
+    const cached = await this.prisma.zohoCustomerDoc.findMany({
+      where: { organizationId: orgId, zohoCustomerId },
+    });
+
+    if (cached.length === 0) return { docs: [], fromCache: true, syncedAt: null };
+
+    cached.sort((a, b) =>
+      (b.quoteDate ?? b.invoiceDate ?? '').localeCompare(a.quoteDate ?? a.invoiceDate ?? ''));
+
+    const syncedAt = cached.reduce(
+      (max, d) => (d.syncedAt > max ? d.syncedAt : max),
+      cached[0].syncedAt,
+    ).toISOString();
+
+    const rows = cached.map(d => ({
+      quoteId: d.quoteId, quoteNumber: d.quoteNumber, quoteDate: d.quoteDate,
+      quoteStatus: d.quoteStatus, quoteTotal: d.quoteTotal,
+      invoiceId: d.invoiceId, invoiceNumber: d.invoiceNumber, invoiceDate: d.invoiceDate,
+      invoiceStatus: d.invoiceStatus, invoiceTotal: d.invoiceTotal,
+      businessType: d.businessType,
+    }));
+
+    return { docs: await this.annotateWithLinkedSubs(orgId, zohoCustomerId, rows), fromCache: true, syncedAt };
+  }
+
+  /** Shared: annotate doc rows with their currently linked DB subscription. */
+  private async annotateWithLinkedSubs<T extends {
+    invoiceNumber: string | null; quoteNumber: string | null;
+  }>(orgId: string, zohoCustomerId: string, docs: T[]) {
+    const invNums = docs.map(d => d.invoiceNumber).filter((n): n is string => !!n);
+    const qNums   = docs.map(d => d.quoteNumber).filter((n): n is string => !!n);
+
+    type SubInfo = {
+      id: string; subscriptionNumber: string; zohoItemName: string | null;
+      lastInvoiceNumber: string | null; lastQuoteNumber: string | null;
+      domain: { domainName: string } | null;
+    };
+
+    let linkedSubs: SubInfo[] = [];
+    if (invNums.length || qNums.length) {
+      const orClauses: Prisma.SubscriptionWhereInput[] = [];
+      if (invNums.length) orClauses.push({ lastInvoiceNumber: { in: invNums } });
+      if (qNums.length)   orClauses.push({ lastQuoteNumber:   { in: qNums } });
+      linkedSubs = await this.prisma.subscription.findMany({
+        where: { organizationId: orgId, zohoCustomerId, OR: orClauses },
+        select: {
+          id: true, subscriptionNumber: true, zohoItemName: true,
+          lastInvoiceNumber: true, lastQuoteNumber: true,
+          domain: { select: { domainName: true } },
+        },
+      });
+    }
+
+    const subByInv = new Map<string, SubInfo>();
+    const subByQ   = new Map<string, SubInfo>();
+    for (const sub of linkedSubs) {
+      if (sub.lastInvoiceNumber) subByInv.set(sub.lastInvoiceNumber, sub);
+      if (sub.lastQuoteNumber)   subByQ.set(sub.lastQuoteNumber, sub);
+    }
+
+    return docs.map(doc => ({
+      ...doc,
+      linkedSub: (doc.invoiceNumber && subByInv.get(doc.invoiceNumber))
+        || (doc.quoteNumber && subByQ.get(doc.quoteNumber))
+        || null,
+    }));
+  }
+
+  /**
+   * Create or update RenewalHistory entries from Zoho document line-item mappings.
+   *
+   * Called by "📋 Create History" in the Zoho Docs panel. Each mapping supplies
+   * the line-item dates/qty/rate + the target subscription ID. The method:
+   *   1. Loads each subscription (domainId, billingCycle, currency, exchangeRate)
+   *   2. Maps business type string → BusinessType enum
+   *   3. Maps invoice status → RenewalStatus (paid→Paid · sent/overdue→Invoiced · quote-only→Quoted)
+   *   4. Upserts by (subscriptionId + invoiceNumber) or (subscriptionId + quoteNumber)
+   */
+  async createDocHistory(
+    orgId: string,
+    body: {
+      quoteId?: string; quoteNumber?: string; quoteDate?: string; quoteStatus?: string;
+      invoiceId?: string; invoiceNumber?: string; invoiceDate?: string; invoiceStatus?: string;
+      businessType?: string;
+      mappings: Array<{ subId: string; startDate: string; endDate: string; qty: number; rate: number }>;
+    },
+  ) {
+    const { quoteId, quoteNumber, quoteDate, invoiceId, invoiceNumber, invoiceDate, invoiceStatus, businessType, mappings } = body;
+
+    // Resolve BusinessType enum
+    const btKey = (businessType ?? '').toLowerCase().replace(/[^a-z]/g, '');
+    const btEnum =
+      btKey === 'fresh'   ? 'Fresh' :
+      btKey === 'prorata' ? 'ProRata' :
+                            'Renewal';
+
+    // Resolve RenewalStatus from Zoho invoice status
+    const invStatus = (invoiceStatus ?? '').toLowerCase();
+    const renewalStatus =
+      invStatus === 'paid' || invStatus === 'partially_paid' ? 'Paid' :
+      invoiceId ? 'Invoiced' :
+      'Quoted';
+
+    // Load subscriptions in one query
+    const subIds = [...new Set(mappings.map(m => m.subId))];
+    const subs = await this.prisma.subscription.findMany({
+      where: { id: { in: subIds }, organizationId: orgId },
+      select: { id: true, domainId: true, billingCycle: true, currency: true, exchangeRate: true },
+    });
+    const subById = new Map(subs.map(s => [s.id, s]));
+
+    const results: Array<{ subId: string; action: 'created' | 'updated' | 'skipped'; error?: string }> = [];
+
+    for (const m of mappings) {
+      const sub = subById.get(m.subId);
+      if (!sub) { results.push({ subId: m.subId, action: 'skipped', error: 'subscription not found' }); continue; }
+
+      const startDate = m.startDate ? new Date(m.startDate) : null;
+      const endDate   = m.endDate   ? new Date(m.endDate)   : null;
+      const qty       = m.qty  > 0  ? m.qty  : null;
+      const rate      = m.rate > 0  ? m.rate : null;
+
+      const data = {
+        subscriptionId:   m.subId,
+        organizationId:   orgId,
+        domainId:         sub.domainId,
+        businessType:     btEnum as 'Renewal' | 'ProRata' | 'Fresh',
+        billingCycle:     sub.billingCycle,
+        serviceStartDate: startDate,
+        serviceEndDate:   endDate,
+        quantity:         qty != null ? qty : undefined,
+        sellingPrice:     rate != null ? rate : undefined,
+        subtotalAmount:   qty != null && rate != null ? qty * rate : undefined,
+        currency:         sub.currency,
+        exchangeRate:     sub.exchangeRate,
+        renewalStatus:    renewalStatus as 'Quoted' | 'Invoiced' | 'Paid',
+        quoteId:          quoteId   ?? null,
+        quoteNumber:      quoteNumber ?? null,
+        quoteDate:        quoteDate   ? new Date(quoteDate)   : null,
+        invoiceId:        invoiceId   ?? null,
+        invoiceNumber:    invoiceNumber ?? null,
+        invoiceDate:      invoiceDate  ? new Date(invoiceDate) : null,
+      };
+
+      try {
+        // Upsert: find existing by subscriptionId + invoiceNumber (or quoteNumber)
+        const existing = await this.prisma.renewalHistory.findFirst({
+          where: {
+            subscriptionId: m.subId,
+            ...(invoiceNumber ? { invoiceNumber } : { quoteNumber }),
+          },
+          select: { id: true },
+        });
+
+        if (existing) {
+          await this.prisma.renewalHistory.update({ where: { id: existing.id }, data });
+          results.push({ subId: m.subId, action: 'updated' });
+        } else {
+          await this.prisma.renewalHistory.create({ data });
+          results.push({ subId: m.subId, action: 'created' });
+        }
+      } catch (err) {
+        results.push({ subId: m.subId, action: 'skipped', error: err instanceof Error ? err.message : 'unknown' });
+      }
+    }
+
+    return { results };
+  }
+
+  /**
+   * Fetch line items for a single Zoho document (invoice or estimate).
+   *
+   * DB-first: if the document's line items are already in zoho_customer_doc_lines,
+   * return them immediately (0 Zoho calls). On first call (or cache miss), fetch
+   * from Zoho, save to DB, then return. Always re-runs the subscription auto-match
+   * so suggestions reflect current DB state.
+   *
+   * Matching priority: domain → closest end date (within 90 days) → closest quantity.
+   * Greedy: each subscription assigned at most once across line items.
+   */
+  async getZohoDocLineItems(orgId: string, kind: 'estimate' | 'invoice', docId: string) {
+    type LineItemOut = {
+      name: string; qty: number; rate: number;
+      domain: string; startDate: string; endDate: string;
+      suggestedSub: { id: string; subscriptionNumber: string; zohoItemName: string | null; domain: { domainName: string } | null } | null;
+    };
+
+    // ── 1. Check DB cache ───────────────────────────────────────────
+    const cachedDoc = await this.prisma.zohoCustomerDoc.findFirst({
+      where: {
+        organizationId: orgId,
+        OR: [{ quoteId: docId }, { invoiceId: docId }],
+      },
+      include: { lines: { orderBy: { lineOrder: 'asc' } } },
+    });
+
+    let rawLines: Array<{ name: string; qty: number; rate: number; domain: string; startDate: string; endDate: string }>;
+
+    if (cachedDoc && cachedDoc.lines.length > 0) {
+      // Cache hit — use DB rows directly
+      rawLines = cachedDoc.lines.map(l => ({
+        name:      l.name,
+        qty:       l.qty,
+        rate:      l.rate,
+        domain:    l.domain    ?? '',
+        startDate: l.startDate ?? '',
+        endDate:   l.endDate   ?? '',
+      }));
+    } else {
+      // ── 2. Cache miss → fetch from Zoho ──────────────────────────
+      const [fm, doc] = await Promise.all([
+        this.getItemFieldMappings(orgId, 'items'),
+        this.getDocDetailCached<{
+          line_items: Array<{
+            item_id?: string; name: string; quantity: number; rate: number;
+            item_custom_fields?: Array<{ api_name: string; value: string | number }>;
+            custom_fields?:      Array<{ api_name: string; value: string | number }>;
+          }>;
+        }>(orgId, kind, docId),
+      ]);
+
+      if (!doc) return { lineItems: [], fromCache: false };
+
+      const domainCf    = fm.domain_name ?? 'cf_domain_name';
+      const startDateCf = fm.start_date  ?? 'cf_subscription_start_date';
+      const endDateCf   = fm.end_date    ?? 'cf_subscription_end_date';
+
+      const cfVal = (cfs: Array<{ api_name: string; value: string | number }> | undefined, key: string) => {
+        const f = cfs?.find(c => c.api_name === key);
+        return f?.value != null ? String(f.value) : '';
+      };
+      const parseDate = (val: string) => {
+        if (!val || /^\d{4}-\d{2}-\d{2}$/.test(val)) return val;
+        const p = val.split('/');
+        return p.length === 3 ? `${p[2]}-${p[1].padStart(2,'0')}-${p[0].padStart(2,'0')}` : val;
+      };
+
+      rawLines = doc.line_items.map(li => {
+        const cfs       = li.item_custom_fields ?? li.custom_fields ?? [];
+        return {
+          name:      li.name,
+          qty:       li.quantity,
+          rate:      li.rate,
+          domain:    cfVal(cfs, domainCf),
+          startDate: parseDate(cfVal(cfs, startDateCf)),
+          endDate:   parseDate(cfVal(cfs, endDateCf)),
+        };
+      });
+
+      // ── 3. Persist to DB (fire-and-forget; don't block the response) ──
+      if (cachedDoc) {
+        void this.prisma.$transaction(async (tx) => {
+          await tx.zohoCustomerDocLine.deleteMany({ where: { docId: cachedDoc.id } });
+          if (rawLines.length > 0) {
+            await tx.zohoCustomerDocLine.createMany({
+              data: rawLines.map((l, idx) => ({
+                docId:     cachedDoc.id,
+                lineOrder: idx,
+                name:      l.name,
+                qty:       l.qty,
+                rate:      l.rate,
+                domain:    l.domain    || null,
+                startDate: l.startDate || null,
+                endDate:   l.endDate   || null,
+              })),
+            });
+          }
+        }).catch(err => this.logger.warn(`Line-item DB save failed for ${docId}: ${String(err)}`));
+      }
+    }
+
+    // ── 4. Build output with subscription auto-match ────────────────
+    const lineItems: LineItemOut[] = rawLines.map(l => ({ ...l, suggestedSub: null }));
+
+    const domains = [...new Set(lineItems.map(l => l.domain).filter(Boolean))];
+    if (domains.length > 0) {
+      const subs = await this.prisma.subscription.findMany({
+        where: { organizationId: orgId, domain: { domainName: { in: domains } } },
+        select: {
+          id: true, subscriptionNumber: true, zohoItemName: true, quantity: true, endDate: true,
+          domain: { select: { domainName: true } },
+        },
+      });
+
+      const usedIds = new Set<string>();
+      for (const li of lineItems) {
+        if (!li.domain) continue;
+        let candidates = subs.filter(s => s.domain?.domainName === li.domain && !usedIds.has(s.id));
+        if (candidates.length === 0) continue;
+
+        if (li.endDate) {
+          const liEnd = new Date(li.endDate).getTime();
+          const byDate = candidates.filter(
+            s => Math.abs(new Date(s.endDate).getTime() - liEnd) < 90 * 86_400_000,
+          );
+          if (byDate.length > 0) {
+            candidates = byDate.sort(
+              (a, b) => Math.abs(new Date(a.endDate).getTime() - liEnd) - Math.abs(new Date(b.endDate).getTime() - liEnd),
+            );
+          }
+        }
+
+        if (candidates.length > 1) {
+          candidates = [...candidates].sort(
+            (a, b) => Math.abs(Number(a.quantity) - li.qty) - Math.abs(Number(b.quantity) - li.qty),
+          );
+        }
+
+        li.suggestedSub = candidates[0];
+        usedIds.add(candidates[0].id);
+      }
+    }
+
+    return { lineItems, fromCache: cachedDoc?.lines.length ? true : false };
   }
 
   // ------------------------------------------------------------------

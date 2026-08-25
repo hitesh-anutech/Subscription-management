@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 import { createServerApi, SESSION_COOKIE } from '@/lib/api';
 import { SyncCustomerButton } from './_components/sync-customer-button';
 import CustomerSubscriptions from './_components/customer-subscriptions';
+import ZohoDocsPanel from './_components/zoho-docs-panel';
 
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Customer' };
@@ -43,10 +44,16 @@ interface Quote {
   pushedToZohoAt: string | null; // doubles as the invoice date
 }
 interface RecentInvoice { invoiceNumber: string | null; invoiceDate: string | null; domain: string | null; amount: string; subscriptionId: string; subCount?: number }
-interface AtAGlance { activeSubs: number; domainsMapped: number; lastQuoteNumber: string | null; lastInvoiceNumber: string | null }
+interface RecentDocument {
+  quoteId: string | null; quoteNumber: string | null; quoteDate: string | null;
+  invoiceId: string | null; invoiceNumber: string | null; invoiceDate: string | null;
+  domain: string | null;
+}
+interface AtAGlance { activeSubs: number; domainsMapped: number }
 interface Detail {
   customer: CacheCustomer | null; subscriptions: Sub[]; domains: Dom[];
   quotes: Quote[]; recentInvoices: RecentInvoice[];
+  recentDocuments: RecentDocument[];
   domainSubCounts: Record<string, number>; atAGlance: AtAGlance;
 }
 
@@ -101,7 +108,7 @@ export default async function CustomerDetailPage({
     ? `https://books.zoho.${DC_TLD[org.dataCenter] ?? 'com'}/app/${org.zohoOrgId}#/contacts/${zohoId}`
     : `https://books.zoho.in/app#/contacts/${zohoId}`;
 
-  const { customer, subscriptions, domains, quotes, recentInvoices, domainSubCounts, atAGlance } = detail!;
+  const { customer, subscriptions, domains, quotes, recentInvoices, recentDocuments = [], domainSubCounts, atAGlance } = detail!;
   const name = customer?.displayName || zohoId;
   const extra = (customer?.extra ?? {}) as CustomerExtra;
 
@@ -275,26 +282,67 @@ export default async function CustomerDetailPage({
         </div>
 
         <div className="bg-white border border-slate-200 rounded-xl p-5">
-          <h2 className="text-sm font-semibold text-slate-700 mb-4">📊 At a Glance</h2>
-          <div className="space-y-3 text-sm">
-            <div className="flex justify-between items-center">
-              <span className="text-slate-500">Active Subs</span>
-              <span className="font-bold text-emerald-600 text-base">{atAGlance.activeSubs}</span>
+          <h2 className="text-sm font-semibold text-slate-700 mb-3">📊 At a Glance</h2>
+          {/* Quick stats */}
+          <div className="flex gap-6 text-sm mb-4">
+            <div>
+              <p className="text-xs text-slate-400">Active Subs</p>
+              <p className="font-bold text-emerald-600 text-lg leading-tight">{atAGlance.activeSubs}</p>
             </div>
-            <div className="flex justify-between items-center">
-              <span className="text-slate-500">Domains Mapped</span>
-              <span className="font-semibold text-slate-800">{atAGlance.domainsMapped}</span>
-            </div>
-            <div className="h-px bg-slate-100" />
-            <div className="flex justify-between items-center">
-              <span className="text-slate-500">Last Quote</span>
-              <span className="font-mono text-xs text-slate-700">{atAGlance.lastQuoteNumber || '—'}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-slate-500">Last Invoice</span>
-              <span className="font-mono text-xs text-slate-700">{atAGlance.lastInvoiceNumber || '—'}</span>
+            <div>
+              <p className="text-xs text-slate-400">Domains</p>
+              <p className="font-semibold text-slate-800 text-lg leading-tight">{atAGlance.domainsMapped}</p>
             </div>
           </div>
+          {/* Recent Quote + Invoice pairs */}
+          <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-2">Recent Documents</p>
+          {recentDocuments.length === 0 ? (
+            <p className="text-xs text-slate-400">कोई recent document नहीं।</p>
+          ) : (
+            <div className="space-y-2">
+              {recentDocuments.map((doc, i) => (
+                <div key={i} className="border border-slate-100 rounded-lg px-3 py-2 hover:bg-slate-50 transition-colors">
+                  {/* Quote row */}
+                  {doc.quoteNumber && (
+                    <div className="flex items-center justify-between gap-2 text-xs">
+                      <span className="text-slate-400 shrink-0">📃 Quote</span>
+                      <span className="font-mono text-slate-700 truncate">{doc.quoteNumber}</span>
+                      <span className="text-slate-400 shrink-0">{fmt(doc.quoteDate)}</span>
+                      <a
+                        href={`/dashboard/subscriptions/import?org_id=${encodeURIComponent(orgId)}&ref_number=${encodeURIComponent(doc.quoteNumber)}&doc_source=estimates`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="shrink-0 text-[10px] px-2 py-0.5 rounded bg-indigo-50 text-indigo-600 border border-indigo-200 hover:bg-indigo-100 whitespace-nowrap"
+                        title="Import from Zoho"
+                      >
+                        ↑ Import
+                      </a>
+                    </div>
+                  )}
+                  {/* Invoice row */}
+                  {doc.invoiceNumber && (
+                    <div className={`flex items-center justify-between gap-2 text-xs ${doc.quoteNumber ? 'mt-1 pt-1 border-t border-slate-100' : ''}`}>
+                      <span className="text-slate-400 shrink-0">🧾 Invoice</span>
+                      <span className="font-mono text-slate-700 truncate">{doc.invoiceNumber}</span>
+                      <span className="text-slate-400 shrink-0">{fmt(doc.invoiceDate)}</span>
+                      <a
+                        href={`/dashboard/subscriptions/import?org_id=${encodeURIComponent(orgId)}&ref_number=${encodeURIComponent(doc.invoiceNumber)}&doc_source=invoices`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="shrink-0 text-[10px] px-2 py-0.5 rounded bg-emerald-50 text-emerald-600 border border-emerald-200 hover:bg-emerald-100 whitespace-nowrap"
+                        title="Import from Zoho"
+                      >
+                        ↑ Import
+                      </a>
+                    </div>
+                  )}
+                  {doc.domain && (
+                    <p className="text-[10px] text-slate-400 mt-1 truncate">{doc.domain}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -341,6 +389,18 @@ export default async function CustomerDetailPage({
           )}
         </div>
       </details>
+
+      {/* ── Zoho Documents sync panel ── */}
+      <ZohoDocsPanel
+        orgId={orgId}
+        zohoCustomerId={zohoId}
+        subs={subscriptions.map(s => ({
+          id: s.id,
+          subscriptionNumber: s.subscriptionNumber,
+          zohoItemName: s.zohoItemName,
+          domain: s.domain,
+        }))}
+      />
 
       {/* ── Order History (quotes + invoices, newest first) ── */}
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">

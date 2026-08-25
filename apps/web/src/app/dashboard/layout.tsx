@@ -10,6 +10,7 @@ import {
   Settings,
   ShieldCheck,
   History,
+  Bug,
   type LucideIcon,
 } from 'lucide-react';
 import { redirect } from 'next/navigation';
@@ -17,6 +18,7 @@ import { getCurrentUser } from '@/lib/auth';
 import { LogoutButton } from './_components/logout-button';
 import { GlobalSearch } from './_components/global-search';
 import { SidebarNavLink } from './_components/sidebar-nav-link';
+import { BugReporter } from '@/components/bug-reporter';
 
 type NavItem = {
   href: string;
@@ -36,6 +38,7 @@ const navItems: NavItem[] = [
   { href: '/dashboard/subscriptions/billing-history', label: 'Billing History', icon: History },
   { href: '/dashboard/domains', label: 'Domains', icon: Globe },
   { href: '/dashboard/admin/users', label: 'User Access', icon: ShieldCheck },
+  { href: '/dashboard/admin/bug-reports', label: 'Bug Reports', icon: Bug },
 ];
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -117,6 +120,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
           {children}
         </main>
       </div>
+
+      <BugReporter />
     </div>
   );
 }

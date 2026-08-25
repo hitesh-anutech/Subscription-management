@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { importSubscriptionsAction, type ImportSubscription, type ImportResult } from './actions';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3001/api';
@@ -128,15 +129,20 @@ interface Candidate {
   sourceQuoteStatus?: string; // for estimate-sourced candidates (drives create gating)
 }
 
-export default function ImportSubscriptionsPage() {
+function ImportSubscriptionsInner() {
+  const searchParams = useSearchParams();
+  const preOrgId    = searchParams.get('org_id') ?? '';
+  const preRefNum   = searchParams.get('ref_number') ?? '';
+  const preDocSrc   = (searchParams.get('doc_source') as 'invoices' | 'estimates' | null) ?? 'invoices';
+
   const [orgs,        setOrgs]        = useState<Org[]>([]);
-  const [selectedOrg, setSelectedOrg] = useState('');
+  const [selectedOrg, setSelectedOrg] = useState(preOrgId);
   const [mappings,    setMappings]    = useState<Record<string, string>>({});
   const [dateStart,   setDateStart]   = useState('');
   const [dateEnd,     setDateEnd]     = useState('');
-  const [status,      setStatus]      = useState('paid');
-  const [refNumber,   setRefNumber]   = useState('');
-  const [docSource,   setDocSource]   = useState<'invoices' | 'estimates'>('invoices');
+  const [status,      setStatus]      = useState(preDocSrc === 'estimates' ? 'accepted' : 'paid');
+  const [refNumber,   setRefNumber]   = useState(preRefNum);
+  const [docSource,   setDocSource]   = useState<'invoices' | 'estimates'>(preDocSrc);
   const [businessType, setBusinessType] = useState('');
   const [expiryFrom,  setExpiryFrom]  = useState('');
   const [expiryTo,    setExpiryTo]    = useState('');
@@ -153,6 +159,9 @@ export default function ImportSubscriptionsPage() {
   const [fMin,      setFMin]      = useState('');
   const [fMax,      setFMax]      = useState('');
 
+  // Auto-fetch when opened with pre-filled params (org + ref_number).
+  const autoFetched = useRef(false);
+
   useEffect(() => {
     let cancelled = false;
     fetch(`${API_BASE}/organizations`, { credentials: 'include' })
@@ -161,12 +170,22 @@ export default function ImportSubscriptionsPage() {
         if (cancelled) return;
         const active = d.organizations?.filter((o) => o.isActive !== false) ?? [];
         setOrgs(active);
-        if (active[0]) { setSelectedOrg(active[0].id); void loadMappings(active[0].id); }
+        // If org pre-selected via URL, use it; otherwise default to first active org.
+        const orgToUse = preOrgId && active.find((o) => o.id === preOrgId) ? preOrgId : active[0]?.id ?? '';
+        if (orgToUse) { setSelectedOrg(orgToUse); void loadMappings(orgToUse); }
       })
       .catch(() => {});
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Once orgs are loaded + org is set, auto-fetch if ref_number was pre-filled.
+  useEffect(() => {
+    if (autoFetched.current || !selectedOrg || !preRefNum || orgs.length === 0) return;
+    autoFetched.current = true;
+    void fetchInvoices();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedOrg, orgs]);
 
   const loadMappings = async (orgId: string) => {
     try {
@@ -648,5 +667,13 @@ export default function ImportSubscriptionsPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function ImportSubscriptionsPage() {
+  return (
+    <Suspense fallback={<div className="text-sm text-slate-400 p-8">Loading…</div>}>
+      <ImportSubscriptionsInner />
+    </Suspense>
   );
 }

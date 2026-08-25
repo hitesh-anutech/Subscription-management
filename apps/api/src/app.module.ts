@@ -23,6 +23,7 @@ import { UsersModule } from './users/users.module';
 import { DocumentsModule } from './documents/documents.module';
 import { CustomersModule } from './customers/customers.module';
 import { AuditLogsModule } from './audit-logs/audit-logs.module';
+import { BugReportsModule } from './bug-reports/bug-reports.module';
 
 @Module({
   imports: [
@@ -57,6 +58,7 @@ import { AuditLogsModule } from './audit-logs/audit-logs.module';
     DocumentsModule,
     CustomersModule,
     AuditLogsModule,
+    BugReportsModule,
   ],
 })
 export class AppModule {}
