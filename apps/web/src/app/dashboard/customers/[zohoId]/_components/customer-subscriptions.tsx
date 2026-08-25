@@ -124,9 +124,9 @@ function TransferCustomerModal({
               <p className="text-xs text-blue-500 font-medium mb-0.5">Transfer to:</p>
               <div className="flex items-center gap-2">
                 <p className="font-semibold text-blue-900">{selected.displayName}</p>
-                {selected.extra?.contact_number && (
+                {Boolean(selected.extra?.contact_number) && (
                   <span className="text-[11px] font-mono px-1.5 py-0.5 rounded bg-blue-100 text-blue-600 shrink-0">
-                    {selected.extra.contact_number as string}
+                    {selected.extra?.contact_number as string}
                   </span>
                 )}
               </div>

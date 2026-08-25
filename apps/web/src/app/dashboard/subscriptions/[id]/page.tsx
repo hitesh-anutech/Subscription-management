@@ -185,6 +185,7 @@ export default async function SubscriptionDetailPage({ params }: { params: Promi
       quoteDate: null,
       invoiceId: sub.lastInvoiceId,
       invoiceNumber: sub.lastInvoiceNumber,
+      invoiceDate: null,
       zohoEstimateStatus: null,
       zohoInvoiceStatus: null,
       sentAt: null,
