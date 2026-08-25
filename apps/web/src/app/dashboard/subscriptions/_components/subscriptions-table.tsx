@@ -302,40 +302,41 @@ export function SubscriptionsTable({
   };
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-3">
+      {/* Bulk action bar — sticky so it stays visible while scrolling */}
       {selectedIds.length > 0 && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center justify-between">
-          <div className="text-blue-800 text-sm font-medium">
+        <div className="sticky top-0 z-20 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2.5 flex items-center justify-between shadow-sm">
+          <div className="text-blue-800 text-sm font-semibold">
             {selectedIds.length} subscriptions selected
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <button
               onClick={handleBulkCancel}
               disabled={isUpdatingPrice || isQuoting || isUpdatingStatus}
-              className="px-3 py-1.5 bg-red-100 border border-red-200 text-red-700 text-xs font-semibold rounded hover:bg-red-200 disabled:opacity-50"
+              className="px-3 py-1.5 bg-red-100 border border-red-200 text-red-700 text-xs font-semibold rounded-lg hover:bg-red-200 disabled:opacity-50"
             >
               {isUpdatingStatus ? 'Updating...' : 'Cancel Subscriptions'}
             </button>
             <button
               onClick={handleBulkActivate}
               disabled={isUpdatingPrice || isQuoting || isUpdatingStatus}
-              className="px-3 py-1.5 bg-emerald-100 border border-emerald-200 text-emerald-700 text-xs font-semibold rounded hover:bg-emerald-200 disabled:opacity-50"
+              className="px-3 py-1.5 bg-emerald-100 border border-emerald-200 text-emerald-700 text-xs font-semibold rounded-lg hover:bg-emerald-200 disabled:opacity-50"
             >
               {isUpdatingStatus ? 'Updating...' : 'Activate Subscriptions'}
             </button>
             <button
               onClick={handleBulkUpdatePrice}
               disabled={isUpdatingPrice || isQuoting || isUpdatingStatus}
-              className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 text-xs font-semibold rounded hover:bg-slate-50 disabled:opacity-50"
+              className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 text-xs font-semibold rounded-lg hover:bg-slate-50 disabled:opacity-50"
             >
               {isUpdatingPrice ? 'Updating...' : 'Bulk Update Price'}
             </button>
             <button
               onClick={handleBulkQuote}
               disabled={isUpdatingPrice || isQuoting || isUpdatingStatus}
-              className="px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded hover:bg-blue-700 disabled:opacity-50"
+              className="px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-50"
             >
-              {isQuoting ? 'Generating...' : 'Generate Bulk Quotes'}
+              {isQuoting ? 'Generating...' : 'Generate Quotes'}
             </button>
           </div>
         </div>
@@ -345,7 +346,7 @@ export function SubscriptionsTable({
         <div className="flex items-center gap-2">
           <button
             onClick={() => setIsPasteModalOpen(true)}
-            className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 text-sm rounded hover:bg-slate-50"
+            className="px-3 py-1.5 bg-white border border-slate-200 text-slate-700 text-xs font-semibold rounded-lg hover:bg-slate-50 shadow-sm"
           >
             Bulk Select by Domains
           </button>
@@ -353,11 +354,11 @@ export function SubscriptionsTable({
             <button
               onClick={handleBulkDelete}
               disabled={selectedIds.length === 0 || isUpdatingStatus}
-              title={selectedIds.length === 0 ? "डिलीट करने के लिए कम से कम एक subscription चुनें" : "चयनित subscriptions डिलीट करें"}
-              className={`p-2 border rounded-xl transition-all active:scale-95 flex items-center justify-center ${
+              title={selectedIds.length === 0 ? "Select at least one subscription to delete" : "Delete selected subscriptions"}
+              className={`p-2 border rounded-lg transition-all active:scale-95 flex items-center justify-center ${
                 selectedIds.length > 0
                   ? 'border-red-200 bg-red-50 text-red-600 hover:bg-red-100'
-                  : 'border-slate-100 bg-slate-50/50 text-slate-300 cursor-not-allowed'
+                  : 'border-slate-200 bg-slate-50 text-slate-300 cursor-not-allowed'
               }`}
             >
               <Trash2 className="w-4 h-4" />
@@ -368,23 +369,18 @@ export function SubscriptionsTable({
           <div className="flex items-center gap-2">
             <button
               onClick={handleExportCsv}
-              className="px-3.5 py-2 border border-slate-200 text-slate-700 text-xs font-bold rounded-xl bg-white hover:bg-slate-50 transition-all shadow-sm inline-flex items-center gap-1.5"
+              className="px-3 py-1.5 border border-slate-200 text-slate-700 text-xs font-semibold rounded-lg bg-white hover:bg-slate-50 transition-all shadow-sm inline-flex items-center gap-1.5"
             >
               📤 Export CSV
             </button>
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={isImportingCsv}
-              className="px-3.5 py-2 border border-slate-200 text-slate-700 text-xs font-bold rounded-xl bg-white hover:bg-slate-50 transition-all shadow-sm inline-flex items-center gap-1.5 disabled:opacity-50"
+              className="px-3 py-1.5 border border-slate-200 text-slate-700 text-xs font-semibold rounded-lg bg-white hover:bg-slate-50 transition-all shadow-sm inline-flex items-center gap-1.5 disabled:opacity-50"
             >
               📥 {isImportingCsv ? 'Importing…' : 'Import CSV'}
             </button>
-            <input
-              type="file"
-              className="hidden"
-              ref={fileInputRef}
-              onChange={handleImportCsv}
-            />
+            <input type="file" className="hidden" ref={fileInputRef} onChange={handleImportCsv} />
           </div>
         )}
       </div>
@@ -429,9 +425,10 @@ export function SubscriptionsTable({
         </div>
       )}
 
-      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 border-b border-slate-200">
+      {/* Scrollable table — sticky header, both H and V scroll */}
+      <div className="rounded-xl border border-slate-200 overflow-auto max-h-[calc(100vh-290px)] bg-white">
+        <table className="w-full text-sm min-w-[900px]">
+          <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
             <tr>
               <th className="px-4 py-3 text-left w-10">
                 <input
@@ -444,73 +441,76 @@ export function SubscriptionsTable({
                   className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                 />
               </th>
-              <th className="text-left px-4 py-3 font-medium text-slate-600">Customer / Domain</th>
-              <th className="text-left px-4 py-3 font-medium text-slate-600">Item</th>
-              <th className="text-right px-4 py-3 font-medium text-slate-600">Qty</th>
-              <th className="text-right px-4 py-3 font-medium text-slate-600">Price</th>
-              <th className="text-center px-4 py-3 font-medium text-slate-600">Subs. Period</th>
-              <th className="text-center px-4 py-3 font-medium text-slate-600">Status</th>
-              <th className="px-4 py-3"></th>
+              <th className="text-left px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">Customer / Domain</th>
+              <th className="text-left px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">Item</th>
+              <th className="text-right px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">Qty</th>
+              <th className="text-right px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">Price</th>
+              <th className="text-center px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">Subs. Period</th>
+              <th className="text-center px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">Status</th>
+              <th className="px-4 py-3 w-10"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {subscriptions.map((sub) => {
               const days = daysUntil(sub.endDate);
               const isUrgent = days <= 30 && days >= 0;
+              const isSelected = selectedIds.includes(sub.id);
               return (
-                <tr key={sub.id} className="hover:bg-slate-50 transition-colors">
-                  <td className="px-4 py-3">
+                <tr
+                  key={sub.id}
+                  className={`transition-colors ${isSelected ? 'bg-blue-50/60' : 'hover:bg-slate-50/80'}`}
+                >
+                  <td className="px-4 py-2.5">
                     <input
                       type="checkbox"
-                      checked={selectedIds.includes(sub.id)}
+                      checked={isSelected}
                       onChange={() => toggleOne(sub.id)}
                       className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                     />
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-2.5">
                     {sub.zohoCustomerId ? (
                       <Link
                         href={`/dashboard/customers/${sub.zohoCustomerId}?org_id=${sub.organization.id}`}
-                        className="font-medium text-blue-700 hover:underline truncate max-w-48 block"
-                        title="Customer page par jaao"
+                        className="font-semibold text-blue-700 hover:underline truncate max-w-48 block text-[13px]"
                       >
                         {sub.zohoCustomerName ?? '—'}
                       </Link>
                     ) : (
-                      <p className="font-medium text-slate-800 truncate max-w-48">
+                      <p className="font-semibold text-slate-800 truncate max-w-48 text-[13px]">
                         {sub.zohoCustomerName ?? '—'}
                       </p>
                     )}
-                    <p className="text-xs text-slate-400 mt-0.5">
+                    <p className="text-[11px] text-slate-400 mt-0.5">
                       {sub.domain.domainName} · {sub.organization.name}
                     </p>
                   </td>
-                  <td className="px-4 py-3">
-                    <TruncatedTooltip text={sub.zohoItemName ?? '—'} className="text-slate-700" />
-                    <p className="text-xs text-slate-400">{sub.billingCycle}</p>
+                  <td className="px-4 py-2.5">
+                    <TruncatedTooltip text={sub.zohoItemName ?? '—'} className="text-slate-700 text-[13px]" />
+                    <p className="text-[11px] text-slate-400">{sub.billingCycle}</p>
                   </td>
-                  <td className="px-4 py-3 text-right text-slate-700">{sub.quantity}</td>
-                  <td className="px-4 py-3 text-right text-slate-700">
+                  <td className="px-4 py-2.5 text-right text-slate-700 text-[13px]">{sub.quantity}</td>
+                  <td className="px-4 py-2.5 text-right text-slate-700 font-medium text-[13px]">
                     {money(Number(sub.subscriptionPrice), sub.currency)}
                   </td>
-                  <td className="px-4 py-3 text-center">
-                    <p className={`text-sm ${isUrgent ? 'text-red-600 font-semibold' : 'text-slate-700'}`}>
+                  <td className="px-4 py-2.5 text-center">
+                    <p className={`text-[13px] ${isUrgent ? 'text-red-600 font-semibold' : 'text-slate-700'}`}>
                       {fmt(sub.startDate)} <span className="text-slate-400">→</span> {fmt(sub.endDate)}
                     </p>
                     {days >= 0 && (
-                      <p className={`text-xs mt-0.5 ${isUrgent ? 'text-red-500' : 'text-slate-400'}`}>
+                      <p className={`text-[11px] mt-0.5 ${isUrgent ? 'text-red-500 font-medium' : 'text-slate-400'}`}>
                         {days === 0 ? 'Today' : `${days} days`}
                       </p>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-center">
+                  <td className="px-4 py-2.5 text-center">
                     <StatusBadge status={sub.lifecycleStatus} endDate={sub.endDate} />
                   </td>
-                  <td className="px-4 py-3 text-right">
+                  <td className="px-4 py-2.5 text-right">
                     <Link
                       href={`/dashboard/subscriptions/${sub.id}`}
                       title="View Details"
-                      className="p-1.5 rounded-xl border border-blue-100 bg-blue-50/50 text-blue-600 hover:bg-blue-50 hover:text-blue-700 transition-all active:scale-95 inline-flex"
+                      className="p-1.5 rounded-lg border border-blue-100 bg-blue-50/50 text-blue-500 hover:bg-blue-100 hover:text-blue-700 transition-all active:scale-95 inline-flex"
                     >
                       <Eye className="w-4 h-4" />
                     </Link>
