@@ -1,7 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { api, API_BASE } from '@/lib/api';
 import { Eye, Trash2 } from 'lucide-react';
@@ -112,9 +113,6 @@ function QuoteLineItemsTooltip({ sub }: { sub: Subscription }) {
 
   return (
     <div className="absolute z-50 bottom-full mb-2 left-1/2 -translate-x-1/2 w-[420px] bg-white border border-slate-200 rounded-xl shadow-xl text-xs pointer-events-none">
-      {/* Arrow */}
-      <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-full w-0 h-0 border-l-[6px] border-r-[6px] border-t-[6px] border-l-transparent border-r-transparent border-t-slate-200" />
-
       <div className="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between">
         <span className="font-bold text-slate-700 uppercase tracking-widest text-[10px]">Line Items</span>
         {status && (
@@ -156,28 +154,64 @@ function QuoteLineItemsTooltip({ sub }: { sub: Subscription }) {
   );
 }
 
+const TOOLTIP_W = 420;
+
 function LastQuoteCell({ sub }: { sub: Subscription }) {
-  const [hovered, setHovered] = useState(false);
+  const triggerRef = useRef<HTMLDivElement>(null);
+  const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+
   if (!sub.lastQuoteNumber) return <span className="text-slate-300">—</span>;
 
   const days = daysSince(sub.lastQuoteDate);
   const isRecent = days <= 30;
 
+  const handleMouseEnter = () => {
+    if (!triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    // Center tooltip on the trigger, then clamp so it never goes off-screen
+    const centeredX = rect.left + rect.width / 2 - TOOLTIP_W / 2;
+    const clampedX = Math.max(8, Math.min(centeredX, window.innerWidth - TOOLTIP_W - 8));
+    setTooltipPos({ x: clampedX, y: rect.top });
+  };
+
   return (
-    <div
-      className="relative inline-block"
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-    >
-      <div className={`text-[11px] font-mono cursor-default ${isRecent ? 'text-amber-600 font-semibold' : 'text-slate-500'}`}>
-        {sub.lastQuoteNumber}
+    <>
+      <div
+        ref={triggerRef}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={() => setTooltipPos(null)}
+        className="inline-block cursor-default"
+      >
+        <div className={`text-[11px] font-mono ${isRecent ? 'text-amber-600 font-semibold' : 'text-slate-500'}`}>
+          {sub.lastQuoteNumber}
+        </div>
+        <div className={`text-[10px] mt-0.5 ${isRecent ? 'text-amber-500' : 'text-slate-400'}`}>
+          {days === 0 ? 'Today' : days === 1 ? '1d ago' : `${days}d ago`}
+          {isRecent && <span className="ml-1 bg-amber-100 text-amber-700 px-1 py-0.5 rounded text-[9px] font-bold">RECENT</span>}
+        </div>
       </div>
-      <div className={`text-[10px] mt-0.5 ${isRecent ? 'text-amber-500' : 'text-slate-400'}`}>
-        {days === 0 ? 'Today' : days === 1 ? '1d ago' : `${days}d ago`}
-        {isRecent && <span className="ml-1 bg-amber-100 text-amber-700 px-1 py-0.5 rounded text-[9px] font-bold">RECENT</span>}
-      </div>
-      {hovered && <QuoteLineItemsTooltip sub={sub} />}
-    </div>
+
+      {/* Portal: renders outside overflow container so it's never clipped */}
+      {tooltipPos && mounted && createPortal(
+        <div
+          style={{
+            position: 'fixed',
+            left: tooltipPos.x,
+            top: tooltipPos.y,
+            transform: 'translateY(calc(-100% - 8px))',
+            width: TOOLTIP_W,
+            zIndex: 9999,
+          }}
+          onMouseEnter={() => setTooltipPos(tooltipPos)}
+          onMouseLeave={() => setTooltipPos(null)}
+        >
+          <QuoteLineItemsTooltip sub={sub} />
+        </div>,
+        document.body
+      )}
+    </>
   );
 }
 
