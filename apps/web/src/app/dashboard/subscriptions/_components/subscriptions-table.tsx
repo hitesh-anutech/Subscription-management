@@ -3,11 +3,26 @@
 import Link from 'next/link';
 import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { format } from 'date-fns';
 import { api, API_BASE } from '@/lib/api';
 import { Eye, Trash2 } from 'lucide-react';
 import { deleteMultipleSubscriptionsAction } from '../actions';
 import { TruncatedTooltip } from '@/components/truncated-tooltip';
+
+interface RenewalHistoryLine {
+  id: string;
+  quoteNumber: string | null;
+  quoteDate: string | null;
+  quantity: string | null;
+  sellingPrice: string | null;
+  subtotalAmount: string | null;
+  currency: string;
+  serviceStartDate: string | null;
+  serviceEndDate: string | null;
+  businessType: string;
+  renewalStatus: string;
+  zohoEstimateStatus: string | null;
+  domain: { domainName: string };
+}
 
 interface Subscription {
   id: string;
@@ -23,9 +38,12 @@ interface Subscription {
   endDate: string;
   lifecycleStatus: string;
   processStatus: string;
+  lastQuoteNumber: string | null;
+  lastQuoteDate: string | null;
   organization: { id: string; name: string };
   domain: { id: string; domainName: string };
   _count: { renewalHistory: number };
+  renewalHistory: RenewalHistoryLine[];
 }
 
 const CURRENCY_SYMBOL: Record<string, string> = {
@@ -63,6 +81,106 @@ function effectiveStatus(stored: string, endDate: string): string {
   return stored;
 }
 
+function fmtShort(dateStr: string | null) {
+  if (!dateStr) return '—';
+  return new Date(dateStr).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function daysSince(dateStr: string | null): number {
+  if (!dateStr) return Infinity;
+  return Math.floor((Date.now() - new Date(dateStr).getTime()) / 86_400_000);
+}
+
+// Tooltip shown on hovering over the Last Quote number — mirrors Zoho's line-item popover
+function QuoteLineItemsTooltip({ sub }: { sub: Subscription }) {
+  const lines = sub.renewalHistory.filter(h => h.quoteNumber === sub.lastQuoteNumber);
+  const total = lines.reduce((s, h) => s + Number(h.subtotalAmount ?? 0), 0);
+  const cur = lines[0]?.currency ?? sub.currency ?? 'INR';
+  const status = lines[0]?.zohoEstimateStatus ?? lines[0]?.renewalStatus ?? '';
+
+  const QUOTE_STATUS: Record<string, string> = {
+    draft: 'bg-slate-100 text-slate-600',
+    sent: 'bg-blue-100 text-blue-700',
+    accepted: 'bg-green-100 text-green-700',
+    declined: 'bg-red-100 text-red-700',
+    invoiced: 'bg-purple-100 text-purple-700',
+    expired: 'bg-orange-100 text-orange-700',
+    Quoted: 'bg-blue-100 text-blue-700',
+    Invoiced: 'bg-purple-100 text-purple-700',
+    Paid: 'bg-green-100 text-green-700',
+  };
+
+  return (
+    <div className="absolute z-50 bottom-full mb-2 left-1/2 -translate-x-1/2 w-[420px] bg-white border border-slate-200 rounded-xl shadow-xl text-xs pointer-events-none">
+      {/* Arrow */}
+      <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-full w-0 h-0 border-l-[6px] border-r-[6px] border-t-[6px] border-l-transparent border-r-transparent border-t-slate-200" />
+
+      <div className="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between">
+        <span className="font-bold text-slate-700 uppercase tracking-widest text-[10px]">Line Items</span>
+        {status && (
+          <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold capitalize ${QUOTE_STATUS[status] ?? 'bg-slate-100 text-slate-600'}`}>
+            {status}
+          </span>
+        )}
+      </div>
+
+      {lines.length === 0 ? (
+        <div className="px-4 py-3 text-slate-400 italic">No line item data available</div>
+      ) : (
+        <>
+          <div className="divide-y divide-slate-50">
+            {lines.map((h) => (
+              <div key={h.id} className="px-4 py-2.5">
+                <p className="font-medium text-slate-800 mb-0.5 truncate">{sub.zohoItemName ?? 'Item'}</p>
+                <div className="flex items-center justify-between text-slate-500">
+                  <span>
+                    <span className="text-blue-600 font-medium">{h.domain.domainName}</span>
+                    {h.serviceStartDate && h.serviceEndDate && (
+                      <> &nbsp;·&nbsp; {fmtShort(h.serviceStartDate)} → {fmtShort(h.serviceEndDate)}</>
+                    )}
+                  </span>
+                  <span className="ml-4 shrink-0">
+                    {h.quantity} × {money(Number(h.sellingPrice ?? 0), h.currency)}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="px-4 py-2.5 border-t border-slate-100 flex items-center justify-between bg-slate-50 rounded-b-xl">
+            <span className="text-slate-500">{lines.length} item{lines.length !== 1 ? 's' : ''}</span>
+            <span className="font-bold text-slate-800">Total {money(total, cur)}</span>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function LastQuoteCell({ sub }: { sub: Subscription }) {
+  const [hovered, setHovered] = useState(false);
+  if (!sub.lastQuoteNumber) return <span className="text-slate-300">—</span>;
+
+  const days = daysSince(sub.lastQuoteDate);
+  const isRecent = days <= 30;
+
+  return (
+    <div
+      className="relative inline-block"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <div className={`text-[11px] font-mono cursor-default ${isRecent ? 'text-amber-600 font-semibold' : 'text-slate-500'}`}>
+        {sub.lastQuoteNumber}
+      </div>
+      <div className={`text-[10px] mt-0.5 ${isRecent ? 'text-amber-500' : 'text-slate-400'}`}>
+        {days === 0 ? 'Today' : days === 1 ? '1d ago' : `${days}d ago`}
+        {isRecent && <span className="ml-1 bg-amber-100 text-amber-700 px-1 py-0.5 rounded text-[9px] font-bold">RECENT</span>}
+      </div>
+      {hovered && <QuoteLineItemsTooltip sub={sub} />}
+    </div>
+  );
+}
+
 function StatusBadge({ status, endDate }: { status: string; endDate: string }) {
   const eff = effectiveStatus(status, endDate);
   const label = eff.replace('_', ' ');
@@ -88,6 +206,7 @@ export function SubscriptionsTable({
   const [isQuoting, setIsQuoting] = useState(false);
   const [isPasteModalOpen, setIsPasteModalOpen] = useState(false);
   const [pasteText, setPasteText] = useState('');
+  const [recentQuoteWarning, setRecentQuoteWarning] = useState<{ id: string; name: string; quoteNumber: string; daysAgo: number }[]>([]);
   const [isImportingCsv, setIsImportingCsv] = useState(false);
   const [importResult, setImportResult] = useState<{
     importLogId?: string;
@@ -150,9 +269,8 @@ export function SubscriptionsTable({
     }
   };
 
-  const handleBulkQuote = async () => {
-    if (!confirm(`Are you sure you want to generate Zoho Renewal Quotes for ${selectedIds.length} subscriptions?`)) return;
-    
+  const doGenerateQuotes = async () => {
+    setRecentQuoteWarning([]);
     setIsQuoting(true);
     try {
       const res = await api.post<{
@@ -186,6 +304,25 @@ export function SubscriptionsTable({
       alert(`Error: ${err.message}`);
     } finally {
       setIsQuoting(false);
+    }
+  };
+
+  const handleBulkQuote = () => {
+    // Check if any selected subscription already has a recent quote (≤ 30 days)
+    const selected = subscriptions.filter(s => selectedIds.includes(s.id));
+    const recent = selected
+      .filter(s => s.lastQuoteNumber && daysSince(s.lastQuoteDate) <= 30)
+      .map(s => ({
+        id: s.id,
+        name: s.zohoCustomerName ?? s.domain.domainName,
+        quoteNumber: s.lastQuoteNumber!,
+        daysAgo: daysSince(s.lastQuoteDate),
+      }));
+
+    if (recent.length > 0) {
+      setRecentQuoteWarning(recent);
+    } else {
+      doGenerateQuotes();
     }
   };
 
@@ -447,6 +584,7 @@ export function SubscriptionsTable({
               <th className="text-right px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">Price</th>
               <th className="text-center px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">Subs. Period</th>
               <th className="text-center px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">Status</th>
+              <th className="text-center px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">Last Quote</th>
               <th className="px-4 py-3 w-10"></th>
             </tr>
           </thead>
@@ -506,6 +644,9 @@ export function SubscriptionsTable({
                   <td className="px-4 py-2.5 text-center">
                     <StatusBadge status={sub.lifecycleStatus} endDate={sub.endDate} />
                   </td>
+                  <td className="px-4 py-2.5 text-center">
+                    <LastQuoteCell sub={sub} />
+                  </td>
                   <td className="px-4 py-2.5 text-right">
                     <Link
                       href={`/dashboard/subscriptions/${sub.id}`}
@@ -521,6 +662,51 @@ export function SubscriptionsTable({
           </tbody>
         </table>
       </div>
+
+      {/* Recent quote warning modal */}
+      {recentQuoteWarning.length > 0 && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-2xl shadow-2xl w-[520px] max-w-full overflow-hidden">
+            <div className="px-6 py-5 border-b border-slate-100">
+              <div className="flex items-center gap-3 mb-1">
+                <span className="text-2xl">⚠️</span>
+                <h3 className="text-base font-bold text-slate-900">Recent Quotes Already Exist</h3>
+              </div>
+              <p className="text-sm text-slate-500 mt-1">
+                {recentQuoteWarning.length} of the selected subscriptions already have a quote generated within the last 30 days.
+                Generating again will create a duplicate quote in Zoho Books.
+              </p>
+            </div>
+            <div className="px-6 py-4 max-h-64 overflow-y-auto divide-y divide-slate-50">
+              {recentQuoteWarning.map(w => (
+                <div key={w.id} className="py-2.5 flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-800">{w.name}</p>
+                    <p className="text-xs text-amber-600 font-mono mt-0.5">{w.quoteNumber}</p>
+                  </div>
+                  <span className="text-xs bg-amber-50 border border-amber-200 text-amber-700 px-2 py-1 rounded-lg font-medium shrink-0">
+                    {w.daysAgo === 0 ? 'Today' : w.daysAgo === 1 ? '1 day ago' : `${w.daysAgo} days ago`}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex gap-3">
+              <button
+                onClick={() => setRecentQuoteWarning([])}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-white transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={doGenerateQuotes}
+                className="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold transition-colors"
+              >
+                Generate Anyway ({selectedIds.length})
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {isPasteModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">

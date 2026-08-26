@@ -21,9 +21,18 @@ interface Subscription {
   endDate: string;
   lifecycleStatus: string;
   processStatus: string;
+  lastQuoteNumber: string | null;
+  lastQuoteDate: string | null;
   organization: { id: string; name: string };
   domain: { id: string; domainName: string };
   _count: { renewalHistory: number };
+  renewalHistory: {
+    id: string; quoteNumber: string | null; quoteDate: string | null;
+    quantity: string | null; sellingPrice: string | null; subtotalAmount: string | null;
+    currency: string; serviceStartDate: string | null; serviceEndDate: string | null;
+    businessType: string; renewalStatus: string; zohoEstimateStatus: string | null;
+    domain: { domainName: string };
+  }[];
 }
 export default async function SubscriptionsPage({
   searchParams,
