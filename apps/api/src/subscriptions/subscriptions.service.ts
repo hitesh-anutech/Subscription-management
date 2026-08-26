@@ -2834,7 +2834,11 @@ export class SubscriptionsService {
           org.data_center as "dataCenter",
           rb.id as "batchId",
           rb.domain_count as "batchDomainCount",
-          rb.total_amount as "batchTotalAmount"
+          rb.total_amount as "batchTotalAmount",
+          rh.service_start_date as "serviceStartDate",
+          rh.service_end_date as "serviceEndDate",
+          rh.quantity,
+          rh.selling_price as "sellingPrice"
         FROM renewal_history rh
         INNER JOIN subscriptions sub ON rh.subscription_id = sub.id
         INNER JOIN organizations org ON rh.organization_id = org.id
@@ -2900,6 +2904,10 @@ export class SubscriptionsService {
         zohoItemName: r.zohoItemName,
         domainCount: r.batchId ? Number(r.batchDomainCount) : Number(r.groupedDomainCount),
         domainName: r.batchId ? null : r.domainName,
+        serviceStartDate: r.serviceStartDate ? new Date(r.serviceStartDate).toISOString() : null,
+        serviceEndDate: r.serviceEndDate ? new Date(r.serviceEndDate).toISOString() : null,
+        quantity: r.quantity != null ? String(r.quantity) : null,
+        sellingPrice: r.sellingPrice != null ? String(r.sellingPrice) : null,
         organization: {
           name: r.orgName,
           zohoOrgId: r.zohoOrgId,

@@ -1,7 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useState, useTransition } from 'react';
+import { useState, useTransition, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { ViewPdfButton } from '@/components/view-pdf-button';
 import { SendEmailModal } from '@/components/send-email-modal';
@@ -10,7 +11,6 @@ import {
   sendInvoiceAction, getInvoiceEmailPreviewAction, convertProformaToInvoiceAction,
 } from '../../[id]/actions';
 import { Mail, RefreshCw, Zap, ArrowRight, FileText, Activity, X } from 'lucide-react';
-import { useEffect } from 'react';
 
 interface BillingHistoryItem {
   id: string;
@@ -31,6 +31,10 @@ interface BillingHistoryItem {
   zohoItemName: string | null;
   domainCount: number;
   domainName: string | null;
+  serviceStartDate: string | null;
+  serviceEndDate: string | null;
+  quantity: string | null;
+  sellingPrice: string | null;
   organization: {
     name: string;
     zohoOrgId: string;
@@ -54,6 +58,141 @@ function money(amount: number, currency = 'INR'): string {
   const code = (currency || 'INR').toUpperCase();
   const sym = CURRENCY_SYMBOL[code] ?? `${code} `;
   return `${sym}${amount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+}
+
+const fmtDate = (d?: string | null) =>
+  d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : null;
+
+const TOOLTIP_W = 380;
+
+const STATUS_COLOR: Record<string, string> = {
+  draft:    'bg-slate-100 text-slate-600',
+  sent:     'bg-blue-100 text-blue-700',
+  accepted: 'bg-emerald-100 text-emerald-700',
+  invoiced: 'bg-purple-100 text-purple-700',
+  declined: 'bg-red-100 text-red-700',
+  expired:  'bg-orange-100 text-orange-700',
+  paid:     'bg-emerald-100 text-emerald-700',
+  overdue:  'bg-red-100 text-red-700',
+};
+
+function BillingLineItemTooltip({ item, type }: { item: BillingHistoryItem; type: 'quote' | 'invoice' }) {
+  const isMulti = item.domainCount > 1;
+  const rawStatus = type === 'quote'
+    ? (item.zohoEstimateStatus ?? item.renewalStatus ?? 'draft')
+    : (item.zohoInvoiceStatus ?? 'draft');
+  const status = rawStatus.toLowerCase();
+  const colorCls = STATUS_COLOR[status] ?? 'bg-slate-100 text-slate-600';
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden" style={{ width: TOOLTIP_W }}>
+      <div className="bg-slate-800 text-white px-3 py-2 flex items-center justify-between">
+        <span className="font-bold uppercase tracking-wider text-[10px] text-slate-300">LINE ITEMS</span>
+        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${colorCls}`}>
+          {status}
+        </span>
+      </div>
+      <div className="p-3">
+        <div className="flex items-start justify-between gap-2 py-1">
+          <div className="flex-1 min-w-0">
+            <div className="font-semibold text-slate-800 text-xs truncate">{item.zohoItemName ?? 'Item'}</div>
+            {!isMulti && item.domainName && (
+              <div className="text-[10px] text-slate-500 font-mono mt-0.5">{item.domainName}</div>
+            )}
+            {isMulti && (
+              <div className="text-[10px] text-slate-500 mt-0.5">{item.domainCount} domains (Bulk)</div>
+            )}
+            {!isMulti && (item.serviceStartDate || item.serviceEndDate) && (
+              <div className="text-[10px] text-slate-400 mt-0.5">
+                {fmtDate(item.serviceStartDate)} → {fmtDate(item.serviceEndDate)}
+              </div>
+            )}
+          </div>
+          <div className="text-right shrink-0">
+            {!isMulti && item.quantity && item.sellingPrice && (
+              <div className="text-[10px] text-slate-500">
+                {item.quantity} × {money(Number(item.sellingPrice), item.currency)}
+              </div>
+            )}
+            <div className="font-semibold text-slate-800 text-xs">{money(item.amount, item.currency)}</div>
+          </div>
+        </div>
+      </div>
+      <div className="bg-slate-50 border-t border-slate-200 px-3 py-2 flex justify-between items-center">
+        <span className="text-[10px] text-slate-500 font-medium">
+          {item.billingCycle} · {item.businessType}
+        </span>
+        <span className="font-bold text-slate-900 text-xs">{money(item.amount, item.currency)}</span>
+      </div>
+    </div>
+  );
+}
+
+function DocNumberCell({
+  number,
+  zohoHref,
+  tooltipNode,
+}: {
+  number: string;
+  zohoHref?: string;
+  tooltipNode: React.ReactNode;
+}) {
+  const triggerRef = useRef<HTMLSpanElement>(null);
+  const [linePos, setLinePos] = useState<{ x: number; y: number } | null>(null);
+  const [zohoPos, setZohoPos] = useState<{ x: number; y: number } | null>(null);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+
+  const onNumEnter = () => {
+    if (!triggerRef.current) return;
+    const r = triggerRef.current.getBoundingClientRect();
+    const cx = r.left + r.width / 2 - TOOLTIP_W / 2;
+    setLinePos({ x: Math.max(8, Math.min(cx, window.innerWidth - TOOLTIP_W - 8)), y: r.top });
+  };
+
+  const onZohoEnter = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    setZohoPos({ x: r.left + r.width / 2, y: r.top });
+  };
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <span
+        ref={triggerRef}
+        onMouseEnter={onNumEnter}
+        onMouseLeave={() => setLinePos(null)}
+        className="font-mono text-xs font-medium text-blue-600 cursor-default underline decoration-dotted decoration-blue-300"
+      >
+        {number}
+      </span>
+      {zohoHref && (
+        <a
+          href={zohoHref}
+          target="_blank"
+          rel="noopener noreferrer"
+          onMouseEnter={onZohoEnter}
+          onMouseLeave={() => setZohoPos(null)}
+          className="text-slate-400 hover:text-blue-600 transition-colors leading-none text-xs"
+        >
+          ↗
+        </a>
+      )}
+      {mounted && linePos && createPortal(
+        <div style={{ position: 'fixed', left: linePos.x, top: linePos.y, transform: 'translateY(calc(-100% - 8px))', zIndex: 9999 }}>
+          {tooltipNode}
+        </div>,
+        document.body,
+      )}
+      {mounted && zohoPos && createPortal(
+        <div style={{ position: 'fixed', left: zohoPos.x, top: zohoPos.y, transform: 'translate(-50%, calc(-100% - 4px))', zIndex: 9999 }}>
+          <div className="bg-slate-800 text-white text-[10px] px-2.5 py-1.5 rounded-lg whitespace-nowrap shadow-lg">
+            Open in Zoho Books
+          </div>
+        </div>,
+        document.body,
+      )}
+    </div>
+  );
 }
 
 type Mode = 'quote' | 'invoice';
@@ -141,22 +280,11 @@ function BillingHistoryRow({ item, idx }: { item: BillingHistoryItem; idx: numbe
         <td className="py-3 px-4">
           {item.quoteNumber ? (
             <div className="flex flex-col gap-1.5">
-              <div>
-                {item.quoteId ? (
-                  <a
-                    href={zohoUrl(item.organization, 'estimates', item.quoteId)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-600 hover:underline font-mono text-xs font-medium"
-                  >
-                    {item.quoteNumber} ↗
-                  </a>
-                ) : (
-                  <span className="font-mono text-xs font-medium text-slate-700">
-                    {item.quoteNumber}
-                  </span>
-                )}
-              </div>
+              <DocNumberCell
+                number={item.quoteNumber}
+                zohoHref={item.quoteId ? zohoUrl(item.organization, 'estimates', item.quoteId) : undefined}
+                tooltipNode={<BillingLineItemTooltip item={item} type="quote" />}
+              />
               <div className="flex items-center gap-1.5">
                 <span className="text-[10px] uppercase tracking-wider font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
                   {item.zohoEstimateStatus || item.renewalStatus}
@@ -196,16 +324,11 @@ function BillingHistoryRow({ item, idx }: { item: BillingHistoryItem; idx: numbe
         <td className="py-3 px-4">
           {item.invoiceId ? (
             <div className="flex flex-col gap-1.5">
-              <div className="flex items-center gap-1.5">
-                <a
-                  href={zohoUrl(item.organization, 'invoices', item.invoiceId)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-600 hover:underline font-mono text-xs font-medium"
-                >
-                  {item.invoiceNumber} ↗
-                </a>
-              </div>
+              <DocNumberCell
+                number={item.invoiceNumber ?? ''}
+                zohoHref={zohoUrl(item.organization, 'invoices', item.invoiceId)}
+                tooltipNode={<BillingLineItemTooltip item={item} type="invoice" />}
+              />
               <div className="flex items-center gap-1.5">
                 <span className={`text-[10px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded ${
                   item.zohoInvoiceStatus === 'paid' ? 'bg-emerald-100 text-emerald-800' :
