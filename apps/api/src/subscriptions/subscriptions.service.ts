@@ -1847,49 +1847,90 @@ export class SubscriptionsService {
       );
     }
 
-    // --- Create renewal_history entry when documents are linked ---
+    // --- Upsert renewal_history entry when documents are linked ---
+    // If a row with the same quoteId / invoiceId already exists for this subscription,
+    // update it (fix service dates, status) instead of creating a duplicate.
     if (quoteData || invoiceData) {
       const renewalStatus: RenewalStatus = invoiceData ? RenewalStatus.Invoiced : RenewalStatus.Quoted;
       const qty = Number(existing.quantity);
-      // Renewal price, not current price
       const price = Number(existing.nextRenewalPrice ?? existing.subscriptionPrice);
-      // Next renewal period: day after current end → end + 1 billing cycle - 1 day
       const renewalStart = new Date(existing.endDate);
       renewalStart.setDate(renewalStart.getDate() + 1);
       const renewalEndRaw = this.addBillingCycle(renewalStart, existing.billingCycle as BillingCycle);
       const renewalEnd = new Date(renewalEndRaw);
       renewalEnd.setDate(renewalEnd.getDate() - 1);
-      await this.prisma.renewalHistory.create({
-        data: {
-          subscriptionId: id,
-          organizationId: existing.organizationId,
-          domainId:       existing.domainId,
-          businessType:   BusinessType.Renewal,
-          billingCycle:   existing.billingCycle,
-          serviceStartDate: renewalStart,
-          serviceEndDate:   renewalEnd,
-          quantity:       qty,
-          sellingPrice:   price,
-          costPrice:      existing.costPrice ?? null,
-          subtotalAmount: qty * price,
-          renewalStatus,
-          ...(quoteData && {
-            quoteId:     quoteData.estimateId,
-            quoteNumber: quoteData.estimateNumber,
-            quoteDate:   new Date(quoteData.date),
-          }),
-          ...(invoiceData && {
-            invoiceId:     invoiceData.invoiceId,
-            invoiceNumber: invoiceData.invoiceNumber,
-            invoiceDate:   new Date(invoiceData.date),
-          }),
-        },
-      });
-      this.logger.log(
-        `renewal_history created for sub ${id}: ${renewalStatus}` +
-        (quoteData   ? ` quote=${quoteData.estimateNumber}`   : '') +
-        (invoiceData ? ` invoice=${invoiceData.invoiceNumber}` : ''),
-      );
+
+      // Check for an existing row with the same Zoho document ID or number
+      const orClauses: Prisma.RenewalHistoryWhereInput[] = [];
+      if (quoteData) {
+        orClauses.push({ subscriptionId: id, quoteId: quoteData.estimateId });
+        orClauses.push({ subscriptionId: id, quoteNumber: quoteData.estimateNumber });
+      }
+      if (invoiceData) {
+        orClauses.push({ subscriptionId: id, invoiceId: invoiceData.invoiceId });
+        orClauses.push({ subscriptionId: id, invoiceNumber: invoiceData.invoiceNumber });
+      }
+      const existingRow = orClauses.length
+        ? await this.prisma.renewalHistory.findFirst({ where: { OR: orClauses } })
+        : null;
+
+      const docData = {
+        ...(quoteData && {
+          quoteId:     quoteData.estimateId,
+          quoteNumber: quoteData.estimateNumber,
+          quoteDate:   new Date(quoteData.date),
+        }),
+        ...(invoiceData && {
+          invoiceId:     invoiceData.invoiceId,
+          invoiceNumber: invoiceData.invoiceNumber,
+          invoiceDate:   new Date(invoiceData.date),
+        }),
+      };
+
+      if (existingRow) {
+        // Update the existing row — fix service dates and status
+        await this.prisma.renewalHistory.update({
+          where: { id: existingRow.id },
+          data: {
+            serviceStartDate: renewalStart,
+            serviceEndDate:   renewalEnd,
+            quantity:         qty,
+            sellingPrice:     price,
+            costPrice:        existing.costPrice ?? null,
+            subtotalAmount:   qty * price,
+            renewalStatus,
+            ...docData,
+          },
+        });
+        this.logger.log(
+          `renewal_history updated (upsert) for sub ${id}: ${renewalStatus}` +
+          (quoteData   ? ` quote=${quoteData.estimateNumber}`   : '') +
+          (invoiceData ? ` invoice=${invoiceData.invoiceNumber}` : ''),
+        );
+      } else {
+        await this.prisma.renewalHistory.create({
+          data: {
+            subscriptionId: id,
+            organizationId: existing.organizationId,
+            domainId:       existing.domainId,
+            businessType:   BusinessType.Renewal,
+            billingCycle:   existing.billingCycle,
+            serviceStartDate: renewalStart,
+            serviceEndDate:   renewalEnd,
+            quantity:         qty,
+            sellingPrice:     price,
+            costPrice:        existing.costPrice ?? null,
+            subtotalAmount:   qty * price,
+            renewalStatus,
+            ...docData,
+          },
+        });
+        this.logger.log(
+          `renewal_history created for sub ${id}: ${renewalStatus}` +
+          (quoteData   ? ` quote=${quoteData.estimateNumber}`   : '') +
+          (invoiceData ? ` invoice=${invoiceData.invoiceNumber}` : ''),
+        );
+      }
     }
 
     await this.auditLogs.logAction({
@@ -2619,9 +2660,10 @@ export class SubscriptionsService {
             if (payDate) data.paymentDate = new Date(payDate);
           }
           if (inv.status === 'paid' || inv.status === 'partially_paid') {
-            if (row.renewalStatus !== 'Paid') {
-              isPaidTransition = true;
-            }
+            // Always attempt to update subscription dates on paid invoice,
+            // not just on the first-time transition, so re-syncing a paid
+            // invoice still fixes dates if they were missed earlier.
+            isPaidTransition = true;
             data.renewalStatus = 'Paid';
           }
           else if (['sent', 'overdue'].includes(inv.status ?? '') && row.renewalStatus === 'Quoted') {
@@ -2635,10 +2677,25 @@ export class SubscriptionsService {
 
     await this.prisma.renewalHistory.updateMany({ where: { quoteId: row.quoteId }, data });
 
-    // If transitioned to Paid, extend the subscription(s)!
+    // If paid, update the subscription dates.
+    // De-duplicate by subscriptionId (take latest row per subscription) so that
+    // stale duplicate history rows don't conflict with each other.
+    // The specifically-synced row always takes precedence for its own subscription.
     if (isPaidTransition) {
-      const allRows = await this.prisma.renewalHistory.findMany({ where: { quoteId: row.quoteId } });
+      const allRows = await this.prisma.renewalHistory.findMany({
+        where: { quoteId: row.quoteId },
+        orderBy: { createdAt: 'desc' },
+      });
+      const latestBySubId = new Map<string, typeof allRows[0]>();
       for (const r of allRows) {
+        if (!latestBySubId.has(r.subscriptionId)) {
+          latestBySubId.set(r.subscriptionId, r);
+        }
+      }
+      // The specifically-synced row always wins for its subscription
+      latestBySubId.set(row.subscriptionId, row as typeof allRows[0]);
+
+      for (const r of latestBySubId.values()) {
         const sub = await this.prisma.subscription.findUnique({
           where: { id: r.subscriptionId },
         });
@@ -2668,12 +2725,12 @@ export class SubscriptionsService {
             entityType: 'subscription',
             entityId: r.subscriptionId,
             action: 'update',
-            changeSummary: `Invoice ${invoiceNumber || invoiceId || ''} was paid via Zoho Books. Auto-renewed dates and activated subscription.`,
+            changeSummary: `Invoice ${invoiceNumber || invoiceId || ''} paid via Zoho Books. Subscription dates and status updated.`,
             userEmailSnapshot: 'System',
           });
         }
       }
-      this.logger.log(`Subscription dates/status updated via manual refresh (paid transition) for quote ${row.quoteId}`);
+      this.logger.log(`Subscription updated on paid invoice for quote ${row.quoteId}`);
     }
 
     return {
