@@ -5,13 +5,12 @@ import { createServerApi, SESSION_COOKIE } from '@/lib/api';
 import { RenewalQuoteForm } from './_components/renewal-quote-form';
 import { ProrataForm } from './_components/prorata-form';
 import { StartSubscriptionModal } from './_components/start-subscription-modal';
-import { ProformaActions } from './_components/proforma-actions';
 import { EditSubscriptionButton } from './_components/edit-subscription-modal';
 import { DeactivateSubscriptionButton } from './_components/deactivate-subscription-button';
-import { ViewPdfButton } from '@/components/view-pdf-button';
 import { getCurrentUser } from '@/lib/auth';
 import { DeleteSubscriptionButton } from '../_components/delete-subscription-button';
 import { HistoryDialog } from '@/components/history-dialog';
+import { OrderHistoryTimeline } from './_components/order-history-timeline';
 
 export const dynamic = 'force-dynamic';
 
@@ -82,61 +81,11 @@ interface Subscription {
  *  for subscriptions created before Fresh rows were written to renewal_history. */
 type TimelineRow = RenewalHistory & { synthetic?: boolean };
 
-const BUSINESS_TYPE_LABEL: Record<string, string> = {
-  Renewal: '🔄 Renewal',
-  ProRata: '📐 Pro-rata',
-  Fresh:   '✨ Fresh Sale',
-};
-
 const DC_TLD: Record<string, string> = { in: 'in', com: 'com', eu: 'eu', com_au: 'com.au', jp: 'jp', sa: 'sa' };
-
-/** Invoice-status pill styling (Paid / Unpaid / Overdue / …). */
-const INVOICE_STATUS: Record<string, { label: string; cls: string }> = {
-  paid:           { label: 'Paid',          cls: 'bg-emerald-100 text-emerald-800' },
-  partially_paid: { label: 'Partially Paid', cls: 'bg-teal-100 text-teal-800' },
-  sent:           { label: 'Sent',          cls: 'bg-amber-100 text-amber-800' },
-  unpaid:         { label: 'Unpaid',        cls: 'bg-amber-100 text-amber-800' },
-  overdue:        { label: 'Overdue',       cls: 'bg-red-100 text-red-700' },
-  draft:          { label: 'Draft',         cls: 'bg-slate-100 text-slate-600' },
-  void:           { label: 'Void',          cls: 'bg-slate-100 text-slate-500 line-through' },
-};
-
-const ESTIMATE_STATUS: Record<string, { label: string; cls: string }> = {
-  draft:    { label: 'Draft',    cls: 'bg-slate-100 text-slate-600' },
-  sent:     { label: 'Sent',     cls: 'bg-blue-100 text-blue-700' },
-  accepted: { label: 'Accepted', cls: 'bg-emerald-100 text-emerald-800' },
-  declined: { label: 'Declined', cls: 'bg-red-100 text-red-700' },
-  invoiced: { label: 'Invoiced', cls: 'bg-indigo-100 text-indigo-700' },
-  expired:  { label: 'Expired',  cls: 'bg-orange-100 text-orange-700' },
-};
 
 function fmt(d: string | null) {
   if (!d) return '—';
   return new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-}
-
-function zohoUrl(org: Subscription['organization'], entity: 'estimates' | 'invoices', id: string) {
-  const tld = DC_TLD[org.dataCenter] ?? 'com';
-  // Zoho Books' web-app route for estimates is `#/quotes/` — `#/estimates/` 404s ("Page Not Found").
-  const path = entity === 'estimates' ? 'quotes' : entity;
-  return `https://books.zoho.${tld}/app/${org.zohoOrgId}#/${path}/${id}`;
-}
-
-/** Derive the effective status + timeline dot color for a history row. */
-function historyState(h: RenewalHistory): { dot: string; badge: { label: string; cls: string } | null } {
-  const inv = (h.zohoInvoiceStatus ?? '').toLowerCase();
-  const est = (h.zohoEstimateStatus ?? '').toLowerCase();
-  if (inv) {
-    const badge = INVOICE_STATUS[inv] ?? { label: inv, cls: 'bg-slate-100 text-slate-600' };
-    const dot = inv === 'paid' ? 'bg-emerald-500' : inv === 'overdue' ? 'bg-red-500' : 'bg-amber-500';
-    return { dot, badge };
-  }
-  if (est) {
-    const badge = ESTIMATE_STATUS[est] ?? { label: est, cls: 'bg-slate-100 text-slate-600' };
-    const dot = est === 'accepted' ? 'bg-emerald-500' : est === 'declined' || est === 'expired' ? 'bg-red-500' : 'bg-blue-500';
-    return { dot, badge };
-  }
-  return { dot: 'bg-slate-300', badge: { label: h.renewalStatus, cls: 'bg-slate-100 text-slate-600' } };
 }
 
 export default async function SubscriptionDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -367,106 +316,14 @@ export default async function SubscriptionDetailPage({ params }: { params: Promi
               <h2 className="text-sm font-semibold text-slate-700">📜 Order History</h2>
               <span className="text-xs text-slate-400">Fresh sale + renewals — Quote → Invoice → Status (synced from Zoho Books)</span>
             </div>
-            {timeline.length === 0 ? (
-              <p className="px-5 py-6 text-sm text-slate-400">अभी तक कोई order history नहीं।</p>
-            ) : (
-              <div className="px-5 py-5">
-                <div className="relative pl-6 border-l-2 border-slate-200 space-y-6">
-                  {timeline.map((h) => {
-                    const { dot, badge } = historyState(h);
-                    // Fresh orders reference the INTERNAL quick quote (no Zoho estimate) —
-                    // link to the quote page inside the app instead of Zoho.
-                    const internalQuote =
-                      h.businessType === 'Fresh' && !h.quoteId && h.quoteNumber && sub.originQuickQuote
-                        ? sub.originQuickQuote
-                        : null;
-                    return (
-                      <div key={h.id} className="relative">
-                        <div className={`absolute -left-[31px] top-0.5 w-4 h-4 rounded-full border-2 border-white ${dot}`} />
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="text-sm font-medium text-slate-800">
-                                {BUSINESS_TYPE_LABEL[h.businessType] ?? h.businessType}
-                              </span>
-                              <span className="text-xs text-slate-400">{fmt(h.quoteDate ?? h.createdAt)}</span>
-                            </div>
-
-                            {/* Quote → Invoice → Status chain */}
-                            <div className="flex items-center gap-2 flex-wrap mt-1 text-xs">
-                              {internalQuote ? (
-                                <Link href={`/dashboard/quick-quotes/${internalQuote.id}`}
-                                  className="font-mono text-blue-600 hover:underline">
-                                  {h.quoteNumber}
-                                </Link>
-                              ) : h.quoteId ? (
-                                <span className="inline-flex items-center gap-1">
-                                  <a href={zohoUrl(sub.organization, 'estimates', h.quoteId)} target="_blank" rel="noopener noreferrer"
-                                    className="font-mono text-blue-600 hover:underline inline-flex items-center gap-0.5">
-                                    {h.quoteNumber ?? 'Quote'} <span aria-hidden>↗</span>
-                                  </a>
-                                  <ViewPdfButton orgId={sub.organization.id} kind="estimate" docId={h.quoteId}
-                                    label="📄" title="View quote PDF"
-                                    className="inline-flex items-center px-1.5 py-0.5 text-[11px] rounded border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40" />
-                                </span>
-                              ) : h.quoteNumber ? (
-                                <span className="font-mono text-slate-500">{h.quoteNumber}</span>
-                              ) : (
-                                <span className="text-slate-300">no quote</span>
-                              )}
-
-                              <span className="text-slate-300">→</span>
-
-                              {h.invoiceId ? (
-                                <span className="inline-flex items-center gap-1">
-                                  <a href={zohoUrl(sub.organization, 'invoices', h.invoiceId)} target="_blank" rel="noopener noreferrer"
-                                    className="font-mono text-blue-600 hover:underline inline-flex items-center gap-0.5">
-                                    {h.invoiceNumber ?? 'Invoice'} <span aria-hidden>↗</span>
-                                  </a>
-                                  <ViewPdfButton orgId={sub.organization.id} kind="invoice" docId={h.invoiceId}
-                                    label="📄" title="View invoice PDF"
-                                    className="inline-flex items-center px-1.5 py-0.5 text-[11px] rounded border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40" />
-                                </span>
-                              ) : h.invoiceNumber ? (
-                                <span className="font-mono text-slate-500">{h.invoiceNumber}</span>
-                              ) : (
-                                <span className="text-slate-300">not invoiced</span>
-                              )}
-
-                              {badge && (
-                                <>
-                                  <span className="text-slate-300">→</span>
-                                  <span className={`px-2 py-0.5 rounded font-medium ${badge.cls}`}>{badge.label}</span>
-                                </>
-                              )}
-                            </div>
-
-                            <p className="text-xs text-slate-400 mt-1">
-                              {fmt(h.serviceStartDate)} → {fmt(h.serviceEndDate)}
-                              {h.subtotalAmount && ` · ${money(Number(h.subtotalAmount), h.currency ?? sub.currency)}`}
-                            </p>
-                          </div>
-
-                          {/* Synthetic fresh row has no history record to sync/act on */}
-                          {!h.synthetic && (
-                            <ProformaActions
-                              historyId={h.id}
-                              quoteId={h.quoteId}
-                              quoteNumber={h.quoteNumber}
-                              invoiceId={h.invoiceId}
-                              invoiceNumber={h.invoiceNumber}
-                              renewalStatus={h.renewalStatus}
-                              zohoEstimateStatus={h.zohoEstimateStatus}
-                              zohoInvoiceStatus={h.zohoInvoiceStatus}
-                            />
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
+            <OrderHistoryTimeline
+              timeline={timeline}
+              org={sub.organization}
+              currency={sub.currency}
+              zohoItemName={sub.zohoItemName}
+              domainName={sub.domain.domainName}
+              originQuickQuote={sub.originQuickQuote}
+            />
           </div>
         </div>
 
