@@ -26,7 +26,9 @@ export function middleware(request: NextRequest) {
 
   if (!token) {
     const loginUrl = new URL('/login', request.url);
-    loginUrl.searchParams.set('from', pathname);
+    // Preserve full path + query string so the customer page org_id isn't lost
+    const fromPath = pathname + request.nextUrl.search;
+    loginUrl.searchParams.set('from', fromPath);
     return NextResponse.redirect(loginUrl);
   }
 

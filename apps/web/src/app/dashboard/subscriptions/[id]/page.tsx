@@ -263,7 +263,17 @@ export default async function SubscriptionDetailPage({ params }: { params: Promi
               <div>
                 <p className="text-xs text-slate-400">Customer</p>
                 <div className="flex items-center gap-1.5 mt-0.5">
-                  <p className="text-slate-800 font-medium">{sub.zohoCustomerName ?? sub.zohoCustomerId}</p>
+                  {sub.zohoCustomerId ? (
+                    <Link
+                      href={`/dashboard/customers/${sub.zohoCustomerId}?org_id=${sub.organization.id}`}
+                      className="text-slate-800 font-medium hover:underline hover:text-blue-700 transition-colors"
+                      title="Customer page par jaao"
+                    >
+                      {sub.zohoCustomerName ?? sub.zohoCustomerId}
+                    </Link>
+                  ) : (
+                    <p className="text-slate-800 font-medium">{sub.zohoCustomerName ?? sub.zohoCustomerId}</p>
+                  )}
                   {sub.zohoCustomerId && (
                     <a
                       href={`https://books.zoho.${DC_TLD[sub.organization.dataCenter] ?? 'com'}/app/${sub.organization.zohoOrgId}#/contacts/${sub.zohoCustomerId}`}
