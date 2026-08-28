@@ -233,25 +233,29 @@ export default function ZohoDocsPanel({ orgId, zohoCustomerId, subs }: Props) {
 
     const patches = Object.entries(rm.selections)
       .filter(([, subId]) => !!subId)
-      .map(([, subId]) => ({ subId }));
+      .map(([liIdxStr, subId]) => {
+        const li = rm.lineItems[Number(liIdxStr)];
+        return { subId, startDate: li?.startDate, endDate: li?.endDate };
+      });
 
     if (patches.length === 0) return;
 
     setRowMap(prev => ({ ...prev, [i]: { ...prev[i], saving: true, saveError: undefined } }));
 
-    const body: Record<string, string> = {};
-    if (doc.invoiceNumber) body.lastInvoiceNumber = doc.invoiceNumber;
-    if (doc.quoteNumber)   body.lastQuoteNumber   = doc.quoteNumber;
-
     const results = await Promise.allSettled(
-      patches.map(({ subId }) =>
-        fetch(`${API_BASE}/subscriptions/${subId}`, {
+      patches.map(({ subId, startDate, endDate }) => {
+        const body: Record<string, string> = {};
+        if (doc.invoiceNumber) body.lastInvoiceNumber = doc.invoiceNumber;
+        if (doc.quoteNumber)   body.lastQuoteNumber   = doc.quoteNumber;
+        if (startDate) body.serviceStartDate = startDate;
+        if (endDate)   body.serviceEndDate   = endDate;
+        return fetch(`${API_BASE}/subscriptions/${subId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
           body: JSON.stringify(body),
-        }).then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return subId; }),
-      ),
+        }).then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return subId; });
+      }),
     );
 
     const failed = results.filter(r => r.status === 'rejected').length;

@@ -57,6 +57,10 @@ export class UpdateSubscriptionDto {
   // Manually link existing Zoho documents — backend will lookup ID + date from Zoho
   @IsOptional() @IsString() @MaxLength(80) lastQuoteNumber?: string;
   @IsOptional() @IsString() @MaxLength(80) lastInvoiceNumber?: string;
+
+  // Service period from Zoho line items — passed by the mapping UI so history row gets real dates
+  @IsOptional() @IsDateString() serviceStartDate?: string;
+  @IsOptional() @IsDateString() serviceEndDate?: string;
 }
 
 export class BulkTransferCustomerDto {

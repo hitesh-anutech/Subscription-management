@@ -1854,11 +1854,16 @@ export class SubscriptionsService {
       const renewalStatus: RenewalStatus = invoiceData ? RenewalStatus.Invoiced : RenewalStatus.Quoted;
       const qty = Number(existing.quantity);
       const price = Number(existing.nextRenewalPrice ?? existing.subscriptionPrice);
-      const renewalStart = new Date(existing.endDate);
-      renewalStart.setDate(renewalStart.getDate() + 1);
-      const renewalEndRaw = this.addBillingCycle(renewalStart, existing.billingCycle as BillingCycle);
-      const renewalEnd = new Date(renewalEndRaw);
-      renewalEnd.setDate(renewalEnd.getDate() - 1);
+      // Prefer Zoho line-item dates passed from the mapping UI; fall back to calculated next period.
+      const renewalStart = dto.serviceStartDate
+        ? new Date(dto.serviceStartDate)
+        : (() => { const d = new Date(existing.endDate); d.setDate(d.getDate() + 1); return d; })();
+      const renewalEnd = dto.serviceEndDate
+        ? new Date(dto.serviceEndDate)
+        : (() => {
+            const raw = this.addBillingCycle(renewalStart, existing.billingCycle as BillingCycle);
+            const d = new Date(raw); d.setDate(d.getDate() - 1); return d;
+          })();
 
       // Check for an existing row with the same Zoho document ID or number
       const orClauses: Prisma.RenewalHistoryWhereInput[] = [];
