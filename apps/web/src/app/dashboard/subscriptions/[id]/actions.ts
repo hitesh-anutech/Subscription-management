@@ -73,6 +73,8 @@ export async function updateSubscriptionAction(
   const autoRenew         = formData.get('auto_renew');
   const lastQuoteNumber   = (formData.get('last_quote_number') as string | null)?.trim() || null;
   const lastInvoiceNumber = (formData.get('last_invoice_number') as string | null)?.trim() || null;
+  const zohoItemId        = (formData.get('zoho_item_id')   as string | null)?.trim() || undefined;
+  const zohoItemName      = (formData.get('zoho_item_name') as string | null)?.trim() || undefined;
 
   const body: Record<string, unknown> = {};
   if (quantity !== null && quantity !== '')                body.quantity          = Number(quantity);
@@ -86,6 +88,8 @@ export async function updateSubscriptionAction(
   body.autoRenew = autoRenew === 'on' || autoRenew === 'true';
   if (lastQuoteNumber)   body.lastQuoteNumber   = lastQuoteNumber;
   if (lastInvoiceNumber) body.lastInvoiceNumber = lastInvoiceNumber;
+  if (zohoItemId)        body.zohoItemId        = zohoItemId;
+  if (zohoItemName)      body.zohoItemName      = zohoItemName;
 
   if (startDate && endDate && new Date(endDate) < new Date(startDate)) {
     return { error: 'End date, start date se pehle nahi ho sakti' };

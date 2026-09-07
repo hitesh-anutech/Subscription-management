@@ -4,6 +4,7 @@ import { createServerApi, SESSION_COOKIE } from '@/lib/api';
 import { SubscriptionsTable } from './_components/subscriptions-table';
 import { PageSizeSelector } from './_components/page-size-selector';
 import { getCurrentUser } from '@/lib/auth';
+import { SubscriptionSearchInput } from './_components/search-input';
 
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Subscriptions' };
@@ -114,12 +115,7 @@ export default async function SubscriptionsPage({
 
       {/* Filter bar */}
       <form method="GET" className="flex flex-wrap gap-2 bg-white border border-slate-200/80 p-2.5 rounded-2xl shadow-sm">
-        <input
-          name="search"
-          defaultValue={sp.search}
-          placeholder="Search customer, domain, item…"
-          className="flex-1 min-w-48 px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-slate-50/50"
-        />
+        <SubscriptionSearchInput defaultValue={sp.search} />
         <select name="status" defaultValue={sp.status ?? ''}
           className="px-3 py-2.5 rounded-xl border border-slate-200 text-sm bg-white focus:ring-2 focus:ring-blue-500/20 focus:outline-none min-w-[140px]">
           <option value="">All Statuses</option>

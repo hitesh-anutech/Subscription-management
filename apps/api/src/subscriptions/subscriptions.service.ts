@@ -16,7 +16,7 @@ import type {
   CreateSubscriptionDto, UpdateSubscriptionDto,
   RenewalQuoteDto, ProrataQuoteDto, StartSubscriptionDto,
   ImportSubscriptionDto, ImportInvoiceRefDto, BulkUpdatePriceDto, BulkRenewalQuoteDto,
-  CombinedRenewalQuoteDto,
+  CombinedRenewalQuoteDto, InlineImportZohoDocDto,
 } from './dto/subscriptions.dto';
 
 @Injectable()
@@ -739,7 +739,9 @@ export class SubscriptionsService {
     const csvData = subscriptions.map(sub => ({
       ID: sub.id,
       Subscription_Number: sub.subscriptionNumber,
+      Customer_Number: sub.zohoCustomerId,
       Customer_Name: sub.zohoCustomerName,
+      Item_SKU: sub.zohoItemId,
       Item_Name: sub.zohoItemName,
       Domain_Name: sub.domain?.domainName,
       Start_Date: sub.startDate ? this.formatDate(sub.startDate) : '',
@@ -1808,6 +1810,8 @@ export class SubscriptionsService {
         ...(dto.notes             !== undefined && { notes: dto.notes }),
         ...(dto.currency          !== undefined && { currency: dto.currency.toUpperCase() }),
         ...(dto.exchangeRate      !== undefined && { exchangeRate: dto.exchangeRate }),
+        ...(dto.zohoItemId        !== undefined && { zohoItemId: dto.zohoItemId }),
+        ...(dto.zohoItemName      !== undefined && { zohoItemName: dto.zohoItemName }),
         ...(quoteData && {
           lastQuoteId:     quoteData.estimateId,
           lastQuoteNumber: quoteData.estimateNumber,
@@ -3370,5 +3374,194 @@ export class SubscriptionsService {
 
     this.logger.log(`Deleted subscription ${id}`);
     return { deleted: true };
+  }
+
+  // ── Inline import (Zoho Docs panel → one-click create/enrich) ──────
+
+  async inlineImportZohoDoc(dto: InlineImportZohoDocDto) {
+    const isEstimate = dto.docSource === 'estimates';
+    const primaryId  = isEstimate ? dto.quoteId : dto.invoiceId;
+    if (!primaryId) {
+      return { created: 0, enriched: 0, skipped: 0, errors: ['Missing document ID'] };
+    }
+
+    // Fetch the full document detail by ID (bypasses reference_number search which
+    // matches Zoho's custom "Reference #" field, not the invoice_number).
+    type DocDetail = {
+      invoice_id?: string; invoice_number?: string;
+      estimate_id?: string; estimate_number?: string;
+      customer_id: string; customer_name: string;
+      date: string;
+      currency_code?: string; exchange_rate?: number;
+      line_items: Array<{
+        item_id?: string; name: string; quantity: number; rate: number;
+        item_custom_fields?: Array<{ api_name: string; value: string | number }>;
+        custom_fields?: Array<{ api_name: string; value: string | number }>;
+      }>;
+    };
+
+    const kind = isEstimate ? 'estimate' : 'invoice';
+    const doc = await this.zoho.getDocDetailCached<DocDetail>(dto.organizationId, kind, primaryId);
+    if (!doc) {
+      return { created: 0, enriched: 0, skipped: 0, errors: [`Document not found in Zoho: ${primaryId}`] };
+    }
+
+    // For an invoice, resolve the originating estimate to carry quote fields into history.
+    let quoteId     = dto.quoteId     || (isEstimate ? primaryId : undefined);
+    let quoteNumber = dto.quoteNumber || (isEstimate ? doc.estimate_number : undefined);
+    let quoteDate   = dto.quoteDate;
+    let quoteStatus = dto.quoteStatus;
+
+    if (!isEstimate && doc.estimate_id && !dto.quoteId) {
+      try {
+        type EstDetail = { estimate_id: string; estimate_number?: string; date?: string; status?: string };
+        const est = await this.zoho.getDocDetailCached<EstDetail>(dto.organizationId, 'estimate', doc.estimate_id);
+        if (est) {
+          quoteId     = est.estimate_id;
+          quoteNumber = est.estimate_number;
+          quoteDate   = est.date;
+          quoteStatus = est.status;
+        }
+      } catch { /* non-critical — invoice imports fine without the linked quote */ }
+    }
+
+    const [fm] = await Promise.all([this.zoho.getItemFieldMappings(dto.organizationId, 'items')]);
+    const domainCf    = (fm['domain_name']  as string | undefined) ?? 'cf_domain_name';
+    const startDateCf = (fm['start_date']   as string | undefined) ?? 'cf_subscription_start_date';
+    const endDateCf   = (fm['end_date']     as string | undefined) ?? 'cf_subscription_end_date';
+    const costCf      = (fm['cost_price']   as string | undefined) ?? 'cf_cost_price';
+
+    const docMeta = {
+      invoiceId:     isEstimate ? undefined : (doc.invoice_id ?? primaryId),
+      invoiceNumber: isEstimate ? undefined : (doc.invoice_number ?? dto.invoiceNumber),
+      invoiceDate:   isEstimate ? undefined : doc.date,
+      invoiceStatus: isEstimate ? undefined : dto.invoiceStatus,
+      customerId:    doc.customer_id,
+      customerName:  doc.customer_name,
+      docDate:       doc.date,
+      currency:      doc.currency_code ?? 'INR',
+      exchangeRate:  doc.exchange_rate ?? 1,
+      isEstimate,
+      quoteId, quoteNumber, quoteDate, quoteStatus,
+      businessType:  dto.businessType,
+    };
+
+    const candidates = this.buildInlineImportCandidates(
+      doc.line_items, dto.organizationId, docMeta,
+      { domainCf, startDateCf, endDateCf, costCf },
+    );
+
+    if (!candidates.length) {
+      return { created: 0, enriched: 0, skipped: 0, errors: ['No line items with domain/dates found'] };
+    }
+
+    return this.importGrouped(candidates);
+  }
+
+  private buildInlineImportCandidates(
+    lineItems: Array<{
+      item_id?: string; name: string; quantity: number; rate: number;
+      item_custom_fields?: Array<{ api_name: string; value: string | number }>;
+      custom_fields?: Array<{ api_name: string; value: string | number }>;
+    }>,
+    organizationId: string,
+    meta: {
+      invoiceId?: string; invoiceNumber?: string; invoiceDate?: string;
+      customerId: string; customerName: string;
+      docDate: string; currency: string; exchangeRate: number;
+      isEstimate: boolean;
+      quoteId?: string; quoteNumber?: string; quoteDate?: string; quoteStatus?: string;
+      businessType?: string;
+    },
+    fm: { domainCf: string; startDateCf: string; endDateCf: string; costCf: string },
+  ): ImportSubscriptionDto[] {
+    const cfVal = (cfs: Array<{ api_name: string; value: string | number }> | undefined, key: string) =>
+      String(cfs?.find(c => c.api_name === key)?.value ?? '');
+
+    const parseDate = (val: string) => {
+      if (!val || /^\d{4}-\d{2}-\d{2}$/.test(val)) return val;
+      const p = val.split('/');
+      return p.length === 3 ? `${p[2]}-${p[1].padStart(2, '0')}-${p[0].padStart(2, '0')}` : val;
+    };
+
+    const detectBillingCycle = (start: string, end: string): BillingCycle => {
+      if (!start || !end) return BillingCycle.annual;
+      const days = Math.round((new Date(end).getTime() - new Date(start).getTime()) / 86_400_000);
+      if (days <= 35)  return BillingCycle.monthly;
+      if (days <= 95)  return BillingCycle.quarterly;
+      if (days <= 190) return BillingCycle.half_yearly;
+      if (days <= 370) return BillingCycle.annual;
+      if (days <= 740) return BillingCycle.biennial;
+      return BillingCycle.triennial;
+    };
+
+    // Group line items by domain::item to build one subscription per unique pair
+    type Group = {
+      itemId: string; itemName: string; domain: string;
+      start: string; end: string; qty: number; rate: number; cost: number;
+    };
+    const groups = new Map<string, Group>();
+
+    for (const li of lineItems) {
+      const cfs = li.item_custom_fields ?? li.custom_fields;
+      const domain = cfVal(cfs, fm.domainCf);
+      const start  = parseDate(cfVal(cfs, fm.startDateCf));
+      const end    = parseDate(cfVal(cfs, fm.endDateCf));
+      if (!domain || !start || !end) continue;
+
+      const key = `${domain}::${li.item_id ?? li.name}`;
+      if (!groups.has(key)) {
+        groups.set(key, {
+          itemId:   li.item_id ?? '',
+          itemName: li.name,
+          domain, start, end,
+          qty:  li.quantity,
+          rate: li.rate,
+          cost: Number(cfVal(cfs, fm.costCf)) || 0,
+        });
+      }
+    }
+
+    const candidates: ImportSubscriptionDto[] = [];
+    for (const g of groups.values()) {
+      candidates.push({
+        organizationId,
+        zohoCustomerId:    meta.customerId,
+        zohoCustomerName:  meta.customerName,
+        zohoItemId:        g.itemId,
+        zohoItemName:      g.itemName,
+        domainName:        g.domain,
+        quantity:          g.qty,
+        subscriptionPrice: g.rate,
+        costPrice:         g.cost,
+        billingCycle:      detectBillingCycle(g.start, g.end),
+        startDate:         g.start,
+        endDate:           g.end,
+        currency:          meta.currency,
+        exchangeRate:      meta.exchangeRate,
+        sourceIsEstimate:  meta.isEstimate,
+        sourceQuoteStatus: meta.quoteStatus,
+        lastInvoiceId:     meta.isEstimate ? undefined : meta.invoiceId,
+        lastInvoiceNumber: meta.isEstimate ? undefined : meta.invoiceNumber,
+        history: [{
+          invoiceId:     meta.isEstimate ? undefined : meta.invoiceId,
+          invoiceNumber: meta.isEstimate ? undefined : meta.invoiceNumber,
+          invoiceDate:   meta.isEstimate ? undefined : (meta.invoiceDate ?? meta.docDate),
+          startDate:     g.start,
+          endDate:       g.end,
+          quantity:      g.qty,
+          price:         g.rate,
+          businessType:  meta.businessType,
+          quoteId:       meta.quoteId,
+          quoteNumber:   meta.quoteNumber,
+          quoteDate:     meta.quoteDate,
+          quoteStatus:   meta.quoteStatus,
+          currency:      meta.currency,
+          exchangeRate:  meta.exchangeRate,
+        }],
+      });
+    }
+
+    return candidates;
   }
 }

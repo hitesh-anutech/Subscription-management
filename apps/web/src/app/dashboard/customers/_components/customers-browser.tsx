@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState, useTransition } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { CustomizeColumnsModal, type CustomizableColumn } from '@/components/customize-columns-modal';
 import { syncCustomersAction } from '../actions';
@@ -59,6 +59,9 @@ export function CustomersBrowser({ isAdmin = false }: { isAdmin?: boolean }) {
 
   const [views, setViews] = useState<SavedView[]>([]);
   const [activeViewId, setActiveViewId] = useState('');
+
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchMounted = useRef(false);
 
   const [importing, startImport] = useTransition();
   const [importMsg, setImportMsg] = useState<string | null>(null);
@@ -119,6 +122,18 @@ export function CustomersBrowser({ isAdmin = false }: { isAdmin?: boolean }) {
     void fetchRows(orgId, query, 1, perPage);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId]);
+
+  // live search — debounce 350 ms; skip on initial mount to avoid double-fetch with org effect
+  useEffect(() => {
+    if (!searchMounted.current) { searchMounted.current = true; return; }
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => {
+      setQuery(search);
+      void fetchRows(orgId, search, 1, perPage);
+    }, 350);
+    return () => { if (searchTimer.current) clearTimeout(searchTimer.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
 
   const runSearch = () => { setQuery(search); void fetchRows(orgId, search, 1, perPage); };
   const clearSearch = () => { setSearch(''); setQuery(''); void fetchRows(orgId, '', 1, perPage); };

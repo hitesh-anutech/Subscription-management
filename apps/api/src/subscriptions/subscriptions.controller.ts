@@ -10,6 +10,7 @@ import {
   RenewalQuoteDto, ProrataQuoteDto, StartSubscriptionDto,
   ImportSubscriptionsBatchDto, BulkUpdatePriceDto, BulkRenewalQuoteDto,
   CombinedRenewalQuoteDto, BulkCreateFromQuoteDto, BulkTransferCustomerDto,
+  InlineImportZohoDocDto,
 } from './dto/subscriptions.dto';
 import { CurrentUser, AuthUser } from '../auth/decorators/current-user.decorator';
 
@@ -306,6 +307,12 @@ export class SubscriptionsController {
   @Post('import')
   import(@Body() dto: ImportSubscriptionsBatchDto) {
     return this.service.importGrouped(dto.subscriptions);
+  }
+
+  /** POST /api/subscriptions/inline-import-zoho-doc — one-click import from Zoho Docs panel */
+  @Post('inline-import-zoho-doc')
+  inlineImportZohoDoc(@Body() dto: InlineImportZohoDocDto) {
+    return this.service.inlineImportZohoDoc(dto);
   }
 
   /** POST /api/subscriptions/sync-expiry */

@@ -1,5 +1,5 @@
 import {
-  IsArray, IsBoolean, IsDateString, IsEnum, IsNumber, IsOptional,
+  IsArray, IsBoolean, IsDateString, IsEnum, IsIn, IsNumber, IsOptional,
   IsString, IsUUID, MaxLength, Min, ValidateNested, IsObject,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -53,6 +53,10 @@ export class UpdateSubscriptionDto {
   // Billing currency + exchange rate (1 unit of currency = exchangeRate INR)
   @IsOptional() @IsString() @MaxLength(10) currency?: string;
   @IsOptional() @IsNumber() exchangeRate?: number;
+
+  // Allow re-linking to a different Zoho item (e.g. when item name changes in Zoho Books)
+  @IsOptional() @IsString() @MaxLength(80)  zohoItemId?: string;
+  @IsOptional() @IsString() @MaxLength(250) zohoItemName?: string;
 
   // Manually link existing Zoho documents — backend will lookup ID + date from Zoho
   @IsOptional() @IsString() @MaxLength(80) lastQuoteNumber?: string;
@@ -185,4 +189,19 @@ export class CombinedRenewalQuoteDto {
   @IsOptional()
   @IsObject()
   priceOverrides?: Record<string, number>;
+}
+
+export class InlineImportZohoDocDto {
+  @IsString() organizationId!: string;
+  @IsString() zohoCustomerId!: string;
+  @IsIn(['invoices', 'estimates']) docSource!: 'invoices' | 'estimates';
+  @IsOptional() @IsString() invoiceId?: string;
+  @IsOptional() @IsString() invoiceNumber?: string;
+  @IsOptional() @IsString() invoiceDate?: string;
+  @IsOptional() @IsString() invoiceStatus?: string;
+  @IsOptional() @IsString() quoteId?: string;
+  @IsOptional() @IsString() quoteNumber?: string;
+  @IsOptional() @IsString() quoteDate?: string;
+  @IsOptional() @IsString() quoteStatus?: string;
+  @IsOptional() @IsString() businessType?: string;
 }

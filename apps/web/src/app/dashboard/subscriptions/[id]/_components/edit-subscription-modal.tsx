@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useFormState, useFormStatus } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { updateSubscriptionAction } from '../actions';
+import { ZohoItemSearch } from '../../../quick-quotes/_components/zoho-search';
 
 const BILLING_CYCLES: { value: string; label: string }[] = [
   { value: 'monthly',     label: 'Monthly' },
@@ -33,7 +34,9 @@ function currencySymbol(code: string) {
 
 interface Props {
   subscriptionId: string;
+  itemId: string;
   itemName: string;
+  orgId: string;
   quantity: number;
   currency: string;
   exchangeRate: number;
@@ -67,6 +70,7 @@ function SaveBtn() {
 export function EditSubscriptionButton(props: Props) {
   const [open, setOpen]         = useState(false);
   const [currency, setCurrency] = useState(props.currency || 'INR');
+  const [selectedItem, setSelectedItem] = useState({ id: props.itemId, name: props.itemName });
   const router = useRouter();
 
   const sym = currencySymbol(currency);
@@ -110,12 +114,17 @@ export function EditSubscriptionButton(props: Props) {
                 <div className="px-3 py-2 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">{state.error}</div>
               )}
 
-              {/* Item — read-only */}
+              {/* Item — searchable Zoho item picker */}
               <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">Item (read-only)</label>
-                <div className="px-3 py-2 rounded-lg bg-slate-50 border border-slate-200 text-sm text-slate-600">
-                  {props.itemName}
-                </div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Item</label>
+                <ZohoItemSearch
+                  orgId={props.orgId}
+                  value={selectedItem.name}
+                  onChange={(name) => setSelectedItem(prev => ({ ...prev, name }))}
+                  onSelect={(id, name) => setSelectedItem({ id, name })}
+                />
+                <input type="hidden" name="zoho_item_id"   value={selectedItem.id} />
+                <input type="hidden" name="zoho_item_name" value={selectedItem.name} />
               </div>
 
               <div className="grid grid-cols-2 gap-4">

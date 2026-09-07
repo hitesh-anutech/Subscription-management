@@ -104,6 +104,10 @@ export default function ZohoDocsPanel({ orgId, zohoCustomerId, subs }: Props) {
   // Per-row mapping state (keyed by doc index)
   const [rowMap, setRowMap] = useState<Record<number, RowMapState>>({});
 
+  // Per-doc inline-import state
+  type ImportDocState = { status: 'idle' | 'importing' | 'done' | 'error'; created?: number; enriched?: number; errors?: string[] };
+  const [docImport, setDocImport] = useState<Record<number, ImportDocState>>({});
+
   // Bulk checkboxes
   const [selected, setSelected] = useState<Set<number>>(new Set());
 
@@ -310,6 +314,50 @@ export default function ZohoDocsPanel({ orgId, zohoCustomerId, subs }: Props) {
     }
   }, [orgId, rowMap]);
 
+  // ── Inline import (one-click create/enrich from Zoho doc) ────────
+  const handleInlineImport = useCallback(async (i: number, doc: ZohoDoc) => {
+    const docSource = doc.invoiceId ? 'invoices' : 'estimates';
+    if (!doc.invoiceId && !doc.quoteId) return;
+
+    setDocImport(prev => ({ ...prev, [i]: { status: 'importing' } }));
+    try {
+      const res = await fetch(`${API_BASE}/subscriptions/inline-import-zoho-doc`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          organizationId: orgId,
+          zohoCustomerId,
+          docSource,
+          invoiceId:     doc.invoiceId,
+          invoiceNumber: doc.invoiceNumber,
+          invoiceDate:   doc.invoiceDate,
+          invoiceStatus: doc.invoiceStatus,
+          quoteId:       doc.quoteId,
+          quoteNumber:   doc.quoteNumber,
+          quoteDate:     doc.quoteDate,
+          quoteStatus:   doc.quoteStatus,
+          businessType:  doc.businessType,
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const result = await res.json() as { created: number; enriched: number; skipped: number; errors: string[] };
+      setDocImport(prev => ({
+        ...prev,
+        [i]: {
+          status: result.errors?.length && !result.created && !result.enriched ? 'error' : 'done',
+          created: result.created, enriched: result.enriched, errors: result.errors,
+        },
+      }));
+      if (result.created > 0 || result.enriched > 0) void sync();
+    } catch (err) {
+      setDocImport(prev => ({
+        ...prev,
+        [i]: { status: 'error', errors: [err instanceof Error ? err.message : 'Failed'] },
+      }));
+    }
+  }, [orgId, zohoCustomerId, sync]);
+
   // ── Helpers ───────────────────────────────────────────────────────
   const importUrl = (doc: ZohoDoc) => {
     const ref = doc.invoiceNumber ?? doc.quoteNumber ?? '';
@@ -497,10 +545,39 @@ export default function ZohoDocsPanel({ orgId, zohoCustomerId, subs }: Props) {
                           </div>
                         ) : (
                           <div className="flex items-center gap-1.5">
-                            <a href={importUrl(doc)} target="_blank" rel="noopener noreferrer"
-                              className="text-[10px] px-2 py-1 rounded bg-indigo-50 text-indigo-600 border border-indigo-200 hover:bg-indigo-100 whitespace-nowrap transition-colors">
-                              ↑ Import
-                            </a>
+                            {(() => {
+                              const ds = docImport[i];
+                              const label = ds?.status === 'importing' ? '⏳…'
+                                : ds?.status === 'done'
+                                  ? `✓ ${(ds.created ?? 0) + (ds.enriched ?? 0) > 0
+                                      ? [ds.created ? `${ds.created} created` : '', ds.enriched ? `${ds.enriched} updated` : ''].filter(Boolean).join(' · ')
+                                      : 'Skipped'}`
+                                : ds?.status === 'error' ? '❌ Failed'
+                                : '↑ Import';
+                              return (
+                                <div className="flex flex-col gap-0.5">
+                                  <button
+                                    type="button"
+                                    disabled={ds?.status === 'importing'}
+                                    onClick={() => void handleInlineImport(i, doc)}
+                                    className={`text-[10px] px-2 py-1 rounded border whitespace-nowrap transition-colors ${
+                                      ds?.status === 'done'
+                                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                        : ds?.status === 'error'
+                                        ? 'bg-red-50 text-red-600 border-red-200'
+                                        : 'bg-indigo-50 text-indigo-600 border-indigo-200 hover:bg-indigo-100 disabled:opacity-50'
+                                    }`}
+                                  >
+                                    {label}
+                                  </button>
+                                  {ds?.status === 'error' && ds.errors?.[0] && (
+                                    <p className="text-[9px] text-red-500 max-w-[140px] truncate" title={ds.errors[0]}>
+                                      {ds.errors[0]}
+                                    </p>
+                                  )}
+                                </div>
+                              );
+                            })()}
                             {(doc.invoiceId || doc.quoteId) && (
                               <button type="button"
                                 onClick={() => void openMap(i, doc)}
@@ -629,7 +706,7 @@ export default function ZohoDocsPanel({ orgId, zohoCustomerId, subs }: Props) {
 
       {fetched && docs.length > 0 && (
         <div className="px-5 py-2 border-t border-slate-100 text-[11px] text-slate-400">
-          ✓ Linked = already mapped · ↑ Import = Zoho import page pre-fill · 🔗 Map = line items fetch करके auto-match + apply
+          ✓ Linked = already mapped · ↑ Import = directly create subscription from this doc · 🔗 Map = line items fetch करके auto-match + apply
         </div>
       )}
 

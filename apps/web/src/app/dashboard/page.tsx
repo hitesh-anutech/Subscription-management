@@ -1,38 +1,15 @@
 import Link from 'next/link';
 import { cookies } from 'next/headers';
 import { createServerApi, SESSION_COOKIE } from '@/lib/api';
+import { CreateNewButton } from './_components/create-new-button';
+import { AlertsPanel } from './_components/alerts-panel';
+import type { ExpiringSubscription } from './_components/alerts-panel';
 
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Dashboard' };
 
-interface ExpiringSubscription {
-  id: string;
-  subscriptionNumber: string;
-  zohoCustomerName: string | null;
-  zohoItemName: string | null;
-  endDate: string;
-  lifecycleStatus: string;
-  domain: { domainName: string };
-  organization: { name: string };
-}
-
 function daysLeft(dateStr: string) {
   return Math.ceil((new Date(dateStr).getTime() - Date.now()) / 86_400_000);
-}
-
-function fmt(dateStr: string) {
-  return new Date(dateStr).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-}
-
-/** Group subscriptions by customer, preserving the incoming order (soonest expiry first). */
-function groupByCustomer(subs: ExpiringSubscription[]) {
-  const map = new Map<string, ExpiringSubscription[]>();
-  for (const s of subs) {
-    const key = s.zohoCustomerName ?? '—';
-    if (!map.has(key)) map.set(key, []);
-    map.get(key)!.push(s);
-  }
-  return Array.from(map.entries()).map(([customer, items]) => ({ customer, items }));
 }
 
 export default async function DashboardPage() {
@@ -74,163 +51,58 @@ export default async function DashboardPage() {
             📅 {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
           </p>
         </div>
-        <div className="flex gap-3">
-          <Link href="/dashboard/leads/new"
-            className="px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold rounded-xl shadow-md shadow-blue-500/10 active:scale-[0.98] transition-all">
-            + New Lead
-          </Link>
-          <Link href="/dashboard/quick-quotes/new"
-            className="px-4 py-2.5 bg-white border border-slate-200 text-slate-700 text-xs font-bold rounded-xl hover:bg-slate-50 active:scale-[0.98] transition-all">
-            + New Quote
-          </Link>
-        </div>
+        <CreateNewButton />
       </div>
 
-      {/* Stats cards */}
-      <div className="grid grid-cols-3 gap-5">
+      {/* Stats strip */}
+      <div className="grid grid-cols-3 gap-3">
         <Link href="/dashboard/subscriptions?status=Active"
-          className="bg-white border border-slate-200/80 rounded-2xl p-6 hover:-translate-y-1 hover:shadow-md hover:border-blue-300 transition-all duration-300 group relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-24 h-24 bg-blue-500/5 rounded-full -mr-8 -mt-8" />
-          <div className="flex items-center justify-between mb-4">
-            <span className="text-4xl font-extrabold text-blue-600">{activeSubsCount}</span>
-            <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 group-hover:scale-110 transition-transform">
-              🔄
-            </div>
+          className="bg-white border border-slate-200/80 rounded-xl px-4 py-3 flex items-center gap-3 hover:border-blue-300 hover:shadow-sm transition-all duration-200 group">
+          <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center text-lg shrink-0 group-hover:scale-110 transition-transform">🔄</div>
+          <div className="min-w-0">
+            <div className="text-2xl font-extrabold text-blue-600 leading-none">{activeSubsCount}</div>
+            <div className="text-xs font-bold text-slate-600 mt-0.5 truncate">Active Subscriptions</div>
           </div>
-          <div className="text-sm font-bold text-slate-700">Active Subscriptions</div>
-          <div className="text-xs text-slate-400 mt-2 flex items-center gap-1 group-hover:text-blue-500 transition-colors">
+          <div className="ml-auto text-xs text-slate-400 group-hover:text-blue-500 transition-colors flex items-center gap-0.5 shrink-0">
             <span>View all</span>
-            <span className="group-hover:translate-x-1 transition-transform">→</span>
+            <span className="group-hover:translate-x-0.5 transition-transform inline-block">→</span>
           </div>
         </Link>
-        
+
         <Link href="/dashboard/quick-quotes?status=Sent"
-          className="bg-white border border-slate-200/80 rounded-2xl p-6 hover:-translate-y-1 hover:shadow-md hover:border-amber-300 transition-all duration-300 group relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-24 h-24 bg-amber-500/5 rounded-full -mr-8 -mt-8" />
-          <div className="flex items-center justify-between mb-4">
-            <span className="text-4xl font-extrabold text-amber-600">{openQuotesCount}</span>
-            <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600 group-hover:scale-110 transition-transform">
-              📄
-            </div>
+          className="bg-white border border-slate-200/80 rounded-xl px-4 py-3 flex items-center gap-3 hover:border-amber-300 hover:shadow-sm transition-all duration-200 group">
+          <div className="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center text-lg shrink-0 group-hover:scale-110 transition-transform">📄</div>
+          <div className="min-w-0">
+            <div className="text-2xl font-extrabold text-amber-600 leading-none">{openQuotesCount}</div>
+            <div className="text-xs font-bold text-slate-600 mt-0.5 truncate">Quotes Awaiting Response</div>
           </div>
-          <div className="text-sm font-bold text-slate-700">Quotes Awaiting Response</div>
-          <div className="text-xs text-slate-400 mt-2 flex items-center gap-1 group-hover:text-amber-500 transition-colors">
+          <div className="ml-auto text-xs text-slate-400 group-hover:text-amber-500 transition-colors flex items-center gap-0.5 shrink-0">
             <span>View all</span>
-            <span className="group-hover:translate-x-1 transition-transform">→</span>
+            <span className="group-hover:translate-x-0.5 transition-transform inline-block">→</span>
           </div>
         </Link>
 
         <Link href="/dashboard/leads?status=New"
-          className="bg-white border border-slate-200/80 rounded-2xl p-6 hover:-translate-y-1 hover:shadow-md hover:border-emerald-300 transition-all duration-300 group relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/5 rounded-full -mr-8 -mt-8" />
-          <div className="flex items-center justify-between mb-4">
-            <span className="text-4xl font-extrabold text-emerald-600">{activeLeadsCount}</span>
-            <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600 group-hover:scale-110 transition-transform">
-              🎯
-            </div>
+          className="bg-white border border-slate-200/80 rounded-xl px-4 py-3 flex items-center gap-3 hover:border-emerald-300 hover:shadow-sm transition-all duration-200 group">
+          <div className="w-9 h-9 rounded-lg bg-emerald-50 flex items-center justify-center text-lg shrink-0 group-hover:scale-110 transition-transform">🎯</div>
+          <div className="min-w-0">
+            <div className="text-2xl font-extrabold text-emerald-600 leading-none">{activeLeadsCount}</div>
+            <div className="text-xs font-bold text-slate-600 mt-0.5 truncate">New Leads</div>
           </div>
-          <div className="text-sm font-bold text-slate-700">New Leads</div>
-          <div className="text-xs text-slate-400 mt-2 flex items-center gap-1 group-hover:text-emerald-500 transition-colors">
+          <div className="ml-auto text-xs text-slate-400 group-hover:text-emerald-500 transition-colors flex items-center gap-0.5 shrink-0">
             <span>View all</span>
-            <span className="group-hover:translate-x-1 transition-transform">→</span>
+            <span className="group-hover:translate-x-0.5 transition-transform inline-block">→</span>
           </div>
         </Link>
       </div>
 
       {/* ── Subscription Expiry Alerts ── */}
       {(expiringIn30.length > 0 || expiredSubs.length > 0) && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-            <h2 className="text-base font-bold text-slate-800 flex items-center gap-2">
-              <span>⚠️</span> Subscription Alerts
-              {urgentCount > 0 && (
-                <span className="px-2.5 py-0.5 rounded-full bg-red-100 text-red-700 text-[10px] font-extrabold uppercase tracking-wider animate-pulse">
-                  {urgentCount} urgent
-                </span>
-              )}
-            </h2>
-            <Link href="/dashboard/subscriptions?expiring=30" className="text-xs font-bold text-blue-600 hover:text-blue-700 hover:underline">
-              All expiring →
-            </Link>
-          </div>
-
-          {/* Expired */}
-          {expiredSubs.length > 0 && (
-            <div className="bg-red-50/50 border border-red-200/60 rounded-2xl overflow-hidden shadow-sm">
-              <div className="px-5 py-3 border-b border-red-200/50 bg-red-100/60 text-red-800 text-xs font-bold uppercase tracking-wider flex items-center gap-2">
-                <span>❌</span> Expired ({expiredSubs.length})
-              </div>
-              <div className="divide-y divide-red-100/60">
-                {groupByCustomer(expiredSubs).map((g) => (
-                  <div key={g.customer} className="px-5 py-4">
-                    <div className="flex items-center gap-2 mb-2.5">
-                      <p className="text-sm font-bold text-slate-800">{g.customer}</p>
-                      {g.items.length > 1 && (
-                        <span className="px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-[9px] font-extrabold uppercase tracking-wide">
-                          {g.items.length} subscriptions
-                        </span>
-                      )}
-                    </div>
-                    <div className="space-y-1.5">
-                      {g.items.map((s) => (
-                        <Link key={s.id} href={`/dashboard/subscriptions/${s.id}`}
-                          className="flex items-center justify-between gap-4 -mx-3 px-3 py-2 rounded-xl hover:bg-red-100/40 border border-transparent hover:border-red-200/30 transition-all">
-                          <p className="text-xs text-slate-500 font-medium truncate">{s.domain.domainName} · {s.zohoItemName} · {s.organization.name}</p>
-                          <div className="text-right shrink-0">
-                            <p className="text-xs font-bold text-red-600">Expired {fmt(s.endDate)}</p>
-                            <p className="text-[10px] text-red-500 font-medium">{Math.abs(daysLeft(s.endDate))} days ago</p>
-                          </div>
-                        </Link>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Expiring soon */}
-          {expiringIn30.length > 0 && (
-            <div className="bg-white border border-amber-200/60 rounded-2xl overflow-hidden shadow-sm">
-              <div className="px-5 py-3 border-b border-amber-200/50 bg-amber-50/60 text-amber-800 text-xs font-bold uppercase tracking-wider flex items-center gap-2">
-                <span>⏳</span> Expiring in 30 Days ({expiringIn30.length})
-              </div>
-              <div className="divide-y divide-slate-100/60">
-                {groupByCustomer(expiringIn30).map((g) => (
-                  <div key={g.customer} className="px-5 py-4">
-                    <div className="flex items-center gap-2 mb-2.5">
-                      <p className="text-sm font-bold text-slate-800">{g.customer}</p>
-                      {g.items.length > 1 && (
-                        <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[9px] font-extrabold uppercase tracking-wide">
-                          {g.items.length} subscriptions
-                        </span>
-                      )}
-                    </div>
-                    <div className="space-y-1.5">
-                      {g.items.map((s) => {
-                        const d = daysLeft(s.endDate);
-                        return (
-                          <Link key={s.id} href={`/dashboard/subscriptions/${s.id}`}
-                            className="flex items-center justify-between gap-4 -mx-3 px-3 py-2 rounded-xl hover:bg-amber-50/40 border border-transparent hover:border-amber-200/30 transition-all">
-                            <p className="text-xs text-slate-500 font-medium truncate">{s.domain.domainName} · {s.zohoItemName} · {s.organization.name}</p>
-                            <div className="text-right shrink-0">
-                              <p className={`text-xs font-bold ${d <= 7 ? 'text-red-600' : 'text-amber-600'}`}>
-                                {fmt(s.endDate)}
-                              </p>
-                              <p className={`text-[10px] ${d <= 7 ? 'text-red-500 font-bold' : 'text-slate-400 font-semibold'}`}>
-                                {d === 0 ? 'Today!' : d === 1 ? 'Tomorrow!' : `${d} days left`}
-                              </p>
-                            </div>
-                          </Link>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
+        <AlertsPanel
+          expiringIn30={expiringIn30}
+          expiredSubs={expiredSubs}
+          urgentCount={urgentCount}
+        />
       )}
 
       {/* No expiry alerts state */}

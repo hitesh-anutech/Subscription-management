@@ -242,7 +242,9 @@ export default async function SubscriptionDetailPage({ params }: { params: Promi
               <div className="flex items-center gap-2">
                 <EditSubscriptionButton
                   subscriptionId={sub.id}
+                  itemId={sub.zohoItemId}
                   itemName={sub.zohoItemName ?? sub.zohoItemId}
+                  orgId={sub.organization.id}
                   quantity={Number(sub.quantity)}
                   currency={sub.currency || 'INR'}
                   exchangeRate={sub.exchangeRate ? Number(sub.exchangeRate) : 1}
