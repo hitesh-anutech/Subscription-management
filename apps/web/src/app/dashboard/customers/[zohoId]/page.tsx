@@ -397,6 +397,7 @@ export default async function CustomerDetailPage({
       <ZohoDocsPanel
         orgId={orgId}
         zohoCustomerId={zohoId}
+        zohoCustomerName={name}
         zohoOrgId={org?.zohoOrgId ?? ''}
         dataCenter={org?.dataCenter ?? 'in'}
         subs={subscriptions.map(s => ({

@@ -7,6 +7,7 @@ import { ProrataForm } from './_components/prorata-form';
 import { StartSubscriptionModal } from './_components/start-subscription-modal';
 import { EditSubscriptionButton } from './_components/edit-subscription-modal';
 import { DeactivateSubscriptionButton } from './_components/deactivate-subscription-button';
+import { ChangeStatusButton } from './_components/change-status-button';
 import { getCurrentUser } from '@/lib/auth';
 import { DeleteSubscriptionButton } from '../_components/delete-subscription-button';
 import { HistoryDialog } from '@/components/history-dialog';
@@ -188,13 +189,7 @@ export default async function SubscriptionDetailPage({ params }: { params: Promi
           <span>·</span>
           <span>{sub.organization.name}</span>
           <span>·</span>
-          <span className={`px-2.5 py-1 rounded-xl text-xs font-bold border transition-all ${
-            sub.lifecycleStatus === 'Active' ? 'bg-emerald-50 border-emerald-200 text-emerald-700 shadow-sm shadow-emerald-500/5' :
-            sub.lifecycleStatus === 'Expiring_Soon' ? 'bg-amber-50 border-amber-200 text-amber-700 shadow-sm shadow-amber-500/5' :
-            sub.lifecycleStatus === 'Expired' ? 'bg-red-50 border-red-200 text-red-700 shadow-sm shadow-red-500/5' :
-            sub.lifecycleStatus === 'Cancelled' ? 'bg-red-100 border-red-300 text-red-800 font-extrabold shadow-sm shadow-red-500/10' :
-            'bg-slate-50 border-slate-200 text-slate-600 shadow-sm'
-          }`}>{sub.lifecycleStatus.replace('_', ' ')}</span>
+          <ChangeStatusButton subscriptionId={sub.id} currentStatus={sub.lifecycleStatus} />
           <HistoryDialog entityType="subscription" entityId={sub.id} title={`Subscription History: ${sub.subscriptionNumber}`} />
         </div>
       </div>

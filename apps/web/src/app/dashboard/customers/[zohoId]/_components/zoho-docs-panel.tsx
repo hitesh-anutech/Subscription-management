@@ -55,6 +55,7 @@ interface RowMapState {
 interface Props {
   orgId: string;
   zohoCustomerId: string;
+  zohoCustomerName?: string;
   subs: SubOption[];
   zohoOrgId: string;
   dataCenter: string;
@@ -125,7 +126,7 @@ const btStyle = (bt: string | null) => {
 
 // ── Component ─────────────────────────────────────────────────────────
 
-export default function ZohoDocsPanel({ orgId, zohoCustomerId, subs, zohoOrgId, dataCenter }: Props) {
+export default function ZohoDocsPanel({ orgId, zohoCustomerId, zohoCustomerName, subs, zohoOrgId, dataCenter }: Props) {
   const tld = DC_TLD[dataCenter] ?? 'com';
   const zohoBase = `https://books.zoho.${tld}/app/${zohoOrgId}#`;
   const [docs,     setDocs]     = useState<ZohoDoc[]>([]);
@@ -282,6 +283,7 @@ export default function ZohoDocsPanel({ orgId, zohoCustomerId, subs, zohoOrgId, 
       body: JSON.stringify({
         organizationId: orgId,
         zohoCustomerId,
+        zohoCustomerName:  zohoCustomerName,
         zohoItemId:        li.itemId || li.name.slice(0, 80),
         zohoItemName:      li.name,
         domainName:        li.domain,
@@ -300,7 +302,7 @@ export default function ZohoDocsPanel({ orgId, zohoCustomerId, subs, zohoOrgId, 
     }
     const sub = await res.json() as { id: string };
     return sub.id;
-  }, [orgId, zohoCustomerId]);
+  }, [orgId, zohoCustomerId, zohoCustomerName]);
 
   // Resolve __CREATE_NEW__ selections → real sub IDs (mutates resolvedSelections in place)
   const resolveNewSubs = useCallback(async (
