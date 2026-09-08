@@ -32,16 +32,19 @@ interface ZohoDoc {
 }
 
 interface LineItem {
-  name: string; qty: number; rate: number;
+  name: string; qty: number; rate: number; itemId: string;
   domain: string; startDate: string; endDate: string;
   suggestedSub: SubOption | null;
 }
+
+interface NewSubConfig { billingCycle: string; lifecycleStatus: string }
 
 // Per-row line-item state (after "Map" is clicked)
 interface RowMapState {
   status: 'idle' | 'loading' | 'loaded' | 'error';
   lineItems: LineItem[];
   selections: Record<number, string>;
+  newSubConfigs: Record<number, NewSubConfig>;
   error?: string;
   saving: boolean;
   saveError?: string;
@@ -86,6 +89,27 @@ const fmt = (d: string | null) =>
   d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 const inr = (n: number | null) =>
   n != null ? n.toLocaleString('en-IN', { maximumFractionDigits: 0 }) : '—';
+
+const BILLING_CYCLES = [
+  { value: 'monthly',    label: 'Monthly' },
+  { value: 'quarterly',  label: 'Quarterly' },
+  { value: 'half_yearly',label: 'Half-Yearly' },
+  { value: 'annual',     label: 'Annual (1 Yr)' },
+  { value: 'biennial',   label: 'Biennial (2 Yr)' },
+  { value: 'triennial',  label: 'Triennial (3 Yr)' },
+  { value: 'one_time',   label: 'One-Time' },
+];
+
+const detectBillingCycle = (start: string, end: string): string => {
+  if (!start || !end) return 'annual';
+  const days = (new Date(end).getTime() - new Date(start).getTime()) / 86400000;
+  if (days < 45)  return 'monthly';
+  if (days < 120) return 'quarterly';
+  if (days < 270) return 'half_yearly';
+  if (days < 500) return 'annual';
+  if (days < 900) return 'biennial';
+  return 'triennial';
+};
 
 const BT_STYLES: Record<string, string> = {
   renewal:  'bg-amber-50 text-amber-700 border-amber-200',
@@ -223,7 +247,7 @@ export default function ZohoDocsPanel({ orgId, zohoCustomerId, subs, zohoOrgId, 
 
     setRowMap(prev => ({
       ...prev,
-      [i]: { status: 'loading', lineItems: [], selections: {}, saving: false, historyStatus: 'idle' },
+      [i]: { status: 'loading', lineItems: [], selections: {}, newSubConfigs: {}, saving: false, historyStatus: 'idle' },
     }));
 
     try {
@@ -239,31 +263,93 @@ export default function ZohoDocsPanel({ orgId, zohoCustomerId, subs, zohoOrgId, 
       items.forEach((li, idx) => { if (li.suggestedSub) selections[idx] = li.suggestedSub.id; });
       setRowMap(prev => ({
         ...prev,
-        [i]: { status: 'loaded', lineItems: items, selections, saving: false, historyStatus: 'idle' },
+        [i]: { status: 'loaded', lineItems: items, selections, newSubConfigs: {}, saving: false, historyStatus: 'idle' },
       }));
     } catch (err) {
       setRowMap(prev => ({
         ...prev,
-        [i]: { status: 'error', lineItems: [], selections: {}, error: err instanceof Error ? err.message : 'Failed', saving: false, historyStatus: 'idle' },
+        [i]: { status: 'error', lineItems: [], selections: {}, newSubConfigs: {}, error: err instanceof Error ? err.message : 'Failed', saving: false, historyStatus: 'idle' },
       }));
     }
   }, [orgId, rowMap]);
+
+  // ── Create a new subscription from a line item ────────────────────
+  const createNewSub = useCallback(async (li: LineItem, cfg: NewSubConfig): Promise<string> => {
+    const res = await fetch(`${API_BASE}/subscriptions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        organizationId: orgId,
+        zohoCustomerId,
+        zohoItemId:        li.itemId || li.name.slice(0, 80),
+        zohoItemName:      li.name,
+        domainName:        li.domain,
+        quantity:          li.qty,
+        subscriptionPrice: li.rate,
+        billingCycle:      cfg.billingCycle,
+        startDate:         li.startDate,
+        endDate:           li.endDate,
+        lifecycleStatus:   cfg.lifecycleStatus,
+      }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({})) as { message?: string | string[] };
+      const msg = Array.isArray(body.message) ? body.message.join(', ') : (body.message ?? `HTTP ${res.status}`);
+      throw new Error(msg);
+    }
+    const sub = await res.json() as { id: string };
+    return sub.id;
+  }, [orgId, zohoCustomerId]);
+
+  // Resolve __CREATE_NEW__ selections → real sub IDs (mutates resolvedSelections in place)
+  const resolveNewSubs = useCallback(async (
+    rm: RowMapState,
+    resolvedSelections: Record<number, string>,
+  ): Promise<string | null> => {
+    for (const [liIdxStr, subId] of Object.entries(resolvedSelections)) {
+      if (subId !== '__CREATE_NEW__') continue;
+      const liIdx = Number(liIdxStr);
+      const li = rm.lineItems[liIdx];
+      const cfg = rm.newSubConfigs?.[liIdx] ?? {
+        billingCycle: detectBillingCycle(li?.startDate ?? '', li?.endDate ?? ''),
+        lifecycleStatus: 'Active',
+      };
+      try {
+        resolvedSelections[liIdx] = await createNewSub(li, cfg);
+      } catch (err) {
+        return err instanceof Error ? err.message : 'Failed to create subscription';
+      }
+    }
+    return null;
+  }, [createNewSub]);
 
   // ── Apply all line-item mappings for a doc row ────────────────────
   const applyMap = useCallback(async (i: number, doc: ZohoDoc) => {
     const rm = rowMap[i];
     if (!rm || rm.saving) return;
 
-    const patches = Object.entries(rm.selections)
-      .filter(([, subId]) => !!subId)
-      .map(([liIdxStr, subId]) => {
-        const li = rm.lineItems[Number(liIdxStr)];
-        return { subId, startDate: li?.startDate, endDate: li?.endDate };
-      });
-
-    if (patches.length === 0) return;
-
     setRowMap(prev => ({ ...prev, [i]: { ...prev[i], saving: true, saveError: undefined } }));
+
+    // Resolve any __CREATE_NEW__ → real subscription IDs first
+    const resolvedSelections: Record<number, string> = Object.fromEntries(
+      Object.entries(rm.selections).filter(([, v]) => !!v).map(([k, v]) => [Number(k), v]),
+    );
+    const createErr = await resolveNewSubs(rm, resolvedSelections);
+    if (createErr) {
+      setRowMap(prev => ({ ...prev, [i]: { ...prev[i], saving: false, saveError: createErr } }));
+      return;
+    }
+
+    const patches = Object.entries(resolvedSelections).map(([liIdxStr, subId]) => {
+      const li = rm.lineItems[Number(liIdxStr)];
+      return { subId, startDate: li?.startDate, endDate: li?.endDate };
+    });
+
+    if (patches.length === 0) {
+      setRowMap(prev => ({ ...prev, [i]: { ...prev[i], saving: false } }));
+      return;
+    }
 
     const results = await Promise.allSettled(
       patches.map(({ subId, startDate, endDate }) => {
@@ -290,26 +376,37 @@ export default function ZohoDocsPanel({ orgId, zohoCustomerId, subs, zohoOrgId, 
       return;
     }
 
-    // Close the row + refresh docs
     setRowMap(prev => { const n = { ...prev }; delete n[i]; return n; });
     await sync();
-  }, [rowMap, sync]);
+  }, [rowMap, sync, resolveNewSubs]);
 
   // ── Create RenewalHistory entries from line-item mappings ─────────
   const createHistory = useCallback(async (i: number, doc: ZohoDoc) => {
     const rm = rowMap[i];
     if (!rm || rm.status !== 'loaded' || rm.historyStatus === 'saving') return;
 
-    const mappings = Object.entries(rm.selections)
-      .filter(([, subId]) => !!subId)
+    setRowMap(prev => ({ ...prev, [i]: { ...prev[i], historyStatus: 'saving', historyError: undefined } }));
+
+    // Resolve any __CREATE_NEW__ → real subscription IDs first
+    const resolvedSelections: Record<number, string> = Object.fromEntries(
+      Object.entries(rm.selections).filter(([, v]) => !!v).map(([k, v]) => [Number(k), v]),
+    );
+    const createErr = await resolveNewSubs(rm, resolvedSelections);
+    if (createErr) {
+      setRowMap(prev => ({ ...prev, [i]: { ...prev[i], historyStatus: 'error', historyError: createErr } }));
+      return;
+    }
+
+    const mappings = Object.entries(resolvedSelections)
       .map(([idxStr, subId]) => {
         const li = rm.lineItems[Number(idxStr)];
         return { subId, startDate: li?.startDate ?? '', endDate: li?.endDate ?? '', qty: li?.qty ?? 0, rate: li?.rate ?? 0, lineItemDomain: li?.domain ?? '' };
       });
 
-    if (mappings.length === 0) return;
-
-    setRowMap(prev => ({ ...prev, [i]: { ...prev[i], historyStatus: 'saving', historyError: undefined } }));
+    if (mappings.length === 0) {
+      setRowMap(prev => ({ ...prev, [i]: { ...prev[i], historyStatus: 'idle' } }));
+      return;
+    }
 
     try {
       const res = await fetch(`${API_BASE}/organizations/${orgId}/create-doc-history`, {
@@ -338,7 +435,7 @@ export default function ZohoDocsPanel({ orgId, zohoCustomerId, subs, zohoOrgId, 
         [i]: { ...prev[i], historyStatus: 'error', historyError: err instanceof Error ? err.message : 'Failed' },
       }));
     }
-  }, [orgId, rowMap]);
+  }, [orgId, rowMap, resolveNewSubs]);
 
   // ── Inline import (one-click create/enrich from Zoho doc) ────────
   const handleInlineImport = useCallback(async (i: number, doc: ZohoDoc) => {
@@ -710,13 +807,27 @@ export default function ZohoDocsPanel({ orgId, zohoCustomerId, subs, zohoOrgId, 
                                           <td className="py-2">
                                             <select
                                               value={rm.selections[liIdx] ?? ''}
-                                              onChange={e => setRowMap(prev => ({
-                                                ...prev,
-                                                [i]: { ...prev[i], selections: { ...prev[i].selections, [liIdx]: e.target.value } },
-                                              }))}
+                                              onChange={e => {
+                                                const val = e.target.value;
+                                                setRowMap(prev => {
+                                                  const cur = prev[i];
+                                                  const newSubConfigs = { ...cur.newSubConfigs };
+                                                  if (val === '__CREATE_NEW__' && !newSubConfigs[liIdx]) {
+                                                    newSubConfigs[liIdx] = {
+                                                      billingCycle: detectBillingCycle(li.startDate, li.endDate),
+                                                      lifecycleStatus: 'Active',
+                                                    };
+                                                  }
+                                                  return {
+                                                    ...prev,
+                                                    [i]: { ...cur, selections: { ...cur.selections, [liIdx]: val }, newSubConfigs },
+                                                  };
+                                                });
+                                              }}
                                               className="w-full px-2 py-1 border border-slate-300 rounded text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
                                             >
                                               <option value="">— Skip —</option>
+                                              <option value="__CREATE_NEW__">+ Create New Subscription</option>
                                               {subs.map(s => (
                                                 <option key={s.id} value={s.id}>
                                                   {s.subscriptionNumber}
@@ -728,6 +839,51 @@ export default function ZohoDocsPanel({ orgId, zohoCustomerId, subs, zohoOrgId, 
                                             {li.suggestedSub && rm.selections[liIdx] === li.suggestedSub.id && (
                                               <p className="text-[10px] text-emerald-600 mt-0.5">✓ Auto-matched</p>
                                             )}
+                                            {/* Mini-form shown when "Create New" is selected */}
+                                            {rm.selections[liIdx] === '__CREATE_NEW__' && (() => {
+                                              const cfg = rm.newSubConfigs[liIdx] ?? { billingCycle: 'annual', lifecycleStatus: 'Active' };
+                                              const updateCfg = (patch: Partial<NewSubConfig>) =>
+                                                setRowMap(prev => ({
+                                                  ...prev,
+                                                  [i]: {
+                                                    ...prev[i],
+                                                    newSubConfigs: { ...prev[i].newSubConfigs, [liIdx]: { ...cfg, ...patch } },
+                                                  },
+                                                }));
+                                              return (
+                                                <div className="mt-1.5 p-2 bg-emerald-50 border border-emerald-200 rounded-lg space-y-1.5">
+                                                  <p className="text-[10px] font-semibold text-emerald-700 uppercase tracking-wide">New Subscription</p>
+                                                  <div className="grid grid-cols-2 gap-1.5">
+                                                    <div>
+                                                      <p className="text-[9px] text-slate-500 mb-0.5">Billing Cycle</p>
+                                                      <select
+                                                        value={cfg.billingCycle}
+                                                        onChange={e => updateCfg({ billingCycle: e.target.value })}
+                                                        className="w-full px-1.5 py-0.5 border border-emerald-300 rounded text-[10px] bg-white focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                                                      >
+                                                        {BILLING_CYCLES.map(bc => (
+                                                          <option key={bc.value} value={bc.value}>{bc.label}</option>
+                                                        ))}
+                                                      </select>
+                                                    </div>
+                                                    <div>
+                                                      <p className="text-[9px] text-slate-500 mb-0.5">Status</p>
+                                                      <select
+                                                        value={cfg.lifecycleStatus}
+                                                        onChange={e => updateCfg({ lifecycleStatus: e.target.value })}
+                                                        className="w-full px-1.5 py-0.5 border border-emerald-300 rounded text-[10px] bg-white focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                                                      >
+                                                        <option value="Active">Active</option>
+                                                        <option value="Pending">Pending</option>
+                                                      </select>
+                                                    </div>
+                                                  </div>
+                                                  <p className="text-[9px] text-slate-400">
+                                                    {li.domain && <span className="font-mono text-blue-600">{li.domain}</span>} · ₹{li.rate.toLocaleString('en-IN')} × {li.qty}
+                                                  </p>
+                                                </div>
+                                              );
+                                            })()}
                                           </td>
                                         </tr>
                                       ))}
@@ -744,7 +900,9 @@ export default function ZohoDocsPanel({ orgId, zohoCustomerId, subs, zohoOrgId, 
                                     onClick={() => void applyMap(i, doc)}
                                     disabled={rm.saving || Object.values(rm.selections).every(v => !v)}
                                     className="px-4 py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300 text-white transition-colors">
-                                    {rm.saving ? 'Saving…' : `✓ Apply All (${Object.values(rm.selections).filter(Boolean).length} mappings)`}
+                                    {rm.saving
+                                      ? (Object.values(rm.selections).some(v => v === '__CREATE_NEW__') ? '⏳ Creating sub…' : 'Saving…')
+                                      : `✓ Apply All (${Object.values(rm.selections).filter(Boolean).length} mappings)`}
                                   </button>
                                   <button type="button"
                                     onClick={() => void createHistory(i, doc)}
@@ -754,7 +912,8 @@ export default function ZohoDocsPanel({ orgId, zohoCustomerId, subs, zohoOrgId, 
                                         ? 'bg-violet-50 text-violet-700 border-violet-300'
                                         : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50 disabled:opacity-50'
                                     }`}>
-                                    {rm.historyStatus === 'saving' ? '⏳ Creating…'
+                                    {rm.historyStatus === 'saving'
+                                      ? (Object.values(rm.selections).some(v => v === '__CREATE_NEW__') ? '⏳ Creating sub + history…' : '⏳ Creating…')
                                       : rm.historyStatus === 'done' ? '✓ History Created'
                                       : `📋 Create History (${Object.values(rm.selections).filter(Boolean).length})`}
                                   </button>

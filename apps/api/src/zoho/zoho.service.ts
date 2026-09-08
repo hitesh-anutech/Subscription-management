@@ -1767,7 +1767,7 @@ export class ZohoService {
    */
   async getZohoDocLineItems(orgId: string, kind: 'estimate' | 'invoice', docId: string) {
     type LineItemOut = {
-      name: string; qty: number; rate: number;
+      name: string; qty: number; rate: number; itemId: string;
       domain: string; startDate: string; endDate: string;
       suggestedSub: { id: string; subscriptionNumber: string; zohoItemName: string | null; domain: { domainName: string } | null } | null;
     };
@@ -1781,7 +1781,7 @@ export class ZohoService {
       include: { lines: { orderBy: { lineOrder: 'asc' } } },
     });
 
-    let rawLines: Array<{ name: string; qty: number; rate: number; domain: string; startDate: string; endDate: string }>;
+    let rawLines: Array<{ name: string; qty: number; rate: number; itemId: string; domain: string; startDate: string; endDate: string }>;
 
     let docStatus: string | null = null;
     let balance: number | null = null;
@@ -1815,6 +1815,7 @@ export class ZohoService {
         name:      l.name,
         qty:       l.qty,
         rate:      l.rate,
+        itemId:    '',       // not stored in DB; fetched from Zoho on cache-miss
         domain:    l.domain    ?? '',
         startDate: l.startDate ?? '',
         endDate:   l.endDate   ?? '',
@@ -1862,6 +1863,7 @@ export class ZohoService {
           name:      li.name,
           qty:       li.quantity,
           rate:      li.rate,
+          itemId:    li.item_id ?? '',
           domain:    cfVal(cfs, domainCf),
           startDate: parseDate(cfVal(cfs, startDateCf)),
           endDate:   parseDate(cfVal(cfs, endDateCf)),
