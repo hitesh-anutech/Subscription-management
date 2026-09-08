@@ -32,6 +32,8 @@ interface Subscription {
     quantity: string | null; sellingPrice: string | null; subtotalAmount: string | null;
     currency: string; serviceStartDate: string | null; serviceEndDate: string | null;
     businessType: string; renewalStatus: string; zohoEstimateStatus: string | null;
+    quoteId: string | null; invoiceId: string | null; invoiceNumber: string | null;
+    zohoInvoiceStatus: string | null;
     domain: { domainName: string };
   }[];
 }
