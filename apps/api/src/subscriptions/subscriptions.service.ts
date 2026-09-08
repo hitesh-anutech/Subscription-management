@@ -122,6 +122,16 @@ export class SubscriptionsService {
       },
     });
     if (!sub) throw new NotFoundException(`Subscription ${id} not found`);
+
+    // Enrich zohoCustomerName from ZohoCache when not stored on the subscription row
+    if (!sub.zohoCustomerName && sub.zohoCustomerId) {
+      const cached = await this.prisma.zohoCache.findFirst({
+        where: { organizationId: sub.organizationId, entityType: 'customer', zohoId: sub.zohoCustomerId },
+        select: { displayName: true },
+      });
+      if (cached?.displayName) return { ...sub, zohoCustomerName: cached.displayName };
+    }
+
     return sub;
   }
 

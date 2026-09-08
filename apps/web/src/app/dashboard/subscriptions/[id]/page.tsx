@@ -160,11 +160,11 @@ export default async function SubscriptionDetailPage({ params }: { params: Promi
               className="text-2xl font-bold text-blue-700 hover:underline transition-colors"
               title="Customer page par jaao"
             >
-              {sub.zohoCustomerName ?? sub.zohoItemName ?? 'Subscription'}
+              {sub.zohoCustomerName ?? sub.zohoCustomerId ?? 'Subscription'}
             </Link>
           ) : (
             <h1 className="text-2xl font-bold text-slate-900">
-              {sub.zohoCustomerName ?? sub.zohoItemName ?? 'Subscription'}
+              {sub.zohoCustomerName ?? 'Subscription'}
             </h1>
           )}
           {sub.zohoCustomerId && (
