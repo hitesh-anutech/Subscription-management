@@ -112,7 +112,7 @@ export default function ZohoDocsPanel({ orgId, zohoCustomerId, subs, zohoOrgId, 
   const [syncedAt, setSyncedAt]  = useState<string | null>(null);
 
   // ── Hover line-item popover ────────────────────────────────────────
-  type LineCacheEntry = { status: 'loading' | 'loaded' | 'error'; items: LineItem[]; error?: string };
+  type LineCacheEntry = { status: 'loading' | 'loaded' | 'error'; items: LineItem[]; balance?: number | null; error?: string };
   const [lineCache, setLineCache] = useState<Record<string, LineCacheEntry>>({});
   const [hoverCard, setHoverCard] = useState<{ docId: string; x: number; y: number } | null>(null);
   const hoverTimer  = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -188,8 +188,8 @@ export default function ZohoDocsPanel({ orgId, zohoCustomerId, subs, zohoOrgId, 
         { credentials: 'include' },
       )
         .then(r => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-        .then((data: { lineItems: LineItem[] }) =>
-          setLineCache(prev => ({ ...prev, [docId]: { status: 'loaded', items: data.lineItems ?? [] } })),
+        .then((data: { lineItems: LineItem[]; balance?: number | null }) =>
+          setLineCache(prev => ({ ...prev, [docId]: { status: 'loaded', items: data.lineItems ?? [], balance: data.balance ?? null } })),
         )
         .catch(err =>
           setLineCache(prev => ({ ...prev, [docId]: { status: 'error', items: [], error: err instanceof Error ? err.message : 'Failed' } })),
@@ -304,7 +304,7 @@ export default function ZohoDocsPanel({ orgId, zohoCustomerId, subs, zohoOrgId, 
       .filter(([, subId]) => !!subId)
       .map(([idxStr, subId]) => {
         const li = rm.lineItems[Number(idxStr)];
-        return { subId, startDate: li?.startDate ?? '', endDate: li?.endDate ?? '', qty: li?.qty ?? 0, rate: li?.rate ?? 0 };
+        return { subId, startDate: li?.startDate ?? '', endDate: li?.endDate ?? '', qty: li?.qty ?? 0, rate: li?.rate ?? 0, lineItemDomain: li?.domain ?? '' };
       });
 
     if (mappings.length === 0) return;
@@ -324,7 +324,14 @@ export default function ZohoDocsPanel({ orgId, zohoCustomerId, subs, zohoOrgId, 
         }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setRowMap(prev => ({ ...prev, [i]: { ...prev[i], historyStatus: 'done' } }));
+      const data = await res.json() as { results: Array<{ subId: string; action: string; error?: string }> };
+      const skipped = (data.results ?? []).filter(r => r.action === 'skipped' && r.error);
+      if (skipped.length > 0 && skipped.length === mappings.length) {
+        // All skipped — treat as error so user sees the reason
+        throw new Error(skipped.map(r => r.error).join('; '));
+      }
+      const partialMsg = skipped.length > 0 ? skipped.map(r => r.error).join('; ') : undefined;
+      setRowMap(prev => ({ ...prev, [i]: { ...prev[i], historyStatus: partialMsg ? 'error' : 'done', historyError: partialMsg } }));
     } catch (err) {
       setRowMap(prev => ({
         ...prev,
@@ -835,11 +842,21 @@ export default function ZohoDocsPanel({ orgId, zohoCustomerId, subs, zohoOrgId, 
                     </div>
                   ))}
                 </div>
-                <div className="px-3 py-2 border-t border-slate-100 bg-slate-50 rounded-b-xl flex justify-between items-center">
-                  <span className="text-[10px] text-slate-400">{entry.items.length} item{entry.items.length !== 1 ? 's' : ''}</span>
-                  <span className="text-xs font-bold text-slate-800 tabular-nums">
-                    Total ₹{total.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-                  </span>
+                <div className="px-3 py-2 border-t border-slate-100 bg-slate-50 rounded-b-xl">
+                  <div className="flex justify-between items-center">
+                    <span className="text-[10px] text-slate-400">{entry.items.length} item{entry.items.length !== 1 ? 's' : ''}</span>
+                    <span className="text-xs font-bold text-slate-800 tabular-nums">
+                      Total ₹{total.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                    </span>
+                  </div>
+                  {entry.balance != null && entry.balance > 0 && (
+                    <div className="flex justify-between items-center mt-1">
+                      <span className="text-[10px] text-red-500 font-medium">Balance Due</span>
+                      <span className="text-[11px] font-bold text-red-600 tabular-nums">
+                        ₹{entry.balance.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </>
             )}

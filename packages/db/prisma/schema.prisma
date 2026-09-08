@@ -378,6 +378,7 @@ model ZohoCustomerDoc {
   invoiceDate     String?   @map("invoice_date") @db.VarChar(20)
   invoiceStatus   String?   @map("invoice_status") @db.VarChar(30)
   invoiceTotal    Float?    @map("invoice_total")
+  invoiceBalance  Float?    @map("invoice_balance")
 
   businessType    String?   @map("business_type") @db.VarChar(50)
 

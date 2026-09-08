@@ -11,8 +11,11 @@ import { TruncatedTooltip } from '@/components/truncated-tooltip';
 
 interface RenewalHistoryLine {
   id: string;
+  quoteId: string | null;
   quoteNumber: string | null;
   quoteDate: string | null;
+  invoiceId: string | null;
+  invoiceNumber: string | null;
   quantity: string | null;
   sellingPrice: string | null;
   subtotalAmount: string | null;
@@ -22,6 +25,7 @@ interface RenewalHistoryLine {
   businessType: string;
   renewalStatus: string;
   zohoEstimateStatus: string | null;
+  zohoInvoiceStatus: string | null;
   domain: { domainName: string };
 }
 
@@ -92,63 +96,139 @@ function daysSince(dateStr: string | null): number {
   return Math.floor((Date.now() - new Date(dateStr).getTime()) / 86_400_000);
 }
 
-// Tooltip shown on hovering over the Last Quote number — mirrors Zoho's line-item popover
-function QuoteLineItemsTooltip({ sub }: { sub: Subscription }) {
-  const lines = sub.renewalHistory.filter(h => h.quoteNumber === sub.lastQuoteNumber);
-  const total = lines.reduce((s, h) => s + Number(h.subtotalAmount ?? 0), 0);
-  const cur = lines[0]?.currency ?? sub.currency ?? 'INR';
-  const status = lines[0]?.zohoEstimateStatus ?? lines[0]?.renewalStatus ?? '';
+const STATUS_BADGE: Record<string, string> = {
+  draft: 'bg-slate-100 text-slate-600', sent: 'bg-blue-100 text-blue-700',
+  accepted: 'bg-green-100 text-green-700', declined: 'bg-red-100 text-red-700',
+  invoiced: 'bg-purple-100 text-purple-700', expired: 'bg-orange-100 text-orange-700',
+  paid: 'bg-emerald-100 text-emerald-700', overdue: 'bg-red-100 text-red-700',
+  partially_paid: 'bg-teal-100 text-teal-700',
+  Quoted: 'bg-blue-100 text-blue-700', Invoiced: 'bg-purple-100 text-purple-700',
+  Paid: 'bg-emerald-100 text-emerald-700',
+};
 
-  const QUOTE_STATUS: Record<string, string> = {
-    draft: 'bg-slate-100 text-slate-600',
-    sent: 'bg-blue-100 text-blue-700',
-    accepted: 'bg-green-100 text-green-700',
-    declined: 'bg-red-100 text-red-700',
-    invoiced: 'bg-purple-100 text-purple-700',
-    expired: 'bg-orange-100 text-orange-700',
-    Quoted: 'bg-blue-100 text-blue-700',
-    Invoiced: 'bg-purple-100 text-purple-700',
-    Paid: 'bg-green-100 text-green-700',
-  };
+interface LiveLineItem { name: string; qty: number; rate: number; domain: string; startDate: string; endDate: string; }
+
+// Tooltip on the Last Quote cell — fetches live from zoho-doc-line-items API for accurate balance
+function QuoteLineItemsTooltip({ sub }: { sub: Subscription }) {
+  const h = sub.renewalHistory.find(r => r.quoteNumber === sub.lastQuoteNumber);
+  const orgId   = sub.organization.id;
+  const docId   = h?.invoiceId ?? h?.quoteId ?? null;
+  const kind: 'invoice' | 'estimate' = h?.invoiceId ? 'invoice' : 'estimate';
+  const fallbackStatus = h?.zohoInvoiceStatus ?? h?.zohoEstimateStatus ?? h?.renewalStatus ?? '';
+
+  const [state, setState] = useState<{ loading: boolean; items: LiveLineItem[]; docStatus: string | null; balance: number | null; error: string | null }>({
+    loading: false, items: [], docStatus: null, balance: null, error: null,
+  });
+  const fetched = useRef(false);
+
+  useEffect(() => {
+    if (!docId || !orgId || fetched.current) return;
+    fetched.current = true;
+    setState(s => ({ ...s, loading: true }));
+    fetch(`${API_BASE}/organizations/${orgId}/zoho-doc-line-items?kind=${kind}&doc_id=${encodeURIComponent(docId)}`, { credentials: 'include' })
+      .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
+      .then((data: { lineItems: LiveLineItem[]; docStatus: string | null; balance: number | null }) =>
+        setState({ loading: false, items: data.lineItems ?? [], docStatus: data.docStatus ?? null, balance: data.balance ?? null, error: null }),
+      )
+      .catch((err: Error) => setState(s => ({ ...s, loading: false, error: err.message })));
+  }, [docId, orgId, kind]);
+
+  const statusKey = (state.docStatus ?? fallbackStatus).toLowerCase();
+  const badgeCls = STATUS_BADGE[statusKey] ?? 'bg-slate-100 text-slate-600';
+  const total = state.items.reduce((s, li) => s + li.qty * li.rate, 0);
+  const fmt = (d: string) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '?';
+
+  // Fallback to local data when no doc ID or while loading
+  const localLines = sub.renewalHistory.filter(r => r.quoteNumber === sub.lastQuoteNumber);
+  const localTotal = localLines.reduce((s, r) => s + Number(r.subtotalAmount ?? 0), 0);
+  const cur = localLines[0]?.currency ?? sub.currency ?? 'INR';
 
   return (
-    <div className="absolute z-50 bottom-full mb-2 left-1/2 -translate-x-1/2 w-[420px] bg-white border border-slate-200 rounded-xl shadow-xl text-xs pointer-events-none">
-      <div className="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between">
-        <span className="font-bold text-slate-700 uppercase tracking-widest text-[10px]">Line Items</span>
-        {status && (
-          <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold capitalize ${QUOTE_STATUS[status] ?? 'bg-slate-100 text-slate-600'}`}>
-            {status}
+    <div className="bg-white border border-slate-200 rounded-xl shadow-xl text-xs overflow-hidden">
+      <div className="bg-slate-800 text-white px-3 py-2 flex items-center justify-between">
+        <span className="font-bold uppercase tracking-wider text-[10px] text-slate-300">LINE ITEMS</span>
+        {(state.docStatus ?? fallbackStatus) && (
+          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${badgeCls}`}>
+            {statusKey || fallbackStatus}
           </span>
         )}
       </div>
 
-      {lines.length === 0 ? (
-        <div className="px-4 py-3 text-slate-400 italic">No line item data available</div>
-      ) : (
+      {state.loading && (
+        <div className="px-4 py-3 text-slate-400 flex items-center gap-2">
+          <span className="animate-spin inline-block w-3 h-3 border-2 border-slate-300 border-t-blue-500 rounded-full" />
+          Loading…
+        </div>
+      )}
+      {state.error && <div className="px-4 py-3 text-red-500">❌ {state.error}</div>}
+
+      {/* Live items from Zoho */}
+      {!state.loading && !state.error && state.items.length > 0 && (
         <>
           <div className="divide-y divide-slate-50">
-            {lines.map((h) => (
-              <div key={h.id} className="px-4 py-2.5">
-                <p className="font-medium text-slate-800 mb-0.5 truncate">{sub.zohoItemName ?? 'Item'}</p>
-                <div className="flex items-center justify-between text-slate-500">
-                  <span>
-                    <span className="text-blue-600 font-medium">{h.domain.domainName}</span>
-                    {h.serviceStartDate && h.serviceEndDate && (
-                      <> &nbsp;·&nbsp; {fmtShort(h.serviceStartDate)} → {fmtShort(h.serviceEndDate)}</>
-                    )}
-                  </span>
-                  <span className="ml-4 shrink-0">
-                    {h.quantity} × {money(Number(h.sellingPrice ?? 0), h.currency)}
-                  </span>
+            {state.items.map((li, idx) => (
+              <div key={idx} className="px-3 py-2">
+                <div className="flex items-start justify-between gap-3">
+                  <p className="font-medium text-slate-700 leading-tight flex-1 min-w-0 truncate">{li.name}</p>
+                  <p className="font-semibold text-slate-800 shrink-0 tabular-nums">
+                    ₹{(li.qty * li.rate).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                  </p>
+                </div>
+                <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+                  {li.domain && <span className="font-mono text-blue-600 text-[10px]">{li.domain}</span>}
+                  {(li.startDate || li.endDate) && (
+                    <span className="text-slate-400 text-[10px]">{fmt(li.startDate)} → {fmt(li.endDate)}</span>
+                  )}
+                  <span className="text-slate-400 text-[10px]">{li.qty} × ₹{li.rate.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
                 </div>
               </div>
             ))}
           </div>
-          <div className="px-4 py-2.5 border-t border-slate-100 flex items-center justify-between bg-slate-50 rounded-b-xl">
-            <span className="text-slate-500">{lines.length} item{lines.length !== 1 ? 's' : ''}</span>
-            <span className="font-bold text-slate-800">Total {money(total, cur)}</span>
+          <div className="px-3 py-2 border-t border-slate-100 bg-slate-50 rounded-b-xl">
+            <div className="flex justify-between items-center">
+              <span className="text-slate-400 text-[10px]">{h?.businessType} · {state.items.length} item{state.items.length !== 1 ? 's' : ''}</span>
+              <span className="font-bold text-slate-800 tabular-nums">Total ₹{total.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
+            </div>
+            {state.balance !== null && state.balance > 0 && (
+              <div className="flex justify-between items-center mt-1">
+                <span className="text-[10px] text-red-500 font-medium">Balance Due</span>
+                <span className="text-[11px] font-bold text-red-600 tabular-nums">
+                  ₹{state.balance.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                </span>
+              </div>
+            )}
           </div>
         </>
+      )}
+
+      {/* Fallback: local renewal_history data (no doc ID or before Zoho fetch) */}
+      {!state.loading && !state.error && state.items.length === 0 && localLines.length > 0 && (
+        <>
+          <div className="divide-y divide-slate-50">
+            {localLines.map((r) => (
+              <div key={r.id} className="px-3 py-2">
+                <p className="font-medium text-slate-800 mb-0.5 truncate">{sub.zohoItemName ?? 'Item'}</p>
+                <div className="flex items-center justify-between text-slate-500">
+                  <span>
+                    <span className="text-blue-600 font-medium">{r.domain.domainName}</span>
+                    {r.serviceStartDate && r.serviceEndDate && (
+                      <> · {fmtShort(r.serviceStartDate)} → {fmtShort(r.serviceEndDate)}</>
+                    )}
+                  </span>
+                  <span className="ml-4 shrink-0">{r.quantity} × {money(Number(r.sellingPrice ?? 0), r.currency)}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="px-3 py-2 border-t border-slate-100 bg-slate-50 rounded-b-xl flex justify-between">
+            <span className="text-slate-400 text-[10px]">{localLines.length} item{localLines.length !== 1 ? 's' : ''}</span>
+            <span className="font-bold text-slate-800">Total {money(localTotal, cur)}</span>
+          </div>
+        </>
+      )}
+
+      {!state.loading && !state.error && state.items.length === 0 && localLines.length === 0 && (
+        <div className="px-4 py-3 text-slate-400 italic">No line item data available</div>
       )}
     </div>
   );

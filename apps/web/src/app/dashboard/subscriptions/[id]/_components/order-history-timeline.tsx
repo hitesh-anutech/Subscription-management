@@ -137,8 +137,8 @@ function LiveLineItemTooltip({ orgId, kind, docId, fallbackStatus, businessType 
   fallbackStatus: string;
   businessType: string;
 }) {
-  const [state, setState] = useState<{ loading: boolean; items: LineItem[]; docStatus: string | null; error: string | null }>({
-    loading: true, items: [], docStatus: null, error: null,
+  const [state, setState] = useState<{ loading: boolean; items: LineItem[]; docStatus: string | null; balance: number | null; error: string | null }>({
+    loading: true, items: [], docStatus: null, balance: null, error: null,
   });
 
   useEffect(() => {
@@ -147,11 +147,11 @@ function LiveLineItemTooltip({ orgId, kind, docId, fallbackStatus, businessType 
       { credentials: 'include' },
     )
       .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
-      .then((data: { lineItems: LineItem[]; docStatus: string | null }) =>
-        setState({ loading: false, items: data.lineItems ?? [], docStatus: data.docStatus ?? null, error: null }),
+      .then((data: { lineItems: LineItem[]; docStatus: string | null; balance: number | null }) =>
+        setState({ loading: false, items: data.lineItems ?? [], docStatus: data.docStatus ?? null, balance: data.balance ?? null, error: null }),
       )
       .catch((err: Error) =>
-        setState({ loading: false, items: [], docStatus: null, error: err.message }),
+        setState({ loading: false, items: [], docStatus: null, balance: null, error: err.message }),
       );
   }, [orgId, kind, docId]);
 
@@ -208,11 +208,21 @@ function LiveLineItemTooltip({ orgId, kind, docId, fallbackStatus, businessType 
               </div>
             ))}
           </div>
-          <div className="px-3 py-2 border-t border-slate-100 bg-slate-50 rounded-b-xl flex justify-between items-center">
-            <span className="text-[10px] text-slate-400">{businessType} · {state.items.length} item{state.items.length !== 1 ? 's' : ''}</span>
-            <span className="text-xs font-bold text-slate-800 tabular-nums">
-              Total ₹{total.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-            </span>
+          <div className="px-3 py-2 border-t border-slate-100 bg-slate-50 rounded-b-xl">
+            <div className="flex justify-between items-center">
+              <span className="text-[10px] text-slate-400">{businessType} · {state.items.length} item{state.items.length !== 1 ? 's' : ''}</span>
+              <span className="text-xs font-bold text-slate-800 tabular-nums">
+                Total ₹{total.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+              </span>
+            </div>
+            {state.balance !== null && state.balance > 0 && (
+              <div className="flex justify-between items-center mt-1">
+                <span className="text-[10px] text-red-500 font-medium">Balance Due</span>
+                <span className="text-[11px] font-bold text-red-600 tabular-nums">
+                  ₹{state.balance.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                </span>
+              </div>
+            )}
           </div>
         </>
       )}
@@ -291,6 +301,22 @@ function DocNumberCell({
 export function OrderHistoryTimeline({ timeline, org, currency, zohoItemName, domainName, originQuickQuote }: Props) {
   const [syncState, setSyncState] = useState<Record<string, 'idle' | 'syncing' | 'error'>>({});
   const [localDates, setLocalDates] = useState<Record<string, { start: string; end: string }>>({});
+  const [deleteState, setDeleteState] = useState<Record<string, 'idle' | 'confirming' | 'deleting' | 'error'>>({});
+  const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set());
+
+  const deleteHistory = async (historyId: string) => {
+    setDeleteState(prev => ({ ...prev, [historyId]: 'deleting' }));
+    try {
+      const res = await fetch(`${API_BASE}/subscriptions/renewal-history/${historyId}`, {
+        method: 'DELETE', credentials: 'include',
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setDeletedIds(prev => new Set([...prev, historyId]));
+    } catch {
+      setDeleteState(prev => ({ ...prev, [historyId]: 'error' }));
+      setTimeout(() => setDeleteState(prev => ({ ...prev, [historyId]: 'idle' })), 3000);
+    }
+  };
 
   const syncDates = async (historyId: string) => {
     setSyncState(prev => ({ ...prev, [historyId]: 'syncing' }));
@@ -318,7 +344,7 @@ export function OrderHistoryTimeline({ timeline, org, currency, zohoItemName, do
   return (
     <div className="px-5 py-5">
       <div className="relative pl-6 border-l-2 border-slate-200 space-y-6">
-        {timeline.map((h) => {
+        {timeline.filter(h => !deletedIds.has(h.id)).map((h) => {
           const { dot, badge } = historyState(h);
           const internalQuote =
             h.businessType === 'Fresh' && !h.quoteId && h.quoteNumber && originQuickQuote
@@ -435,16 +461,45 @@ export function OrderHistoryTimeline({ timeline, org, currency, zohoItemName, do
                 </div>
 
                 {!h.synthetic && (
-                  <ProformaActions
-                    historyId={h.id}
-                    quoteId={h.quoteId}
-                    quoteNumber={h.quoteNumber}
-                    invoiceId={h.invoiceId}
-                    invoiceNumber={h.invoiceNumber}
-                    renewalStatus={h.renewalStatus}
-                    zohoEstimateStatus={h.zohoEstimateStatus}
-                    zohoInvoiceStatus={h.zohoInvoiceStatus}
-                  />
+                  <div className="flex flex-col items-end gap-1.5 shrink-0">
+                    <ProformaActions
+                      historyId={h.id}
+                      quoteId={h.quoteId}
+                      quoteNumber={h.quoteNumber}
+                      invoiceId={h.invoiceId}
+                      invoiceNumber={h.invoiceNumber}
+                      renewalStatus={h.renewalStatus}
+                      zohoEstimateStatus={h.zohoEstimateStatus}
+                      zohoInvoiceStatus={h.zohoInvoiceStatus}
+                    />
+                    {deleteState[h.id] === 'confirming' ? (
+                      <span className="flex items-center gap-1 text-[10px]">
+                        <span className="text-slate-500">Delete?</span>
+                        <button
+                          onClick={() => void deleteHistory(h.id)}
+                          className="text-red-600 hover:text-red-800 font-medium"
+                        >Yes</button>
+                        <button
+                          onClick={() => setDeleteState(prev => ({ ...prev, [h.id]: 'idle' }))}
+                          className="text-slate-400 hover:text-slate-600"
+                        >No</button>
+                      </span>
+                    ) : deleteState[h.id] === 'deleting' ? (
+                      <span className="inline-block w-3 h-3 border border-slate-300 border-t-red-500 rounded-full animate-spin" />
+                    ) : deleteState[h.id] === 'error' ? (
+                      <span className="text-[10px] text-red-500">⚠ failed</span>
+                    ) : (
+                      <button
+                        onClick={() => setDeleteState(prev => ({ ...prev, [h.id]: 'confirming' }))}
+                        title="Delete this order history entry"
+                        className="text-slate-300 hover:text-red-500 transition-colors"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
+                          <path fillRule="evenodd" d="M5 3.25V4H2.75a.75.75 0 0 0 0 1.5h.3l.815 8.15A1.5 1.5 0 0 0 5.357 15h5.285a1.5 1.5 0 0 0 1.493-1.35l.815-8.15h.3a.75.75 0 0 0 0-1.5H11v-.75A2.25 2.25 0 0 0 8.75 1h-1.5A2.25 2.25 0 0 0 5 3.25Zm2.25-.75a.75.75 0 0 0-.75.75V4h3v-.75a.75.75 0 0 0-.75-.75h-1.5ZM6.05 6a.75.75 0 0 1 .787.713l.275 5.5a.75.75 0 0 1-1.498.075l-.275-5.5A.75.75 0 0 1 6.05 6Zm3.9 0a.75.75 0 0 1 .712.787l-.275 5.5a.75.75 0 0 1-1.498-.075l.275-5.5A.75.75 0 0 1 9.95 6Z" clipRule="evenodd" />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
             </div>

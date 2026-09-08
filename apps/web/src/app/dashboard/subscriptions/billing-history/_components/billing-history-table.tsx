@@ -12,6 +12,8 @@ import {
 } from '../../[id]/actions';
 import { Mail, RefreshCw, Zap, ArrowRight, FileText, Activity, X } from 'lucide-react';
 
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3001/api';
+
 interface BillingHistoryItem {
   id: string;
   createdAt: string;
@@ -36,6 +38,7 @@ interface BillingHistoryItem {
   quantity: string | null;
   sellingPrice: string | null;
   organization: {
+    id: string;
     name: string;
     zohoOrgId: string;
     dataCenter: string;
@@ -76,54 +79,125 @@ const STATUS_COLOR: Record<string, string> = {
   overdue:  'bg-red-100 text-red-700',
 };
 
+interface ZohoLineItem { name: string; qty: number; rate: number; domain: string; startDate: string; endDate: string; }
+
 function BillingLineItemTooltip({ item, type }: { item: BillingHistoryItem; type: 'quote' | 'invoice' }) {
-  const isMulti = item.domainCount > 1;
-  const rawStatus = type === 'quote'
-    ? (item.zohoEstimateStatus ?? item.renewalStatus ?? 'draft')
-    : (item.zohoInvoiceStatus ?? 'draft');
-  const status = rawStatus.toLowerCase();
-  const colorCls = STATUS_COLOR[status] ?? 'bg-slate-100 text-slate-600';
+  const orgId = item.organization.id;
+  const docId = type === 'invoice' ? item.invoiceId : item.quoteId;
+  const kind: 'invoice' | 'estimate' = type === 'invoice' ? 'invoice' : 'estimate';
+  const fallbackStatus = type === 'invoice'
+    ? (item.zohoInvoiceStatus ?? item.renewalStatus ?? 'draft')
+    : (item.zohoEstimateStatus ?? item.renewalStatus ?? 'draft');
+
+  const [state, setState] = useState<{ loading: boolean; items: ZohoLineItem[]; docStatus: string | null; balance: number | null; error: string | null }>({
+    loading: false, items: [], docStatus: null, balance: null, error: null,
+  });
+  const fetched = useRef(false);
+
+  useEffect(() => {
+    if (!docId || !orgId || fetched.current) return;
+    fetched.current = true;
+    setState(s => ({ ...s, loading: true }));
+    fetch(`${API_BASE}/organizations/${orgId}/zoho-doc-line-items?kind=${kind}&doc_id=${encodeURIComponent(docId)}`, { credentials: 'include' })
+      .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
+      .then((data: { lineItems: ZohoLineItem[]; docStatus: string | null; balance: number | null }) =>
+        setState({ loading: false, items: data.lineItems ?? [], docStatus: data.docStatus ?? null, balance: data.balance ?? null, error: null }),
+      )
+      .catch((err: Error) => setState(s => ({ ...s, loading: false, error: err.message })));
+  }, [docId, orgId, kind]);
+
+  const statusKey = (state.docStatus ?? fallbackStatus).toLowerCase();
+  const colorCls = STATUS_COLOR[statusKey] ?? 'bg-slate-100 text-slate-600';
+  const liveTotal = state.items.reduce((s, li) => s + li.qty * li.rate, 0);
+  const fmt = (d: string | null) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '?';
 
   return (
     <div className="bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden" style={{ width: TOOLTIP_W }}>
       <div className="bg-slate-800 text-white px-3 py-2 flex items-center justify-between">
         <span className="font-bold uppercase tracking-wider text-[10px] text-slate-300">LINE ITEMS</span>
         <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${colorCls}`}>
-          {status}
+          {statusKey}
         </span>
       </div>
-      <div className="p-3">
-        <div className="flex items-start justify-between gap-2 py-1">
-          <div className="flex-1 min-w-0">
-            <div className="font-semibold text-slate-800 text-xs truncate">{item.zohoItemName ?? 'Item'}</div>
-            {!isMulti && item.domainName && (
-              <div className="text-[10px] text-slate-500 font-mono mt-0.5">{item.domainName}</div>
-            )}
-            {isMulti && (
-              <div className="text-[10px] text-slate-500 mt-0.5">{item.domainCount} domains (Bulk)</div>
-            )}
-            {!isMulti && (item.serviceStartDate || item.serviceEndDate) && (
-              <div className="text-[10px] text-slate-400 mt-0.5">
-                {fmtDate(item.serviceStartDate)} → {fmtDate(item.serviceEndDate)}
-              </div>
-            )}
-          </div>
-          <div className="text-right shrink-0">
-            {!isMulti && item.quantity && item.sellingPrice && (
-              <div className="text-[10px] text-slate-500">
-                {item.quantity} × {money(Number(item.sellingPrice), item.currency)}
-              </div>
-            )}
-            <div className="font-semibold text-slate-800 text-xs">{money(item.amount, item.currency)}</div>
-          </div>
+
+      {state.loading && (
+        <div className="px-4 py-3 text-xs text-slate-400 flex items-center gap-2">
+          <span className="animate-spin inline-block w-3 h-3 border-2 border-slate-300 border-t-blue-500 rounded-full" />
+          Loading…
         </div>
-      </div>
-      <div className="bg-slate-50 border-t border-slate-200 px-3 py-2 flex justify-between items-center">
-        <span className="text-[10px] text-slate-500 font-medium">
-          {item.billingCycle} · {item.businessType}
-        </span>
-        <span className="font-bold text-slate-900 text-xs">{money(item.amount, item.currency)}</span>
-      </div>
+      )}
+      {state.error && <div className="px-4 py-3 text-xs text-red-500">❌ {state.error}</div>}
+
+      {/* Live items from Zoho */}
+      {!state.loading && !state.error && state.items.length > 0 && (
+        <>
+          <div className="divide-y divide-slate-50">
+            {state.items.map((li, idx) => (
+              <div key={idx} className="px-3 py-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold text-slate-800 text-xs truncate">{li.name}</div>
+                    {li.domain && <div className="text-[10px] text-slate-500 font-mono mt-0.5">{li.domain}</div>}
+                    {(li.startDate || li.endDate) && (
+                      <div className="text-[10px] text-slate-400 mt-0.5">{fmt(li.startDate)} → {fmt(li.endDate)}</div>
+                    )}
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className="text-[10px] text-slate-500">{li.qty} × ₹{li.rate.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</div>
+                    <div className="font-semibold text-slate-800 text-xs">₹{(li.qty * li.rate).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="bg-slate-50 border-t border-slate-200 px-3 py-2">
+            <div className="flex justify-between items-center">
+              <span className="text-[10px] text-slate-500 font-medium">{item.billingCycle} · {item.businessType}</span>
+              <span className="font-bold text-slate-900 text-xs">Total ₹{liveTotal.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
+            </div>
+            {state.balance !== null && state.balance > 0 && (
+              <div className="flex justify-between items-center mt-1">
+                <span className="text-[10px] text-red-500 font-medium">Balance Due</span>
+                <span className="text-[11px] font-bold text-red-600 tabular-nums">
+                  ₹{state.balance.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                </span>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* Fallback: local data before Zoho fetch or when no doc ID */}
+      {!state.loading && !state.error && state.items.length === 0 && (
+        <>
+          <div className="p-3">
+            <div className="flex items-start justify-between gap-2 py-1">
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold text-slate-800 text-xs truncate">{item.zohoItemName ?? 'Item'}</div>
+                {item.domainCount <= 1 && item.domainName && (
+                  <div className="text-[10px] text-slate-500 font-mono mt-0.5">{item.domainName}</div>
+                )}
+                {item.domainCount > 1 && (
+                  <div className="text-[10px] text-slate-500 mt-0.5">{item.domainCount} domains (Bulk)</div>
+                )}
+                {item.domainCount <= 1 && (item.serviceStartDate || item.serviceEndDate) && (
+                  <div className="text-[10px] text-slate-400 mt-0.5">{fmtDate(item.serviceStartDate)} → {fmtDate(item.serviceEndDate)}</div>
+                )}
+              </div>
+              <div className="text-right shrink-0">
+                {item.domainCount <= 1 && item.quantity && item.sellingPrice && (
+                  <div className="text-[10px] text-slate-500">{item.quantity} × {money(Number(item.sellingPrice), item.currency)}</div>
+                )}
+                <div className="font-semibold text-slate-800 text-xs">{money(item.amount, item.currency)}</div>
+              </div>
+            </div>
+          </div>
+          <div className="bg-slate-50 border-t border-slate-200 px-3 py-2 flex justify-between items-center">
+            <span className="text-[10px] text-slate-500 font-medium">{item.billingCycle} · {item.businessType}</span>
+            <span className="font-bold text-slate-900 text-xs">{money(item.amount, item.currency)}</span>
+          </div>
+        </>
+      )}
     </div>
   );
 }

@@ -330,6 +330,13 @@ export class SubscriptionsController {
     return this.service.syncExpiryStatuses();
   }
 
+  /** DELETE /api/subscriptions/renewal-history/:historyId — remove a single order history entry */
+  @Delete('renewal-history/:historyId')
+  @HttpCode(HttpStatus.OK)
+  deleteRenewalHistory(@Param('historyId') historyId: string) {
+    return this.service.deleteRenewalHistory(historyId);
+  }
+
   /** DELETE /api/subscriptions/:id */
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)

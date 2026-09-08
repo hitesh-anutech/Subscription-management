@@ -1372,7 +1372,7 @@ export class ZohoService {
     };
     type InvItem = {
       invoice_id: string; invoice_number: string; date: string; status: string; total: number;
-      estimate_id?: string; custom_fields?: CfEntry[];
+      balance?: number; estimate_id?: string; custom_fields?: CfEntry[];
     };
 
     const [estRes, invRes] = await Promise.allSettled([
@@ -1426,7 +1426,7 @@ export class ZohoService {
       quoteId: string | null; quoteNumber: string | null; quoteDate: string | null;
       quoteStatus: string | null; quoteTotal: number | null;
       invoiceId: string | null; invoiceNumber: string | null; invoiceDate: string | null;
-      invoiceStatus: string | null; invoiceTotal: number | null;
+      invoiceStatus: string | null; invoiceTotal: number | null; invoiceBalance: number | null;
       businessType: string | null;
     };
 
@@ -1446,7 +1446,7 @@ export class ZohoService {
         quoteTotal:    est.total ?? null,
         invoiceId:     inv?.invoice_id   ?? null, invoiceNumber: inv?.invoice_number ?? null,
         invoiceDate:   inv?.date         ?? null, invoiceStatus: inv?.status         ?? null,
-        invoiceTotal:  inv?.total        ?? null,
+        invoiceTotal:  inv?.total        ?? null, invoiceBalance: inv?.balance       ?? null,
         businessType,
       });
     }
@@ -1458,7 +1458,7 @@ export class ZohoService {
           quoteId: null, quoteNumber: null, quoteDate: null, quoteStatus: null, quoteTotal: null,
           invoiceId:    inv.invoice_id,    invoiceNumber: inv.invoice_number,
           invoiceDate:  inv.date,          invoiceStatus: inv.status,
-          invoiceTotal: inv.total ?? null,
+          invoiceTotal: inv.total ?? null, invoiceBalance: inv.balance ?? null,
           businessType: cfStr(inv.custom_fields, invBtCf),
         });
       }
@@ -1541,7 +1541,7 @@ export class ZohoService {
     };
 
     type EstDetail = { estimate_number: string; date: string; status: string; total: number; custom_fields?: CfEntry[] };
-    type InvDetail = { invoice_number: string; date: string; status: string; total: number; custom_fields?: CfEntry[] };
+    type InvDetail = { invoice_number: string; date: string; status: string; total: number; balance?: number; custom_fields?: CfEntry[] };
 
     const [freshEst, freshInv] = await Promise.all([
       existing.quoteId   ? this.getDocDetailCached<EstDetail>(orgId, 'estimate', existing.quoteId)   : Promise.resolve(null),
@@ -1558,10 +1558,11 @@ export class ZohoService {
       quoteDate:     freshEst?.date            ?? existing.quoteDate,
       quoteStatus:   freshEst?.status          ?? existing.quoteStatus,
       quoteTotal:    freshEst?.total           ?? existing.quoteTotal,
-      invoiceNumber: freshInv?.invoice_number  ?? existing.invoiceNumber,
-      invoiceDate:   freshInv?.date            ?? existing.invoiceDate,
-      invoiceStatus: freshInv?.status          ?? existing.invoiceStatus,
-      invoiceTotal:  freshInv?.total           ?? existing.invoiceTotal,
+      invoiceNumber:  freshInv?.invoice_number  ?? existing.invoiceNumber,
+      invoiceDate:    freshInv?.date            ?? existing.invoiceDate,
+      invoiceStatus:  freshInv?.status          ?? existing.invoiceStatus,
+      invoiceTotal:   freshInv?.total           ?? existing.invoiceTotal,
+      invoiceBalance: freshInv?.balance         ?? existing.invoiceBalance ?? null,
       businessType,
       syncedAt: new Date(),
     };
@@ -1645,7 +1646,7 @@ export class ZohoService {
       quoteId?: string; quoteNumber?: string; quoteDate?: string; quoteStatus?: string;
       invoiceId?: string; invoiceNumber?: string; invoiceDate?: string; invoiceStatus?: string;
       businessType?: string;
-      mappings: Array<{ subId: string; startDate: string; endDate: string; qty: number; rate: number }>;
+      mappings: Array<{ subId: string; startDate: string; endDate: string; qty: number; rate: number; lineItemDomain?: string }>;
     },
   ) {
     const { quoteId, quoteNumber, quoteDate, invoiceId, invoiceNumber, invoiceDate, invoiceStatus, businessType, mappings } = body;
@@ -1664,11 +1665,14 @@ export class ZohoService {
       invoiceId ? 'Invoiced' :
       'Quoted';
 
-    // Load subscriptions in one query
+    // Load subscriptions in one query (include domain name for validation)
     const subIds = [...new Set(mappings.map(m => m.subId))];
     const subs = await this.prisma.subscription.findMany({
       where: { id: { in: subIds }, organizationId: orgId },
-      select: { id: true, domainId: true, billingCycle: true, currency: true, exchangeRate: true },
+      select: {
+        id: true, domainId: true, billingCycle: true, currency: true, exchangeRate: true,
+        domain: { select: { domainName: true } },
+      },
     });
     const subById = new Map(subs.map(s => [s.id, s]));
 
@@ -1677,6 +1681,19 @@ export class ZohoService {
     for (const m of mappings) {
       const sub = subById.get(m.subId);
       if (!sub) { results.push({ subId: m.subId, action: 'skipped', error: 'subscription not found' }); continue; }
+
+      // Reject if the line-item domain doesn't match the subscription's domain
+      if (m.lineItemDomain && sub.domain?.domainName) {
+        const normalize = (d: string) => d.trim().toLowerCase();
+        if (normalize(m.lineItemDomain) !== normalize(sub.domain.domainName)) {
+          results.push({
+            subId: m.subId,
+            action: 'skipped',
+            error: `line-item domain (${m.lineItemDomain}) does not match subscription domain (${sub.domain.domainName})`,
+          });
+          continue;
+        }
+      }
 
       const startDate = m.startDate ? new Date(m.startDate) : null;
       const endDate   = m.endDate   ? new Date(m.endDate)   : null;
@@ -1767,12 +1784,33 @@ export class ZohoService {
     let rawLines: Array<{ name: string; qty: number; rate: number; domain: string; startDate: string; endDate: string }>;
 
     let docStatus: string | null = null;
+    let balance: number | null = null;
+
+    // For invoices: always fetch detail via the in-memory 10-min TTL cache so we get
+    // a fresh balance even when line items are served from the DB cache.
+    // getDocDetailCached is a hashmap lookup on re-hover — no extra network cost.
+    type InvDetail = {
+      status?: string; balance?: number;
+      line_items: Array<{
+        item_id?: string; name: string; quantity: number; rate: number;
+        item_custom_fields?: Array<{ api_name: string; value: string | number }>;
+        custom_fields?:      Array<{ api_name: string; value: string | number }>;
+      }>;
+    };
+    const invDetail = kind === 'invoice'
+      ? await this.getDocDetailCached<InvDetail>(orgId, 'invoice', docId)
+      : null;
+
+    if (kind === 'invoice') {
+      docStatus = invDetail?.status ?? null;
+      balance   = invDetail?.balance ?? null;
+    }
 
     if (cachedDoc && cachedDoc.lines.length > 0) {
-      // Cache hit — use DB rows directly
-      docStatus = kind === 'invoice'
-        ? (cachedDoc.invoiceStatus ?? null)
-        : (cachedDoc.quoteStatus   ?? null);
+      // Cache hit — use DB rows directly for line items
+      if (kind !== 'invoice') {
+        docStatus = cachedDoc.quoteStatus ?? null;
+      }
       rawLines = cachedDoc.lines.map(l => ({
         name:      l.name,
         qty:       l.qty,
@@ -1783,20 +1821,26 @@ export class ZohoService {
       }));
     } else {
       // ── 2. Cache miss → fetch from Zoho ──────────────────────────
+      type EstDetail = {
+        status?: string;
+        line_items: Array<{
+          item_id?: string; name: string; quantity: number; rate: number;
+          item_custom_fields?: Array<{ api_name: string; value: string | number }>;
+          custom_fields?:      Array<{ api_name: string; value: string | number }>;
+        }>;
+      };
       const [fm, doc] = await Promise.all([
         this.getItemFieldMappings(orgId, 'items'),
-        this.getDocDetailCached<{
-          status?: string;
-          line_items: Array<{
-            item_id?: string; name: string; quantity: number; rate: number;
-            item_custom_fields?: Array<{ api_name: string; value: string | number }>;
-            custom_fields?:      Array<{ api_name: string; value: string | number }>;
-          }>;
-        }>(orgId, kind, docId),
+        kind === 'invoice'
+          ? Promise.resolve(invDetail)      // reuse already-fetched invoice detail
+          : this.getDocDetailCached<EstDetail>(orgId, 'estimate', docId),
       ]);
-      docStatus = doc?.status ?? null;
 
-      if (!doc) return { lineItems: [], docStatus: null, fromCache: false };
+      if (kind !== 'invoice') {
+        docStatus = doc?.status ?? null;
+      }
+
+      if (!doc) return { lineItems: [], docStatus: null, balance: null, fromCache: false };
 
       const domainCf    = fm.domain_name ?? 'cf_domain_name';
       const startDateCf = fm.start_date  ?? 'cf_subscription_start_date';
@@ -1888,7 +1932,7 @@ export class ZohoService {
       }
     }
 
-    return { lineItems, docStatus, fromCache: cachedDoc?.lines.length ? true : false };
+    return { lineItems, docStatus, balance, fromCache: cachedDoc?.lines.length ? true : false };
   }
 
   // ------------------------------------------------------------------

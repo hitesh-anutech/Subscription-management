@@ -78,8 +78,11 @@ export class SubscriptionsService {
             take: 15,
             select: {
               id: true,
+              quoteId: true,
               quoteNumber: true,
               quoteDate: true,
+              invoiceId: true,
+              invoiceNumber: true,
               quantity: true,
               sellingPrice: true,
               subtotalAmount: true,
@@ -89,6 +92,7 @@ export class SubscriptionsService {
               businessType: true,
               renewalStatus: true,
               zohoEstimateStatus: true,
+              zohoInvoiceStatus: true,
               domain: { select: { domainName: true } },
             },
           },
@@ -1981,8 +1985,25 @@ export class SubscriptionsService {
       data: { lifecycleStatus: 'Expired' },
     });
 
-    this.logger.log(`Expiry sync: ${expiringSoon.count} → ExpiringSoon, ${expired.count} → Expired`);
-    return { expiringSoon: expiringSoon.count, expired: expired.count };
+    // Re-activate Expired subscriptions that have a paid/partial/overdue invoice for a still-current period
+    const renewalRows = await this.prisma.renewalHistory.findMany({
+      where: {
+        serviceEndDate: { gt: now },
+        zohoInvoiceStatus: { in: ['paid', 'partially_paid', 'overdue'] },
+        subscription: { lifecycleStatus: 'Expired' },
+      },
+      select: { subscriptionId: true },
+      distinct: ['subscriptionId'],
+    });
+    const reactivated = renewalRows.length > 0
+      ? await this.prisma.subscription.updateMany({
+          where: { id: { in: renewalRows.map(r => r.subscriptionId) }, lifecycleStatus: 'Expired' },
+          data: { lifecycleStatus: 'Active' },
+        })
+      : { count: 0 };
+
+    this.logger.log(`Expiry sync: ${expiringSoon.count} → ExpiringSoon, ${expired.count} → Expired, ${reactivated.count} re-activated`);
+    return { expiringSoon: expiringSoon.count, expired: expired.count, reactivated: reactivated.count };
   }
 
   /**
@@ -2524,6 +2545,16 @@ export class SubscriptionsService {
     });
   }
 
+  async deleteRenewalHistory(historyId: string) {
+    const row = await this.prisma.renewalHistory.findUnique({
+      where: { id: historyId },
+      select: { id: true },
+    });
+    if (!row) throw new NotFoundException(`Renewal history ${historyId} not found`);
+    await this.prisma.renewalHistory.delete({ where: { id: historyId } });
+    return { deleted: true };
+  }
+
   /**
    * Send the proforma (Zoho Estimate) to the customer — the email goes FROM Zoho Books
    * (Zoho's sender config) but is triggered from our app. Zoho also marks the estimate 'sent'.
@@ -2705,8 +2736,12 @@ export class SubscriptionsService {
             // invoice still fixes dates if they were missed earlier.
             isPaidTransition = true;
             data.renewalStatus = 'Paid';
-          }
-          else if (['sent', 'overdue'].includes(inv.status ?? '') && row.renewalStatus === 'Quoted') {
+          } else if (inv.status === 'overdue') {
+            // Overdue invoice (including partially-paid & overdue) — activate the
+            // subscription if the service period is still current or future.
+            isPaidTransition = true;
+            if (row.renewalStatus === 'Quoted') data.renewalStatus = 'Invoiced';
+          } else if (inv.status === 'sent' && row.renewalStatus === 'Quoted') {
             data.renewalStatus = 'Invoiced';
           }
         }
@@ -2927,6 +2962,7 @@ export class SubscriptionsService {
           sub.zoho_customer_id as "zohoCustomerId",
           sub.zoho_item_name as "zohoItemName",
           d.domain_name as "domainName",
+          org.id as "organizationId",
           org.name as "orgName",
           org.zoho_org_id as "zohoOrgId",
           org.data_center as "dataCenter",
@@ -3009,6 +3045,7 @@ export class SubscriptionsService {
         quantity: r.quantity != null ? String(r.quantity) : null,
         sellingPrice: r.sellingPrice != null ? String(r.sellingPrice) : null,
         organization: {
+          id: r.organizationId,
           name: r.orgName,
           zohoOrgId: r.zohoOrgId,
           dataCenter: r.dataCenter,
