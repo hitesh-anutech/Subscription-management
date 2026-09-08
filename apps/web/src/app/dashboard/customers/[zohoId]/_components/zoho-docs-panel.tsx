@@ -53,7 +53,21 @@ interface Props {
   orgId: string;
   zohoCustomerId: string;
   subs: SubOption[];
+  zohoOrgId: string;
+  dataCenter: string;
 }
+
+const DC_TLD: Record<string, string> = { in: 'in', com: 'com', eu: 'eu', com_au: 'com.au', jp: 'jp', sa: 'sa' };
+const ZohoExtLink = ({ href }: { href: string }) => (
+  <a href={href} target="_blank" rel="noopener noreferrer"
+    title="Zoho Books में खोलें"
+    onClick={e => e.stopPropagation()}
+    className="inline-flex items-center text-red-400 hover:text-red-600 transition-colors shrink-0">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+      <path fillRule="evenodd" d="M4.25 5.5a.75.75 0 0 0-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 0 0 .75-.75v-4a.75.75 0 0 1 1.5 0v4A2.25 2.25 0 0 1 12.75 17h-8.5A2.25 2.25 0 0 1 2 14.75v-8.5A2.25 2.25 0 0 1 4.25 4h5a.75.75 0 0 1 0 1.5h-5ZM6.194 12.753a.75.75 0 0 0 1.06.053L16.5 4.44v2.81a.75.75 0 0 0 1.5 0v-4.5a.75.75 0 0 0-.75-.75h-4.5a.75.75 0 0 0 0 1.5h2.553l-9.056 8.194a.75.75 0 0 0-.053 1.06Z" clipRule="evenodd" />
+    </svg>
+  </a>
+);
 
 // ── Style helpers ─────────────────────────────────────────────────────
 
@@ -87,7 +101,9 @@ const btStyle = (bt: string | null) => {
 
 // ── Component ─────────────────────────────────────────────────────────
 
-export default function ZohoDocsPanel({ orgId, zohoCustomerId, subs }: Props) {
+export default function ZohoDocsPanel({ orgId, zohoCustomerId, subs, zohoOrgId, dataCenter }: Props) {
+  const tld = DC_TLD[dataCenter] ?? 'com';
+  const zohoBase = `https://books.zoho.${tld}/app/${zohoOrgId}#`;
   const [docs,     setDocs]     = useState<ZohoDoc[]>([]);
   const [loading,  setLoading]  = useState(false);
   const [error,    setError]    = useState<string | null>(null);
@@ -107,6 +123,9 @@ export default function ZohoDocsPanel({ orgId, zohoCustomerId, subs }: Props) {
   // Per-doc inline-import state
   type ImportDocState = { status: 'idle' | 'importing' | 'done' | 'error'; created?: number; enriched?: number; errors?: string[] };
   const [docImport, setDocImport] = useState<Record<number, ImportDocState>>({});
+
+  // Per-row re-sync state
+  const [rowResync, setRowResync] = useState<Record<number, 'idle' | 'syncing' | 'error'>>({});
 
   // Bulk checkboxes
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -358,6 +377,34 @@ export default function ZohoDocsPanel({ orgId, zohoCustomerId, subs }: Props) {
     }
   }, [orgId, zohoCustomerId, sync]);
 
+  // ── Per-row re-sync from Zoho ─────────────────────────────────────
+  const resyncRow = useCallback(async (i: number, doc: ZohoDoc) => {
+    const docKey = doc.quoteId ?? doc.invoiceId;
+    if (!docKey) return;
+    setRowResync(prev => ({ ...prev, [i]: 'syncing' }));
+    try {
+      const res = await fetch(
+        `${API_BASE}/organizations/${orgId}/customers/${zohoCustomerId}/zoho-documents/${encodeURIComponent(docKey)}/resync`,
+        { method: 'POST', credentials: 'include' },
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const { doc: fresh } = await res.json() as { doc: ZohoDoc };
+      setDocs(prev => prev.map((d, idx) => idx === i ? fresh : d));
+      // Close Map panel if open — line items were wiped server-side
+      if (rowMap[i]) setRowMap(prev => { const n = { ...prev }; delete n[i]; return n; });
+      // Clear hover line-item cache for this doc's IDs
+      setLineCache(prev => {
+        const n = { ...prev };
+        [doc.quoteId, doc.invoiceId].filter(Boolean).forEach(k => delete n[k!]);
+        return n;
+      });
+      setRowResync(prev => ({ ...prev, [i]: 'idle' }));
+    } catch {
+      setRowResync(prev => ({ ...prev, [i]: 'error' }));
+      setTimeout(() => setRowResync(prev => ({ ...prev, [i]: 'idle' })), 3000);
+    }
+  }, [orgId, zohoCustomerId, rowMap]);
+
   // ── Helpers ───────────────────────────────────────────────────────
   const importUrl = (doc: ZohoDoc) => {
     const ref = doc.invoiceNumber ?? doc.quoteNumber ?? '';
@@ -463,13 +510,16 @@ export default function ZohoDocsPanel({ orgId, zohoCustomerId, subs }: Props) {
                       <td className="px-3 py-2.5">
                         {doc.quoteNumber && doc.quoteId ? (
                           <>
-                            <p
-                              className="font-mono text-indigo-700 font-medium cursor-default underline decoration-dotted underline-offset-2"
-                              onMouseEnter={e => handleDocNumEnter(e, 'estimate', doc.quoteId!)}
-                              onMouseLeave={handleDocNumLeave}
-                            >
-                              {doc.quoteNumber}
-                            </p>
+                            <div className="flex items-center gap-1">
+                              <p
+                                className="font-mono text-indigo-700 font-medium cursor-default underline decoration-dotted underline-offset-2"
+                                onMouseEnter={e => handleDocNumEnter(e, 'estimate', doc.quoteId!)}
+                                onMouseLeave={handleDocNumLeave}
+                              >
+                                {doc.quoteNumber}
+                              </p>
+                              <ZohoExtLink href={`${zohoBase}/quotes/${doc.quoteId}`} />
+                            </div>
                             <p className="text-[11px] text-slate-400 mt-0.5">{fmt(doc.quoteDate)}</p>
                             {doc.businessType && btStyle(doc.businessType) && (
                               <span className={`inline-flex mt-1 text-[9px] px-1.5 py-0.5 rounded border font-medium ${btStyle(doc.businessType)}`}>
@@ -484,13 +534,16 @@ export default function ZohoDocsPanel({ orgId, zohoCustomerId, subs }: Props) {
                       <td className="px-3 py-2.5">
                         {doc.invoiceNumber && doc.invoiceId ? (
                           <>
-                            <p
-                              className="font-mono text-emerald-700 font-medium cursor-default underline decoration-dotted underline-offset-2"
-                              onMouseEnter={e => handleDocNumEnter(e, 'invoice', doc.invoiceId!)}
-                              onMouseLeave={handleDocNumLeave}
-                            >
-                              {doc.invoiceNumber}
-                            </p>
+                            <div className="flex items-center gap-1">
+                              <p
+                                className="font-mono text-emerald-700 font-medium cursor-default underline decoration-dotted underline-offset-2"
+                                onMouseEnter={e => handleDocNumEnter(e, 'invoice', doc.invoiceId!)}
+                                onMouseLeave={handleDocNumLeave}
+                              >
+                                {doc.invoiceNumber}
+                              </p>
+                              <ZohoExtLink href={`${zohoBase}/invoices/${doc.invoiceId}`} />
+                            </div>
                             <p className="text-[11px] text-slate-400 mt-0.5">{fmt(doc.invoiceDate)}</p>
                             {!doc.quoteNumber && doc.businessType && btStyle(doc.businessType) && (
                               <span className={`inline-flex mt-1 text-[9px] px-1.5 py-0.5 rounded border font-medium ${btStyle(doc.businessType)}`}>
@@ -542,6 +595,15 @@ export default function ZohoDocsPanel({ orgId, zohoCustomerId, subs }: Props) {
                               className="shrink-0 text-[10px] text-slate-400 hover:text-indigo-600 underline mt-0.5 whitespace-nowrap">
                               {isExpanded ? 'close' : 're-map'}
                             </button>
+                            <button type="button"
+                              onClick={() => void resyncRow(i, doc)}
+                              disabled={rowResync[i] === 'syncing'}
+                              title="Re-fetch this document from Zoho Books"
+                              className="shrink-0 text-[10px] text-slate-400 hover:text-amber-600 underline mt-0.5 whitespace-nowrap disabled:opacity-50">
+                              {rowResync[i] === 'syncing'
+                                ? <span className="inline-flex items-center gap-1"><span className="animate-spin inline-block w-2.5 h-2.5 border border-slate-300 border-t-amber-500 rounded-full" />syncing</span>
+                                : rowResync[i] === 'error' ? '⚠ retry' : '↺ re-sync'}
+                            </button>
                           </div>
                         ) : (
                           <div className="flex items-center gap-1.5">
@@ -583,6 +645,17 @@ export default function ZohoDocsPanel({ orgId, zohoCustomerId, subs }: Props) {
                                 onClick={() => void openMap(i, doc)}
                                 className={`text-[10px] px-2 py-1 rounded border whitespace-nowrap transition-colors ${isExpanded ? 'border-indigo-300 bg-indigo-50 text-indigo-600' : 'border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
                                 {isExpanded ? '✕ Close' : '🔗 Map'}
+                              </button>
+                            )}
+                            {(doc.invoiceId || doc.quoteId) && (
+                              <button type="button"
+                                onClick={() => void resyncRow(i, doc)}
+                                disabled={rowResync[i] === 'syncing'}
+                                title="Re-fetch this document from Zoho Books"
+                                className={`text-[10px] px-2 py-1 rounded border whitespace-nowrap transition-colors disabled:opacity-50 ${rowResync[i] === 'error' ? 'border-amber-300 bg-amber-50 text-amber-700' : 'border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
+                                {rowResync[i] === 'syncing'
+                                  ? <span className="animate-spin inline-block w-2.5 h-2.5 border border-slate-300 border-t-amber-500 rounded-full" />
+                                  : rowResync[i] === 'error' ? '⚠' : '↺'}
                               </button>
                             )}
                           </div>

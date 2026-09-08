@@ -2494,6 +2494,37 @@ export class SubscriptionsService {
   }
 
   /**
+   * Sync serviceStartDate / serviceEndDate on a renewal_history row from the actual
+   * Zoho document line-item dates (min startDate → max endDate across all line items).
+   */
+  async syncRenewalHistoryDates(historyId: string) {
+    const row = await this.prisma.renewalHistory.findUnique({
+      where: { id: historyId },
+      select: { id: true, organizationId: true, invoiceId: true, quoteId: true },
+    });
+    if (!row) throw new NotFoundException(`Renewal history ${historyId} not found`);
+
+    const docId = row.invoiceId ?? row.quoteId;
+    if (!docId) throw new BadRequestException('No invoice or quote linked to this history row');
+
+    const kind: 'invoice' | 'estimate' = row.invoiceId ? 'invoice' : 'estimate';
+    const { lineItems } = await this.zoho.getZohoDocLineItems(row.organizationId, kind, docId);
+
+    const withDates = lineItems.filter(li => li.startDate && li.endDate);
+    if (withDates.length === 0) {
+      throw new BadRequestException('No line items with dates found in the Zoho document');
+    }
+
+    const minStart = new Date(Math.min(...withDates.map(li => new Date(li.startDate).getTime())));
+    const maxEnd   = new Date(Math.max(...withDates.map(li => new Date(li.endDate).getTime())));
+
+    return this.prisma.renewalHistory.update({
+      where: { id: historyId },
+      data: { serviceStartDate: minStart, serviceEndDate: maxEnd },
+    });
+  }
+
+  /**
    * Send the proforma (Zoho Estimate) to the customer — the email goes FROM Zoho Books
    * (Zoho's sender config) but is triggered from our app. Zoho also marks the estimate 'sent'.
    * Result status is synced back into renewal_history.
@@ -2857,16 +2888,17 @@ export class SubscriptionsService {
   // ------------------------------------------------------------------
   // Dedicated Billing History
   // ------------------------------------------------------------------
-  async getBillingHistory(params: { 
-    page?: number; 
-    limit?: number; 
+  async getBillingHistory(params: {
+    page?: number;
+    limit?: number;
     search?: string;
     type?: string;
     cycle?: string;
     quoteStatus?: string;
     invoiceStatus?: string;
+    excludePaid?: boolean;
   }) {
-    const { page = 1, limit = 20, search, type, cycle, quoteStatus, invoiceStatus } = params;
+    const { page = 1, limit = 20, search, type, cycle, quoteStatus, invoiceStatus, excludePaid = false } = params;
     const offset = (page - 1) * limit;
     
     // We use raw SQL to deduplicate by quote_id/id and calculate total
@@ -2921,6 +2953,7 @@ export class SubscriptionsService {
           AND ($5::text IS NULL OR rh.billing_cycle::text ILIKE $5)
           AND ($6::text IS NULL OR (COALESCE(rh.zoho_estimate_status, rh.renewal_status::text) ILIKE $6))
           AND ($7::text IS NULL OR rh.zoho_invoice_status ILIKE $7)
+          AND (NOT $8::boolean OR $7::text IS NOT NULL OR rh.zoho_invoice_status IS NULL OR (rh.zoho_invoice_status NOT ILIKE 'paid' AND rh.zoho_invoice_status NOT ILIKE 'partially_paid'))
         ORDER BY COALESCE(rh.bulk_renewal_batch_id::text, rh.invoice_id, rh.quote_id, rh.id::text), rh.created_at DESC
       ) as distinct_history
       ORDER BY "createdAt" DESC
@@ -2942,11 +2975,12 @@ export class SubscriptionsService {
         AND ($3::text IS NULL OR rh.billing_cycle::text ILIKE $3)
         AND ($4::text IS NULL OR (COALESCE(rh.zoho_estimate_status, rh.renewal_status::text) ILIKE $4))
         AND ($5::text IS NULL OR rh.zoho_invoice_status ILIKE $5)
+        AND (NOT $6::boolean OR $5::text IS NOT NULL OR rh.zoho_invoice_status IS NULL OR (rh.zoho_invoice_status NOT ILIKE 'paid' AND rh.zoho_invoice_status NOT ILIKE 'partially_paid'))
     `;
 
-    const queryArgs = [searchFilter, limit, offset, type || null, cycle || null, quoteStatus || null, invoiceStatus || null];
+    const queryArgs = [searchFilter, limit, offset, type || null, cycle || null, quoteStatus || null, invoiceStatus || null, excludePaid];
     const rows = await this.prisma.$queryRawUnsafe<any[]>(sql, ...queryArgs);
-    const countArgs = [searchFilter, type || null, cycle || null, quoteStatus || null, invoiceStatus || null];
+    const countArgs = [searchFilter, type || null, cycle || null, quoteStatus || null, invoiceStatus || null, excludePaid];
     const countResult = await this.prisma.$queryRawUnsafe<{ total: number }[]>(countSql, ...countArgs);
     const total = countResult[0]?.total ?? 0;
 

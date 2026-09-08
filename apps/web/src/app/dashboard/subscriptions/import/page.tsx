@@ -472,8 +472,8 @@ function ImportSubscriptionsInner() {
               className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">Reference No.</label>
-            <input type="text" value={refNumber} onChange={(e) => setRefNumber(e.target.value)} placeholder="domain / PO…"
+            <label className="block text-xs font-medium text-slate-600 mb-1">Invoice / Quote No.</label>
+            <input type="text" value={refNumber} onChange={(e) => setRefNumber(e.target.value)} placeholder="INV/25-26/1401…"
               className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
           </div>
           <div>

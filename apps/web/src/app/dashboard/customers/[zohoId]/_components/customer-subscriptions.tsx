@@ -196,11 +196,13 @@ export default function CustomerSubscriptions({
   customerId,
   customerName,
   subscriptions,
+  isAdmin,
 }: {
   orgId: string;
   customerId: string;
   customerName: string;
   subscriptions: Sub[];
+  isAdmin: boolean;
 }) {
   const router = useRouter();
   const renewable = subscriptions.filter((s) => RENEWABLE.includes(s.lifecycleStatus));
@@ -210,6 +212,7 @@ export default function CustomerSubscriptions({
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [showTransfer, setShowTransfer] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   // Search + filters (client-side — the list is already loaded)
   const [query, setQuery] = useState('');
@@ -312,6 +315,29 @@ export default function CustomerSubscriptions({
     router.refresh();
   };
 
+  const handleDeleteSelected = async () => {
+    setBusy(true);
+    setResult(null);
+    const results = await Promise.allSettled(
+      selectedIds.map(id =>
+        fetch(`/api/subscriptions/${id}`, { method: 'DELETE' })
+          .then(r => { if (!r.ok && r.status !== 204) throw new Error(`HTTP ${r.status}`); }),
+      ),
+    );
+    const failed = results.filter(r => r.status === 'rejected').length;
+    const ok = results.length - failed;
+    setResult({
+      ok: failed === 0,
+      msg: failed === 0
+        ? `✅ ${ok} subscription${ok !== 1 ? 's' : ''} permanently delete हो गई`
+        : `⚠️ ${ok} deleted, ${failed} failed`,
+    });
+    setSelectedIds([]);
+    setShowDeleteConfirm(false);
+    setBusy(false);
+    router.refresh();
+  };
+
   return (
     <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
       {/* Section header with the two right-aligned action buttons */}
@@ -352,8 +378,52 @@ export default function CustomerSubscriptions({
               🔄 Transfer Customer ({selectedIds.length})
             </button>
           )}
+          {isAdmin && selectedIds.length > 0 && (
+            <button
+              onClick={() => setShowDeleteConfirm(true)}
+              disabled={busy}
+              title={`Delete ${selectedIds.length} selected subscription${selectedIds.length !== 1 ? 's' : ''} permanently`}
+              className="p-1.5 rounded-lg border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 hover:border-red-400 disabled:opacity-50 transition-colors"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 0 0 6 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 1 0 .23 1.482l.149-.022.841 10.518A2.75 2.75 0 0 0 7.596 19h4.808a2.75 2.75 0 0 0 2.742-2.53l.841-10.52.149.023a.75.75 0 0 0 .23-1.482A41.03 41.03 0 0 0 14 4.193V3.75A2.75 2.75 0 0 0 11.25 1h-2.5ZM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4ZM8.58 7.72a.75.75 0 0 0-1.5.06l.3 7.5a.75.75 0 1 0 1.5-.06l-.3-7.5Zm4.34.06a.75.75 0 1 0-1.5-.06l-.3 7.5a.75.75 0 1 0 1.5.06l.3-7.5Z" clipRule="evenodd" />
+              </svg>
+            </button>
+          )}
         </div>
       </div>
+
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl border border-red-100 w-full max-w-sm mx-4 p-6">
+            <div className="flex items-center gap-3 mb-3">
+              <span className="text-2xl">🗑️</span>
+              <h3 className="text-base font-bold text-slate-800">Delete Subscriptions?</h3>
+            </div>
+            <p className="text-sm text-slate-600 mb-1">
+              You are about to <span className="font-semibold text-red-600">permanently delete</span>{' '}
+              <span className="font-bold">{selectedIds.length}</span> subscription{selectedIds.length !== 1 ? 's' : ''}.
+            </p>
+            <p className="text-xs text-slate-400 mb-5">यह action undo नहीं हो सकती। Renewal history भी delete हो जाएगी।</p>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={busy}
+                className="px-4 py-2 text-sm font-semibold text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => void handleDeleteSelected()}
+                disabled={busy}
+                className="px-4 py-2 text-sm font-semibold text-white bg-red-600 hover:bg-red-700 disabled:bg-red-300 rounded-xl"
+              >
+                {busy ? 'Deleting…' : `Delete ${selectedIds.length}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showTransfer && (
         <TransferCustomerModal

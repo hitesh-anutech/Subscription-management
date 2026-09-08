@@ -6,6 +6,8 @@ import Link from 'next/link';
 import { ViewPdfButton } from '@/components/view-pdf-button';
 import { ProformaActions } from './proforma-actions';
 
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3001/api';
+
 interface RenewalHistory {
   id: string;
   businessType: string;
@@ -30,6 +32,11 @@ interface RenewalHistory {
 
 type TimelineRow = RenewalHistory & { synthetic?: boolean };
 
+interface LineItem {
+  name: string; qty: number; rate: number;
+  domain: string; startDate: string; endDate: string;
+}
+
 interface Org {
   id: string;
   name: string;
@@ -45,6 +52,7 @@ interface Props {
   domainName: string;
   originQuickQuote: { id: string; quoteNumber: string } | null;
 }
+
 
 const CURRENCY_SYMBOL: Record<string, string> = {
   INR: '₹', USD: '$', EUR: '€', GBP: '£', AED: 'AED ', SGD: 'S$', AUD: 'A$', CAD: 'C$', JPY: '¥',
@@ -120,63 +128,94 @@ function historyState(h: RenewalHistory): { dot: string; badge: { label: string;
   return { dot: 'bg-slate-300', badge: { label: h.renewalStatus, cls: 'bg-slate-100 text-slate-600' } };
 }
 
-const TOOLTIP_W = 360;
+const TOOLTIP_W = 420;
 
-function HistoryLineItemTooltip({ h, type, zohoItemName, domainName, currency }: {
-  h: RenewalHistory;
-  type: 'quote' | 'invoice';
-  zohoItemName: string | null;
-  domainName: string;
-  currency: string;
+function LiveLineItemTooltip({ orgId, kind, docId, fallbackStatus, businessType }: {
+  orgId: string;
+  kind: 'estimate' | 'invoice';
+  docId: string;
+  fallbackStatus: string;
+  businessType: string;
 }) {
-  const rawStatus = type === 'quote'
-    ? (h.zohoEstimateStatus ?? h.renewalStatus ?? 'draft')
-    : (h.zohoInvoiceStatus ?? 'draft');
-  const status = rawStatus.toLowerCase();
-  const colorCls = STATUS_BADGE_COLOR[status] ?? 'bg-slate-100 text-slate-600';
-  const effectiveCurrency = h.currency ?? currency;
+  const [state, setState] = useState<{ loading: boolean; items: LineItem[]; docStatus: string | null; error: string | null }>({
+    loading: true, items: [], docStatus: null, error: null,
+  });
+
+  useEffect(() => {
+    fetch(
+      `${API_BASE}/organizations/${orgId}/zoho-doc-line-items?kind=${kind}&doc_id=${encodeURIComponent(docId)}`,
+      { credentials: 'include' },
+    )
+      .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
+      .then((data: { lineItems: LineItem[]; docStatus: string | null }) =>
+        setState({ loading: false, items: data.lineItems ?? [], docStatus: data.docStatus ?? null, error: null }),
+      )
+      .catch((err: Error) =>
+        setState({ loading: false, items: [], docStatus: null, error: err.message }),
+      );
+  }, [orgId, kind, docId]);
+
+  const statusKey = (state.docStatus ?? fallbackStatus).toLowerCase();
+  const colorCls = STATUS_BADGE_COLOR[statusKey] ?? 'bg-slate-100 text-slate-600';
+  const total = state.items.reduce((s, li) => s + li.qty * li.rate, 0);
+  const fmt = (d: string) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '?';
 
   return (
     <div className="bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden" style={{ width: TOOLTIP_W }}>
       <div className="bg-slate-800 text-white px-3 py-2 flex items-center justify-between">
         <span className="font-bold uppercase tracking-wider text-[10px] text-slate-300">LINE ITEMS</span>
         <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${colorCls}`}>
-          {status}
+          {statusKey}
         </span>
       </div>
-      <div className="p-3">
-        <div className="flex items-start justify-between gap-2 py-1">
-          <div className="flex-1 min-w-0">
-            <div className="font-semibold text-slate-800 text-xs truncate">{zohoItemName ?? 'Item'}</div>
-            <div className="text-[10px] text-slate-500 font-mono mt-0.5">{domainName}</div>
-            {(h.serviceStartDate || h.serviceEndDate) && (
-              <div className="text-[10px] text-slate-400 mt-0.5">
-                {fmtDate(h.serviceStartDate)} → {fmtDate(h.serviceEndDate)}
-              </div>
-            )}
-          </div>
-          <div className="text-right shrink-0">
-            {h.quantity && h.sellingPrice && (
-              <div className="text-[10px] text-slate-500">
-                {h.quantity} × {money(Number(h.sellingPrice), effectiveCurrency)}
-              </div>
-            )}
-            {h.subtotalAmount && (
-              <div className="font-semibold text-slate-800 text-xs">
-                {money(Number(h.subtotalAmount), effectiveCurrency)}
-              </div>
-            )}
-          </div>
+
+      {state.loading && (
+        <div className="px-4 py-3 text-xs text-slate-400 flex items-center gap-2">
+          <span className="animate-spin inline-block w-3 h-3 border-2 border-slate-300 border-t-blue-500 rounded-full" />
+          Loading…
         </div>
-      </div>
-      <div className="bg-slate-50 border-t border-slate-200 px-3 py-2 flex justify-between items-center">
-        <span className="text-[10px] text-slate-500 font-medium">{h.businessType}</span>
-        {h.subtotalAmount && (
-          <span className="font-bold text-slate-900 text-xs">
-            {money(Number(h.subtotalAmount), effectiveCurrency)}
-          </span>
-        )}
-      </div>
+      )}
+      {state.error && (
+        <div className="px-4 py-3 text-xs text-red-500">❌ {state.error}</div>
+      )}
+      {!state.loading && !state.error && state.items.length === 0 && (
+        <div className="px-4 py-3 text-xs text-slate-400">No line items found</div>
+      )}
+      {!state.loading && !state.error && state.items.length > 0 && (
+        <>
+          <div className="divide-y divide-slate-50">
+            {state.items.map((li, idx) => (
+              <div key={idx} className="px-3 py-2">
+                <div className="flex items-start justify-between gap-3">
+                  <p className="text-xs font-medium text-slate-700 leading-tight flex-1 min-w-0 truncate">{li.name}</p>
+                  <p className="text-xs font-semibold text-slate-800 shrink-0 tabular-nums">
+                    ₹{(li.qty * li.rate).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                  </p>
+                </div>
+                <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+                  {li.domain && (
+                    <span className="text-[10px] font-mono text-blue-600">{li.domain}</span>
+                  )}
+                  {(li.startDate || li.endDate) && (
+                    <span className="text-[10px] text-slate-400">
+                      {fmt(li.startDate)} → {fmt(li.endDate)}
+                    </span>
+                  )}
+                  <span className="text-[10px] text-slate-400">
+                    {li.qty} × ₹{li.rate.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="px-3 py-2 border-t border-slate-100 bg-slate-50 rounded-b-xl flex justify-between items-center">
+            <span className="text-[10px] text-slate-400">{businessType} · {state.items.length} item{state.items.length !== 1 ? 's' : ''}</span>
+            <span className="text-xs font-bold text-slate-800 tabular-nums">
+              Total ₹{total.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+            </span>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -250,6 +289,28 @@ function DocNumberCell({
 }
 
 export function OrderHistoryTimeline({ timeline, org, currency, zohoItemName, domainName, originQuickQuote }: Props) {
+  const [syncState, setSyncState] = useState<Record<string, 'idle' | 'syncing' | 'error'>>({});
+  const [localDates, setLocalDates] = useState<Record<string, { start: string; end: string }>>({});
+
+  const syncDates = async (historyId: string) => {
+    setSyncState(prev => ({ ...prev, [historyId]: 'syncing' }));
+    try {
+      const res = await fetch(`${API_BASE}/subscriptions/renewal-history/${historyId}/sync-dates`, {
+        method: 'POST', credentials: 'include',
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const updated = await res.json() as { serviceStartDate: string | null; serviceEndDate: string | null };
+      setLocalDates(prev => ({
+        ...prev,
+        [historyId]: { start: updated.serviceStartDate ?? '', end: updated.serviceEndDate ?? '' },
+      }));
+      setSyncState(prev => ({ ...prev, [historyId]: 'idle' }));
+    } catch {
+      setSyncState(prev => ({ ...prev, [historyId]: 'error' }));
+      setTimeout(() => setSyncState(prev => ({ ...prev, [historyId]: 'idle' })), 3000);
+    }
+  };
+
   if (timeline.length === 0) {
     return <p className="px-5 py-6 text-sm text-slate-400">अभी तक कोई order history नहीं।</p>;
   }
@@ -263,6 +324,10 @@ export function OrderHistoryTimeline({ timeline, org, currency, zohoItemName, do
             h.businessType === 'Fresh' && !h.quoteId && h.quoteNumber && originQuickQuote
               ? originQuickQuote
               : null;
+          const overrideDates = localDates[h.id];
+          const displayStart = overrideDates?.start ?? h.serviceStartDate;
+          const displayEnd   = overrideDates?.end   ?? h.serviceEndDate;
+          const hasDoc = !!(h.invoiceId || h.quoteId);
 
           return (
             <div key={h.id} className="relative">
@@ -289,7 +354,13 @@ export function OrderHistoryTimeline({ timeline, org, currency, zohoItemName, do
                           number={h.quoteNumber ?? 'Quote'}
                           zohoHref={buildZohoUrl(org, 'estimates', h.quoteId)}
                           tooltipNode={
-                            <HistoryLineItemTooltip h={h} type="quote" zohoItemName={zohoItemName} domainName={domainName} currency={currency} />
+                            <LiveLineItemTooltip
+                              orgId={org.id}
+                              kind="estimate"
+                              docId={h.quoteId}
+                              fallbackStatus={h.zohoEstimateStatus ?? h.renewalStatus ?? 'draft'}
+                              businessType={h.businessType}
+                            />
                           }
                         />
                         <ViewPdfButton orgId={org.id} kind="estimate" docId={h.quoteId}
@@ -310,7 +381,13 @@ export function OrderHistoryTimeline({ timeline, org, currency, zohoItemName, do
                           number={h.invoiceNumber ?? 'Invoice'}
                           zohoHref={buildZohoUrl(org, 'invoices', h.invoiceId)}
                           tooltipNode={
-                            <HistoryLineItemTooltip h={h} type="invoice" zohoItemName={zohoItemName} domainName={domainName} currency={currency} />
+                            <LiveLineItemTooltip
+                              orgId={org.id}
+                              kind="invoice"
+                              docId={h.invoiceId}
+                              fallbackStatus={h.zohoInvoiceStatus ?? 'draft'}
+                              businessType={h.businessType}
+                            />
                           }
                         />
                         <ViewPdfButton orgId={org.id} kind="invoice" docId={h.invoiceId}
@@ -331,9 +408,29 @@ export function OrderHistoryTimeline({ timeline, org, currency, zohoItemName, do
                     )}
                   </div>
 
-                  <p className="text-xs text-slate-400 mt-1">
-                    {fmtDate(h.serviceStartDate)} → {fmtDate(h.serviceEndDate)}
-                    {h.subtotalAmount && ` · ${money(Number(h.subtotalAmount), h.currency ?? currency)}`}
+                  <p className="text-xs text-slate-400 mt-1 flex items-center gap-1.5">
+                    <span>
+                      {fmtDate(displayStart)} → {fmtDate(displayEnd)}
+                      {h.subtotalAmount && ` · ${money(Number(h.subtotalAmount), h.currency ?? currency)}`}
+                    </span>
+                    {hasDoc && !h.synthetic && (
+                      <button
+                        onClick={() => void syncDates(h.id)}
+                        disabled={syncState[h.id] === 'syncing'}
+                        title="Sync dates from Zoho invoice/quote line items"
+                        className="text-slate-300 hover:text-blue-500 disabled:opacity-40 transition-colors leading-none"
+                      >
+                        {syncState[h.id] === 'syncing' ? (
+                          <span className="inline-block w-3 h-3 border border-slate-300 border-t-blue-500 rounded-full animate-spin" />
+                        ) : syncState[h.id] === 'error' ? (
+                          <span className="text-red-400 text-[10px]">!</span>
+                        ) : (
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3">
+                            <path fillRule="evenodd" d="M13.836 2.477a.75.75 0 0 1 .75.75v3.182a.75.75 0 0 1-.75.75h-3.182a.75.75 0 0 1 0-1.5h1.37l-.84-.841a4.5 4.5 0 0 0-7.08.932.75.75 0 0 1-1.3-.75 6 6 0 0 1 9.44-1.242l.842.84V3.227a.75.75 0 0 1 .75-.75Zm-.911 7.5A.75.75 0 0 1 13.199 11a6 6 0 0 1-9.44 1.241l-.84-.84v1.371a.75.75 0 0 1-1.5 0V9.591a.75.75 0 0 1 .75-.75H5.35a.75.75 0 0 1 0 1.5H3.98l.841.841a4.5 4.5 0 0 0 7.08-.932.75.75 0 0 1 1.025-.273Z" clipRule="evenodd" />
+                          </svg>
+                        )}
+                      </button>
+                    )}
                   </p>
                 </div>
 

@@ -227,6 +227,17 @@ export class ZohoController {
     return this.zoho.createDocHistory(id, body);
   }
 
+  /** POST /api/organizations/:id/customers/:zohoId/zoho-documents/:docKey/resync — re-fetch single doc from Zoho, update DB cache + wipe line items */
+  @Post('organizations/:id/customers/:zohoId/zoho-documents/:docKey/resync')
+  @HttpCode(HttpStatus.OK)
+  resyncCustomerDoc(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('zohoId') zohoId: string,
+    @Param('docKey') docKey: string,
+  ) {
+    return this.zoho.resyncCustomerDoc(id, zohoId, docKey);
+  }
+
   /** GET /api/organizations/:id/zoho-doc-line-items?kind=invoice|estimate&doc_id=... */
   @Get('organizations/:id/zoho-doc-line-items')
   getZohoDocLineItems(

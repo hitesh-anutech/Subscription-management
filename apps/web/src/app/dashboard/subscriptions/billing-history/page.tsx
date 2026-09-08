@@ -26,6 +26,8 @@ export default async function BillingHistoryPage({
     if (sp.cycle) params.set('cycle', sp.cycle);
     if (sp.quoteStatus) params.set('quoteStatus', sp.quoteStatus);
     if (sp.invoiceStatus) params.set('invoiceStatus', sp.invoiceStatus);
+    // Hide paid invoices by default; only show when user explicitly filters by 'paid'
+    if (!sp.invoiceStatus) params.set('excludePaid', 'true');
     params.set('page', String(page));
     params.set('limit', '25');
 
@@ -115,6 +117,12 @@ export default async function BillingHistoryPage({
           </Link>
         )}
       </form>
+
+      {!sp.invoiceStatus && (
+        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 inline-flex items-center gap-1.5">
+          💳 Paid invoices are hidden by default — select <strong>Paid</strong> from the Invoice Status filter to view them.
+        </p>
+      )}
 
       {/* Table */}
       {items.length === 0 ? (

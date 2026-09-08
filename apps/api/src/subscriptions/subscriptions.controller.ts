@@ -95,6 +95,7 @@ export class SubscriptionsController {
     @Query('cycle') cycle?: string,
     @Query('quoteStatus') quoteStatus?: string,
     @Query('invoiceStatus') invoiceStatus?: string,
+    @Query('excludePaid') excludePaid?: string,
   ) {
     return this.service.getBillingHistory({
       page:  page  ? Number(page)  : 1,
@@ -104,6 +105,7 @@ export class SubscriptionsController {
       cycle,
       quoteStatus,
       invoiceStatus,
+      excludePaid: excludePaid === 'true',
     });
   }
 
@@ -277,6 +279,13 @@ export class SubscriptionsController {
   @Post('renewal-history/:historyId/refresh')
   refreshProforma(@Param('historyId') historyId: string) {
     return this.service.refreshProformaStatus(historyId);
+  }
+
+  /** POST /api/subscriptions/renewal-history/:historyId/sync-dates — sync service dates from Zoho line items */
+  @Post('renewal-history/:historyId/sync-dates')
+  @HttpCode(HttpStatus.OK)
+  syncRenewalHistoryDates(@Param('historyId') historyId: string) {
+    return this.service.syncRenewalHistoryDates(historyId);
   }
 
   /** POST /api/subscriptions/renewal-history/:historyId/convert-to-invoice — Convert quote to invoice via Zoho Books */

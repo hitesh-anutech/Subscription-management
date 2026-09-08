@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { cookies } from 'next/headers';
 import { notFound } from 'next/navigation';
 import { createServerApi, SESSION_COOKIE } from '@/lib/api';
+import { getCurrentUser } from '@/lib/auth';
 import { SyncCustomerButton } from './_components/sync-customer-button';
 import CustomerSubscriptions from './_components/customer-subscriptions';
 import ZohoDocsPanel from './_components/zoho-docs-panel';
@@ -81,7 +82,8 @@ export default async function CustomerDetailPage({
   const { org_id: orgId } = await searchParams;
   if (!orgId) notFound();
 
-  const cookieStore = await cookies();
+  const [user, cookieStore] = await Promise.all([getCurrentUser(), cookies()]);
+  const isAdmin = user?.role === 'Admin';
   const api = createServerApi(cookieStore.get(SESSION_COOKIE)?.value ?? '');
 
   interface Org { id: string; name: string; zohoOrgId: string; dataCenter: string }
@@ -352,6 +354,7 @@ export default async function CustomerDetailPage({
         customerId={zohoId}
         customerName={name}
         subscriptions={subscriptions}
+        isAdmin={isAdmin}
       />
 
       {/* ── Mapped Domains (collapsible — native <details>, no JS needed) ── */}
@@ -394,6 +397,8 @@ export default async function CustomerDetailPage({
       <ZohoDocsPanel
         orgId={orgId}
         zohoCustomerId={zohoId}
+        zohoOrgId={org?.zohoOrgId ?? ''}
+        dataCenter={org?.dataCenter ?? 'in'}
         subs={subscriptions.map(s => ({
           id: s.id,
           subscriptionNumber: s.subscriptionNumber,

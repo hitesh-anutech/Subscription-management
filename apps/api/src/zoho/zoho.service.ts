@@ -593,11 +593,11 @@ export class ZohoService {
       page:     filters.page ?? 1,
       per_page: filters.perPage ?? 50,
     };
-    if (filters.dateStart)       params.date_start       = filters.dateStart;
-    if (filters.dateEnd)         params.date_end         = filters.dateEnd;
-    if (filters.status)          params.status           = filters.status;
-    if (filters.customerId)      params.customer_id      = filters.customerId;
-    if (filters.referenceNumber) params.reference_number = filters.referenceNumber;
+    if (filters.dateStart)       params.date_start    = filters.dateStart;
+    if (filters.dateEnd)         params.date_end      = filters.dateEnd;
+    if (filters.status)          params.status        = filters.status;
+    if (filters.customerId)      params.customer_id   = filters.customerId;
+    if (filters.referenceNumber) params.invoice_number = filters.referenceNumber;
 
     const listResp = await client.get<{
       invoices: Array<{
@@ -712,11 +712,11 @@ export class ZohoService {
   }) {
     const client = await this.clientFor(orgId);
     const params: Record<string, unknown> = { page: filters.page ?? 1, per_page: filters.perPage ?? 50 };
-    if (filters.dateStart)       params.date_start       = filters.dateStart;
-    if (filters.dateEnd)         params.date_end         = filters.dateEnd;
-    if (filters.status)          params.status           = filters.status;
-    if (filters.customerId)      params.customer_id      = filters.customerId;
-    if (filters.referenceNumber) params.reference_number = filters.referenceNumber;
+    if (filters.dateStart)       params.date_start      = filters.dateStart;
+    if (filters.dateEnd)         params.date_end        = filters.dateEnd;
+    if (filters.status)          params.status          = filters.status;
+    if (filters.customerId)      params.customer_id     = filters.customerId;
+    if (filters.referenceNumber) params.estimate_number = filters.referenceNumber;
 
     const listResp = await client.get<{
       estimates: Array<{ estimate_id: string; estimate_number: string; customer_id: string; customer_name: string; date: string; total: number; status: string }>;
@@ -1512,6 +1512,80 @@ export class ZohoService {
     return { docs: await this.annotateWithLinkedSubs(orgId, zohoCustomerId, rows), fromCache: true, syncedAt };
   }
 
+  /**
+   * Re-fetch a single cached doc row from Zoho Books, update the DB record, and
+   * wipe its line-item cache so the Map panel re-fetches fresh data next time.
+   */
+  async resyncCustomerDoc(orgId: string, zohoCustomerId: string, docKey: string) {
+    const existing = await this.prisma.zohoCustomerDoc.findUnique({
+      where: { uq_zoho_customer_doc: { organizationId: orgId, zohoCustomerId, docKey } },
+    });
+    if (!existing) throw new NotFoundException(`Doc "${docKey}" not found in cache — run a full Re-sync first`);
+
+    // Invalidate in-memory cache so calls below always hit Zoho
+    if (existing.quoteId)   this.invalidateDocCache(orgId, 'estimate', existing.quoteId);
+    if (existing.invoiceId) this.invalidateDocCache(orgId, 'invoice',  existing.invoiceId);
+
+    const [estFm, invFm] = await Promise.all([
+      this.getItemFieldMappings(orgId, 'estimates'),
+      this.getItemFieldMappings(orgId, 'invoices'),
+    ]);
+    const estBtCf = estFm.business_type as string | undefined;
+    const invBtCf = invFm.business_type as string | undefined;
+
+    type CfEntry = { api_name: string; value: string | number };
+    const cfStr = (cfs: CfEntry[] | undefined, key: string | undefined): string | null => {
+      if (!key || !cfs?.length) return null;
+      const f = cfs.find(c => c.api_name === key);
+      return f?.value != null ? String(f.value) : null;
+    };
+
+    type EstDetail = { estimate_number: string; date: string; status: string; total: number; custom_fields?: CfEntry[] };
+    type InvDetail = { invoice_number: string; date: string; status: string; total: number; custom_fields?: CfEntry[] };
+
+    const [freshEst, freshInv] = await Promise.all([
+      existing.quoteId   ? this.getDocDetailCached<EstDetail>(orgId, 'estimate', existing.quoteId)   : Promise.resolve(null),
+      existing.invoiceId ? this.getDocDetailCached<InvDetail>(orgId, 'invoice',  existing.invoiceId) : Promise.resolve(null),
+    ]);
+
+    const businessType =
+      cfStr(freshEst?.custom_fields, estBtCf) ??
+      cfStr(freshInv?.custom_fields, invBtCf) ??
+      existing.businessType;
+
+    const updated = {
+      quoteNumber:   freshEst?.estimate_number ?? existing.quoteNumber,
+      quoteDate:     freshEst?.date            ?? existing.quoteDate,
+      quoteStatus:   freshEst?.status          ?? existing.quoteStatus,
+      quoteTotal:    freshEst?.total           ?? existing.quoteTotal,
+      invoiceNumber: freshInv?.invoice_number  ?? existing.invoiceNumber,
+      invoiceDate:   freshInv?.date            ?? existing.invoiceDate,
+      invoiceStatus: freshInv?.status          ?? existing.invoiceStatus,
+      invoiceTotal:  freshInv?.total           ?? existing.invoiceTotal,
+      businessType,
+      syncedAt: new Date(),
+    };
+
+    // Update the row and wipe line-item cache atomically
+    await this.prisma.$transaction(async (tx) => {
+      await tx.zohoCustomerDoc.update({
+        where: { uq_zoho_customer_doc: { organizationId: orgId, zohoCustomerId, docKey } },
+        data: updated,
+      });
+      await tx.zohoCustomerDocLine.deleteMany({ where: { docId: existing.id } });
+    });
+
+    const row = {
+      quoteId: existing.quoteId, quoteNumber: updated.quoteNumber, quoteDate: updated.quoteDate,
+      quoteStatus: updated.quoteStatus, quoteTotal: updated.quoteTotal,
+      invoiceId: existing.invoiceId, invoiceNumber: updated.invoiceNumber, invoiceDate: updated.invoiceDate,
+      invoiceStatus: updated.invoiceStatus, invoiceTotal: updated.invoiceTotal,
+      businessType: updated.businessType,
+    };
+    const [annotated] = await this.annotateWithLinkedSubs(orgId, zohoCustomerId, [row]);
+    return { doc: annotated };
+  }
+
   /** Shared: annotate doc rows with their currently linked DB subscription. */
   private async annotateWithLinkedSubs<T extends {
     invoiceNumber: string | null; quoteNumber: string | null;
@@ -1648,6 +1722,13 @@ export class ZohoService {
           await this.prisma.renewalHistory.create({ data });
           results.push({ subId: m.subId, action: 'created' });
         }
+        // Sync subscription start/end dates with the mapped document's line-item dates
+        if (startDate || endDate) {
+          await this.prisma.subscription.update({
+            where: { id: m.subId },
+            data: { ...(startDate && { startDate }), ...(endDate && { endDate }) },
+          });
+        }
       } catch (err) {
         results.push({ subId: m.subId, action: 'skipped', error: err instanceof Error ? err.message : 'unknown' });
       }
@@ -1685,8 +1766,13 @@ export class ZohoService {
 
     let rawLines: Array<{ name: string; qty: number; rate: number; domain: string; startDate: string; endDate: string }>;
 
+    let docStatus: string | null = null;
+
     if (cachedDoc && cachedDoc.lines.length > 0) {
       // Cache hit — use DB rows directly
+      docStatus = kind === 'invoice'
+        ? (cachedDoc.invoiceStatus ?? null)
+        : (cachedDoc.quoteStatus   ?? null);
       rawLines = cachedDoc.lines.map(l => ({
         name:      l.name,
         qty:       l.qty,
@@ -1700,6 +1786,7 @@ export class ZohoService {
       const [fm, doc] = await Promise.all([
         this.getItemFieldMappings(orgId, 'items'),
         this.getDocDetailCached<{
+          status?: string;
           line_items: Array<{
             item_id?: string; name: string; quantity: number; rate: number;
             item_custom_fields?: Array<{ api_name: string; value: string | number }>;
@@ -1707,8 +1794,9 @@ export class ZohoService {
           }>;
         }>(orgId, kind, docId),
       ]);
+      docStatus = doc?.status ?? null;
 
-      if (!doc) return { lineItems: [], fromCache: false };
+      if (!doc) return { lineItems: [], docStatus: null, fromCache: false };
 
       const domainCf    = fm.domain_name ?? 'cf_domain_name';
       const startDateCf = fm.start_date  ?? 'cf_subscription_start_date';
@@ -1800,7 +1888,7 @@ export class ZohoService {
       }
     }
 
-    return { lineItems, fromCache: cachedDoc?.lines.length ? true : false };
+    return { lineItems, docStatus, fromCache: cachedDoc?.lines.length ? true : false };
   }
 
   // ------------------------------------------------------------------
