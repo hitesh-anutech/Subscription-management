@@ -19,6 +19,16 @@ import type {
   CombinedRenewalQuoteDto, InlineImportZohoDocDto,
 } from './dto/subscriptions.dto';
 
+const CYCLE_LABEL: Record<string, string> = {
+  monthly:     'Monthly',
+  quarterly:   'Quarterly',
+  half_yearly: 'Half Yearly',
+  annual:      '1 Year',
+  biennial:    '2 Years',
+  triennial:   '3 Years',
+  one_time:    'One Time',
+};
+
 @Injectable()
 export class SubscriptionsService {
   private readonly logger = new Logger(SubscriptionsService.name);
@@ -2179,20 +2189,29 @@ export class SubscriptionsService {
 
     try {
       const zohoClient = await this.zoho.clientFor(sub.organizationId);
-      const proRataLabel = await this.zoho.getBusinessTypeLabel(sub.organizationId, 'Pro-rata');
-      const estimateCf = await this.zoho.buildCustomFields(sub.organizationId, 'estimates', {
-        domain_name:             sub.domain.domainName,
-        business_type:           proRataLabel,
-        service_expiry:          endDate.toISOString().split('T')[0],
-        start_date:              effectiveDate.toISOString().split('T')[0],
-        end_date:                endDate.toISOString().split('T')[0],
-        quantity:                String(Number(sub.quantity) + dto.additionalLicenses),
-        cost_price:              String(Number(sub.costPrice)),
-        unit_price:              String(Number(sub.subscriptionPrice)),
-        central_subscription_id: sub.id,
-      });
       const endDateStr       = endDate.toISOString().split('T')[0];
       const effectiveDateStr = effectiveDate.toISOString().split('T')[0];
+      const costStr = String(Number(sub.costPrice));
+      const proRataLabel = await this.zoho.getBusinessTypeLabel(sub.organizationId, 'Pro-rata');
+      const [estimateCf, lineItemCf] = await Promise.all([
+        this.zoho.buildCustomFields(sub.organizationId, 'estimates', {
+          domain_name:             sub.domain.domainName,
+          business_type:           proRataLabel,
+          service_expiry:          endDateStr,
+          start_date:              effectiveDateStr,
+          end_date:                endDateStr,
+          quantity:                String(Number(sub.quantity) + dto.additionalLicenses),
+          cost_price:              costStr,
+          unit_price:              String(Number(sub.subscriptionPrice)),
+          central_subscription_id: sub.id,
+        }),
+        this.zoho.buildCustomFields(sub.organizationId, 'items', {
+          domain_name: sub.domain.domainName,
+          start_date:  effectiveDateStr,
+          end_date:    endDateStr,
+          cost_price:  costStr,
+        }),
+      ]);
       const estimatePayload = {
         customer_id: sub.zohoCustomerId,
         line_items: [{
@@ -2200,6 +2219,7 @@ export class SubscriptionsService {
           description: `Pro-rata: +${dto.additionalLicenses} licenses (${effectiveDateStr} → ${endDateStr})`,
           quantity:    dto.additionalLicenses,
           rate:        Math.round(dailyRate * periodDays * 100) / 100,
+          ...(lineItemCf.length ? { item_custom_fields: lineItemCf } : {}),
         }],
         custom_fields: estimateCf,
         notes: dto.notes ?? `Pro-rata for ${dto.additionalLicenses} additional licenses from ${effectiveDateStr} to ${endDateStr}`,
@@ -2340,7 +2360,10 @@ export class SubscriptionsService {
             item_id:     sub.zohoItemId,
             quantity:    qty,
             rate:        price,
-            description: `${dto.startDate} to ${dto.endDate}`,
+            description: [
+              `Domain Name: ${sub.domain.domainName}`,
+              `Subscription Validity: ${CYCLE_LABEL[sub.billingCycle] ?? sub.billingCycle} (${this.formatDateDMY(new Date(dto.startDate))} to ${this.formatDateDMY(new Date(dto.endDate))})`,
+            ].join('\n'),
           }],
           notes: dto.notes ?? `Invoice for ${sub.domain.domainName}`,
         };
@@ -2413,30 +2436,55 @@ export class SubscriptionsService {
     startDate: Date, endDate: Date,
     businessConcept: 'Fresh' | 'Renewal' = 'Renewal',
   ) {
-    // Per-module mapping resolves Subs Period to the estimate's own api_name
-    // (cf_billing_period), distinct from the invoice's cf_subs_period.
+    const startIso = startDate.toISOString().split('T')[0];
+    const endIso   = endDate.toISOString().split('T')[0];
+    const costStr  = String(Number(sub.costPrice));
+
     const businessLabel = await this.zoho.getBusinessTypeLabel(sub.organizationId, businessConcept);
     const { options: billingOpts } = await this.zoho.getBillingOptions(sub.organizationId);
     const subsPeriodLabel = billingOpts.find((o) => o.value === String(sub.billingCycle))?.label ?? '';
-    const customFields = await this.zoho.buildCustomFields(sub.organizationId, 'estimates', {
-      domain_name:             sub.domain.domainName,
-      business_type:           businessLabel,
-      billing_period:          subsPeriodLabel,
-      service_expiry:          endDate.toISOString().split('T')[0],
-      start_date:              startDate.toISOString().split('T')[0],
-      end_date:                endDate.toISOString().split('T')[0],
-      quantity:                String(qty),
-      cost_price:              String(Number(sub.costPrice)),
-      unit_price:              String(price),
-      central_subscription_id: sub.id,
-    });
+
+    const [customFields, lineItemCf] = await Promise.all([
+      this.zoho.buildCustomFields(sub.organizationId, 'estimates', {
+        domain_name:             sub.domain.domainName,
+        business_type:           businessLabel,
+        billing_period:          subsPeriodLabel,
+        service_expiry:          endIso,
+        start_date:              startIso,
+        end_date:                endIso,
+        quantity:                String(qty),
+        cost_price:              costStr,
+        unit_price:              String(price),
+        central_subscription_id: sub.id,
+      }),
+      this.zoho.buildCustomFields(sub.organizationId, 'items', {
+        domain_name: sub.domain.domainName,
+        start_date:  startIso,
+        end_date:    endIso,
+        cost_price:  costStr,
+      }),
+    ]);
+
+    const todayMidnight = new Date();
+    todayMidnight.setHours(0, 0, 0, 0);
+    const fallbackExpiry = new Date(todayMidnight);
+    fallbackExpiry.setDate(todayMidnight.getDate() + 3);
+    const quoteExpiry = startDate >= todayMidnight
+      ? startDate.toISOString().split('T')[0]
+      : fallbackExpiry.toISOString().split('T')[0];
+
     return {
       customer_id: sub.zohoCustomerId,
+      expiry_date: quoteExpiry,
       line_items: [{
         item_id:  sub.zohoItemId,
         quantity: qty,
         rate:     price,
-        description: `${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`,
+        description: [
+          `Domain Name: ${sub.domain.domainName}`,
+          `Subscription Validity: ${CYCLE_LABEL[sub.billingCycle] ?? sub.billingCycle} (${this.formatDateDMY(startDate)} to ${this.formatDateDMY(endDate)})`,
+        ].join('\n'),
+        ...(lineItemCf.length ? { item_custom_fields: lineItemCf } : {}),
       }],
       custom_fields: customFields,
       notes: `${businessConcept} for ${sub.domain.domainName}`,

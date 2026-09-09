@@ -103,7 +103,7 @@ System में 4 distinct quote scenarios हैं, जो **2 अलग modu
   - "मैं कुछ नया बेच रहा हूं" — sales motion
   - कोई existing subscription context नहीं
   - New customer (Lead) या existing customer को नया product
-  
+
 - **Subscription Module** → Quote Types **3 & 4** (Lifecycle Operations)
   - "Existing relationship maintain कर रहा हूं" — account management motion
   - Existing subscription is the starting context
@@ -646,7 +646,7 @@ CREATE TABLE organizations (
     refresh_token_encrypted TEXT,
     token_expires_at TIMESTAMPTZ,
     scopes TEXT,
-    connection_status VARCHAR(30) DEFAULT 'active',
+    connection_statu VARCHAR(30) DEFAULT 'active',
     last_sync_at TIMESTAMPTZ,
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMPTZ DEFAULT NOW(),
