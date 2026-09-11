@@ -1454,4 +1454,75 @@ Lead create के समय customer ने GSTIN share नहीं किय�
 
 ---
 
-**End of Document — v4.1**
+## 16. Renewal Quote — Line Item Description Rules (v4.2 Addition)
+
+### 16.1 Description Format
+
+Har renewal quote ke line item ki description is format me banti hai:
+
+```
+{Zoho Item Description}         ← conditional (see threshold rule below)
+Domain Name: example.com        ← single domain ya summary line
+Subscription Period: 1 Year (01/04/2026 to 31/03/2027)
+```
+
+**Date format:** DD/MM/YYYY (Indian format). Label: **"Subscription Period:"** (not "Validity").
+
+---
+
+### 16.2 Domain Name Line Rules
+
+| Domains in line | Format |
+|---|---|
+| 1 domain | `Domain Name: example.com` |
+| 2–99 domains | `Total of domain: [N]` + `domain1.com, domain2.com, ...` |
+| ≥ 100 domains | `Bulk order for N domains — see attached Technical Annexure.` |
+
+---
+
+### 16.3 Zoho Item Description — Source & Placeholder Substitution
+
+**Source:** `zoho_cache` table (`extra->>'description'`, `entity_type = 'item'`).  
+**Freshness:** Daily cron (3 AM IST) + manual sync (Settings → Organizations → Sync).
+
+**Placeholder substitution logic:**
+- Zoho item description me agar `Domain Name:` (blank value) milta hai → actual domain name se in-place fill hota hai
+- Zoho item description me agar `Subscription Period:` (blank value) milta hai → actual period se in-place fill hota hai
+- Jo placeholder fill ho gaya → alag se append nahi hota
+- Jo placeholder nahi tha → normal tarah neeche append hota hai
+
+**Fallback behavior:**
+
+| Zoho Item Description | Result |
+|---|---|
+| Khaali (no desc) | Sirf `Domain Name` + `Subscription Period` |
+| Desc hai, koi placeholder nahi | Desc prefix + appended `Domain Name` + `Subscription Period` |
+| Desc hai, dono placeholders blank | Dono in-place fill — kuch extra append nahi |
+| Sirf ek placeholder blank | Woh fill, baaki append |
+
+---
+
+### 16.4 5-Line Threshold Rule (Renewal Quotes Only)
+
+**Sirf renewal quotes par applicable** — invoice/conversion flow me nahi.
+
+| Condition | Zoho Item Description |
+|---|---|
+| Quote me **≤ 5 line item rows** | Prefix ki jaati hai (placeholder substitution ke saath) |
+| Quote me **> 5 line item rows** | Skip — sirf `Domain Name` + `Subscription Period` |
+
+**Reason:** Jab quote me bahut saari rows hoti hain, item description add karne se estimate bahut lamba ho jaata hai.
+
+**Per-path behavior:**
+
+| Renewal Path | Line count | Threshold |
+|---|---|---|
+| `buildEstimatePayload` (single renewal) | Hamesha 1 | Always show |
+| `bulkRenewalQuote` (per-group estimate) | Hamesha 1 per estimate | Always show |
+| `combinedRenewalQuote` (multi-sub, one estimate) | Variable (`lineGroups.size`) | Check `<= 5` |
+
+**Implementation:** `combinedRenewalQuote` me ek `findMany` batch query sab unique `zohoItemId`s ke liye — loop se pehle, N+1 nahi.
+
+---
+
+**End of Document — v4.2**

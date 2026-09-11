@@ -309,12 +309,35 @@ export class SubscriptionsService {
         const firstDomain = firstSub.domain.domainName;
         const domainSummary = domainCount > 1 ? `${firstDomain} +${domainCount - 1} more` : firstDomain;
 
-        // Build description (Indian DD/MM/YYYY dates in the human-readable text).
-        let description = `Renewal Period: ${this.formatDateDMY(newStartDate)} to ${this.formatDateDMY(adjustedEndDate)}`;
-        if (isBulk) {
-          description += `\nRenewal for ${domainCount} domains (Complete domain list attached in Technical Annexure)`;
+        const cycleLabel = CYCLE_LABEL[firstSub.billingCycle] ?? firstSub.billingCycle;
+        const periodValue = `${cycleLabel} (${this.formatDateDMY(newStartDate)} to ${this.formatDateDMY(adjustedEndDate)})`;
+        const periodLine = `Subscription Period: ${periodValue}`;
+        // bulkRenewalQuote always creates 1 line item per estimate → always prepend Zoho item description
+        const zohoItemDesc = await this.getZohoItemDesc(firstSub.organizationId, firstSub.zohoItemId);
+        let description: string;
+        if (zohoItemDesc) {
+          const { desc: filled, domainFilled, periodFilled } = this.fillZohoDescPlaceholders(
+            zohoItemDesc,
+            domainSummary,
+            periodValue,
+          );
+          description = filled;
+          if (domainCount === 1) {
+            if (!domainFilled) description += `\nDomain Name: ${groupSubs[0].domain.domainName}`;
+          } else if (isBulk) {
+            description += `\nBulk order for ${domainCount} domains — see attached Technical Annexure.`;
+          } else {
+            description += `\nTotal of domain: [${domainCount}]\n${groupSubs.map(s => s.domain.domainName).join(', ')}`;
+          }
+          if (!periodFilled) description += `\n${periodLine}`;
         } else {
-          description += `\nDomains:\n` + groupSubs.map(s => s.domain.domainName).join('\n');
+          if (domainCount === 1) {
+            description = `Domain Name: ${groupSubs[0].domain.domainName}\n${periodLine}`;
+          } else if (isBulk) {
+            description = `Bulk order for ${domainCount} domains — see attached Technical Annexure.\n${periodLine}`;
+          } else {
+            description = `Total of domain: [${domainCount}]\n${groupSubs.map(s => s.domain.domainName).join(', ')}\n${periodLine}`;
+          }
         }
 
         // Header + line-item custom fields, both via the org-aware mapping helper
@@ -551,9 +574,24 @@ export class SubscriptionsService {
     }
 
     const BULK_THRESHOLD = 100; // ≥100 domains in one line → summarize + annexure (like "Generate Bulk Quotes")
+    const ITEM_DESC_LINE_THRESHOLD = 5; // Zoho item description shown only when quote has ≤5 line items
     const lineItems: any[] = [];
     const bulkAnnexures: { domains: SubInfo[]; label: string; subtitle: string }[] = [];
     let lineIdx = 0;
+
+    // Batch-fetch Zoho item descriptions from cache (skipped entirely when >5 lines to keep quote compact)
+    const showItemDesc = lineGroups.size <= ITEM_DESC_LINE_THRESHOLD;
+    const itemDescMap = new Map<string, string>();
+    if (showItemDesc) {
+      const uniqueItemIds = [...new Set([...lineGroups.values()].map((g) => g[0].sub.zohoItemId))];
+      const cacheRows = await this.prisma.zohoCache.findMany({
+        where: { organizationId: orgId, entityType: 'item', zohoId: { in: uniqueItemIds } },
+        select: { zohoId: true, extra: true },
+      });
+      for (const row of cacheRows) {
+        itemDescMap.set(row.zohoId, ((row.extra as Record<string, unknown>)?.description as string) ?? '');
+      }
+    }
 
     for (const group of lineGroups.values()) {
       lineIdx++;
@@ -563,16 +601,41 @@ export class SubscriptionsService {
       const isBulk = domainCount >= BULK_THRESHOLD;
       const period = `${this.formatDateDMY(first.newStart)} to ${this.formatDateDMY(first.adjEnd)}`;
 
-      let description = `Renewal Period: ${period}`;
-      if (isBulk) {
-        description += `\nRenewal for ${domainCount} domains (Complete domain list attached in Technical Annexure)`;
-        bulkAnnexures.push({
-          domains: group,
-          label: `L${lineIdx}`,
-          subtitle: `${first.sub.zohoItemName ?? 'Item'} · ${period}`,
-        });
+      const cycleLabel = CYCLE_LABEL[first.sub.billingCycle] ?? first.sub.billingCycle;
+      const periodValue = `${cycleLabel} (${this.formatDateDMY(first.newStart)} to ${this.formatDateDMY(first.adjEnd)})`;
+      const periodLine = `Subscription Period: ${periodValue}`;
+      const domainForPlaceholder = domainCount === 1
+        ? group[0].sub.domain.domainName
+        : `${group[0].sub.domain.domainName} +${domainCount - 1} more`;
+      const zohoItemDesc = itemDescMap.get(first.sub.zohoItemId) ?? '';
+      let description: string;
+      if (zohoItemDesc) {
+        const { desc: filled, domainFilled, periodFilled } = this.fillZohoDescPlaceholders(
+          zohoItemDesc,
+          domainForPlaceholder,
+          periodValue,
+        );
+        description = filled;
+        if (domainCount === 1) {
+          if (!domainFilled) description += `\nDomain Name: ${group[0].sub.domain.domainName}`;
+        } else if (isBulk) {
+          description += `\nBulk order for ${domainCount} domains — see attached Technical Annexure.`;
+          bulkAnnexures.push({ domains: group, label: `L${lineIdx}`, subtitle: `${first.sub.zohoItemName ?? 'Item'} · ${period}` });
+        } else {
+          const domainLines = group.map((g) => g.qty !== 1 ? `${g.sub.domain.domainName} (${g.qty})` : g.sub.domain.domainName).join(', ');
+          description += `\nTotal of domain: [${domainCount}]\n${domainLines}`;
+        }
+        if (!periodFilled) description += `\n${periodLine}`;
       } else {
-        description += `\nDomains:\n` + group.map((g) => `${g.sub.domain.domainName} (${g.qty})`).join('\n');
+        if (domainCount === 1) {
+          description = `Domain Name: ${group[0].sub.domain.domainName}\n${periodLine}`;
+        } else if (isBulk) {
+          description = `Bulk order for ${domainCount} domains — see attached Technical Annexure.\n${periodLine}`;
+          bulkAnnexures.push({ domains: group, label: `L${lineIdx}`, subtitle: `${first.sub.zohoItemName ?? 'Item'} · ${period}` });
+        } else {
+          const domainLines = group.map((g) => g.qty !== 1 ? `${g.sub.domain.domainName} (${g.qty})` : g.sub.domain.domainName).join(', ');
+          description = `Total of domain: [${domainCount}]\n${domainLines}\n${periodLine}`;
+        }
       }
 
       const firstDomain = first.sub.domain.domainName;
@@ -1291,6 +1354,39 @@ export class SubscriptionsService {
   // Helper formatting Date to YYYY-MM-DD
   private formatDate(date: Date): string {
     return date.toISOString().split('T')[0];
+  }
+
+  /** Fetch the Zoho item description from the local cache. Returns '' if missing or cache not synced. */
+  private async getZohoItemDesc(orgId: string, itemId: string | null): Promise<string> {
+    if (!itemId) return '';
+    const row = await this.prisma.zohoCache.findUnique({
+      where: { uq_zoho_cache_entity: { organizationId: orgId, entityType: 'item', zohoId: itemId } },
+      select: { extra: true },
+    });
+    return ((row?.extra as Record<string, unknown>)?.description as string) ?? '';
+  }
+
+  /**
+   * Fill blank placeholders in a Zoho item description in-place.
+   * Matches lines like "Domain Name:  " or "Subscription Period:  " (value is whitespace-only).
+   * Returns which placeholders were filled so callers know what NOT to append separately.
+   */
+  private fillZohoDescPlaceholders(
+    zohoDesc: string,
+    domainName: string,
+    periodValue: string,
+  ): { desc: string; domainFilled: boolean; periodFilled: boolean } {
+    let desc = zohoDesc;
+
+    const domainReplaced = desc.replace(/^(Domain Name:)([ \t]*)$/m, `$1 ${domainName}`);
+    const domainFilled = domainReplaced !== desc;
+    desc = domainReplaced;
+
+    const periodReplaced = desc.replace(/^(Subscription Period:)([ \t]*)$/m, `$1 ${periodValue}`);
+    const periodFilled = periodReplaced !== desc;
+    desc = periodReplaced;
+
+    return { desc, domainFilled, periodFilled };
   }
 
   /** Human-readable DD/MM/YYYY (Indian format) for descriptions — NOT for Zoho date fields (those need ISO). */
@@ -2362,7 +2458,7 @@ export class SubscriptionsService {
             rate:        price,
             description: [
               `Domain Name: ${sub.domain.domainName}`,
-              `Subscription Validity: ${CYCLE_LABEL[sub.billingCycle] ?? sub.billingCycle} (${this.formatDateDMY(new Date(dto.startDate))} to ${this.formatDateDMY(new Date(dto.endDate))})`,
+              `Subscription Period: ${CYCLE_LABEL[sub.billingCycle] ?? sub.billingCycle} (${this.formatDateDMY(new Date(dto.startDate))} to ${this.formatDateDMY(new Date(dto.endDate))})`,
             ].join('\n'),
           }],
           notes: dto.notes ?? `Invoice for ${sub.domain.domainName}`,
@@ -2444,7 +2540,7 @@ export class SubscriptionsService {
     const { options: billingOpts } = await this.zoho.getBillingOptions(sub.organizationId);
     const subsPeriodLabel = billingOpts.find((o) => o.value === String(sub.billingCycle))?.label ?? '';
 
-    const [customFields, lineItemCf] = await Promise.all([
+    const [customFields, lineItemCf, zohoItemDesc] = await Promise.all([
       this.zoho.buildCustomFields(sub.organizationId, 'estimates', {
         domain_name:             sub.domain.domainName,
         business_type:           businessLabel,
@@ -2463,6 +2559,8 @@ export class SubscriptionsService {
         end_date:    endIso,
         cost_price:  costStr,
       }),
+      // buildEstimatePayload always produces 1 line item → always show Zoho item description
+      this.getZohoItemDesc(sub.organizationId, sub.zohoItemId),
     ]);
 
     const todayMidnight = new Date();
@@ -2473,6 +2571,21 @@ export class SubscriptionsService {
       ? startDate.toISOString().split('T')[0]
       : fallbackExpiry.toISOString().split('T')[0];
 
+    const periodValue = `${CYCLE_LABEL[sub.billingCycle] ?? sub.billingCycle} (${this.formatDateDMY(startDate)} to ${this.formatDateDMY(endDate)})`;
+    let lineDesc: string;
+    if (zohoItemDesc) {
+      const { desc: filled, domainFilled, periodFilled } = this.fillZohoDescPlaceholders(
+        zohoItemDesc, sub.domain.domainName, periodValue,
+      );
+      lineDesc = [
+        filled,
+        ...(!domainFilled ? [`Domain Name: ${sub.domain.domainName}`] : []),
+        ...(!periodFilled ? [`Subscription Period: ${periodValue}`] : []),
+      ].join('\n');
+    } else {
+      lineDesc = [`Domain Name: ${sub.domain.domainName}`, `Subscription Period: ${periodValue}`].join('\n');
+    }
+
     return {
       customer_id: sub.zohoCustomerId,
       expiry_date: quoteExpiry,
@@ -2480,10 +2593,7 @@ export class SubscriptionsService {
         item_id:  sub.zohoItemId,
         quantity: qty,
         rate:     price,
-        description: [
-          `Domain Name: ${sub.domain.domainName}`,
-          `Subscription Validity: ${CYCLE_LABEL[sub.billingCycle] ?? sub.billingCycle} (${this.formatDateDMY(startDate)} to ${this.formatDateDMY(endDate)})`,
-        ].join('\n'),
+        description: lineDesc,
         ...(lineItemCf.length ? { item_custom_fields: lineItemCf } : {}),
       }],
       custom_fields: customFields,
