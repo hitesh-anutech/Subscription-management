@@ -386,8 +386,15 @@ export class SubscriptionsService {
 
         // Create Estimate in Zoho
         const client = await this.zoho.clientFor(firstSub.organizationId);
-        const estimateRes = await client.post<{ code: number; message: string; estimate: any }>('/estimates', estimatePayload);
-        
+        let estimateRes: { code: number; message: string; estimate: any };
+        try {
+          estimateRes = await client.post<{ code: number; message: string; estimate: any }>('/estimates', estimatePayload);
+        } catch (err: any) {
+          const zohoMsg = err?.response?.data?.message ?? err?.response?.data ?? err.message;
+          this.logger.error(`Zoho /estimates 400: ${JSON.stringify(zohoMsg)} | payload: ${JSON.stringify(estimatePayload)}`);
+          throw new Error(`Zoho Error: ${typeof zohoMsg === 'string' ? zohoMsg : JSON.stringify(zohoMsg)}`);
+        }
+
         if (estimateRes.code !== 0) {
           throw new Error(`Zoho Error: ${estimateRes.message}`);
         }
@@ -476,8 +483,10 @@ export class SubscriptionsService {
         this.logger.log(`Created bulk quote ${estimate.estimate_number} for ${domainCount} domains`);
 
       } catch (err: any) {
-        this.logger.error(`Failed to process group ${key}: ${err.message}`);
-        results.push({ groupKey: key, error: err.message });
+        const zohoDetail = err?.response?.data?.message ?? err?.response?.data ?? null;
+        const errorMsg = zohoDetail ? `${err.message} — Zoho: ${JSON.stringify(zohoDetail)}` : err.message;
+        this.logger.error(`Failed to process group ${key}: ${errorMsg}`);
+        results.push({ groupKey: key, error: errorMsg });
       }
     }
 
@@ -693,7 +702,14 @@ export class SubscriptionsService {
     };
 
     const client = await this.zoho.clientFor(orgId);
-    const estimateRes = await client.post<{ code: number; message: string; estimate: any }>('/estimates', estimatePayload);
+    let estimateRes: { code: number; message: string; estimate: any };
+    try {
+      estimateRes = await client.post<{ code: number; message: string; estimate: any }>('/estimates', estimatePayload);
+    } catch (err: any) {
+      const zohoMsg = err?.response?.data?.message ?? err?.response?.data ?? err.message;
+      this.logger.error(`Zoho /estimates 400: ${JSON.stringify(zohoMsg)} | payload: ${JSON.stringify(estimatePayload)}`);
+      throw new Error(`Zoho Error: ${typeof zohoMsg === 'string' ? zohoMsg : JSON.stringify(zohoMsg)}`);
+    }
     if (estimateRes.code !== 0) {
       throw new Error(`Zoho Error: ${estimateRes.message}`);
     }
