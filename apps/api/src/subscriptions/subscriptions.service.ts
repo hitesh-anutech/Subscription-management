@@ -370,7 +370,7 @@ export class SubscriptionsService {
           customer_id:      firstSub.zohoCustomerId,
           date:             this.formatDate(new Date()),
           expiry_date:      endIso,
-          reference_number: `${firstSub.domain.domainName} (Renewal)`,
+          reference_number: `${domainSummary} (Renewal)`,
           line_items: [
             {
               item_id: firstSub.zohoItemId,
@@ -696,7 +696,7 @@ export class SubscriptionsService {
       customer_id:      custId,
       date:             this.formatDate(new Date()),
       expiry_date:      headerEndIso,
-      reference_number: `${headerSub.domain.domainName} (Renewal)`,
+      reference_number: `${domainSummary} (Renewal)`,
       line_items: lineItems,
       ...(estimateCf.length ? { custom_fields: estimateCf } : {}),
     };
