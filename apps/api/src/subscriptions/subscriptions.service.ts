@@ -2302,11 +2302,17 @@ export class SubscriptionsService {
       const endDateStr       = endDate.toISOString().split('T')[0];
       const effectiveDateStr = effectiveDate.toISOString().split('T')[0];
       const costStr = String(Number(sub.costPrice));
+      const quoteExpiry = new Date();
+      quoteExpiry.setDate(quoteExpiry.getDate() + 3);
+      const quoteExpiryStr = this.formatDate(quoteExpiry);
       const proRataLabel = await this.zoho.getBusinessTypeLabel(sub.organizationId, 'Pro-rata');
+      const { options: billingOpts } = await this.zoho.getBillingOptions(sub.organizationId);
+      const oneTimePeriodLabel = billingOpts.find(o => o.value === 'one_time')?.label ?? 'One-Time';
       const [estimateCf, lineItemCf] = await Promise.all([
         this.zoho.buildCustomFields(sub.organizationId, 'estimates', {
           domain_name:             sub.domain.domainName,
           business_type:           proRataLabel,
+          billing_period:          oneTimePeriodLabel,
           service_expiry:          endDateStr,
           start_date:              effectiveDateStr,
           end_date:                endDateStr,
@@ -2323,7 +2329,8 @@ export class SubscriptionsService {
         }),
       ]);
       const estimatePayload = {
-        customer_id: sub.zohoCustomerId,
+        customer_id:  sub.zohoCustomerId,
+        expiry_date:  quoteExpiryStr,
         line_items: [{
           item_id:     sub.zohoItemId,
           description: `Pro-rata: +${dto.additionalLicenses} additional licenses for ${periodDays} days (${this.formatDateDMY(effectiveDate)} → ${this.formatDateDMY(endDate)})\nDomain Name: ${sub.domain.domainName}`,
