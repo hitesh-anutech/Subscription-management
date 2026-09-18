@@ -165,7 +165,7 @@ export async function sendInvoiceAction(
 export async function generateRenewalQuoteAction(
   subscriptionId: string,
   formData: FormData,
-): Promise<{ success?: boolean; error?: string; zohoEstimateNumber?: string }> {
+): Promise<{ success?: boolean; error?: string; zohoEstimateNumber?: string; zohoWarning?: string }> {
   const overridePrice    = formData.get('override_price') as string | null;
   const overrideQuantity = formData.get('override_quantity') as string | null;
   const notes            = formData.get('notes') as string | null;
@@ -185,9 +185,13 @@ export async function generateRenewalQuoteAction(
 
     if (!res.ok) return { error: await parseApiError(res, 'Renewal quote failed') };
 
-    const data = await res.json() as { zoho_estimate_number?: string };
+    const data = await res.json() as { zoho_estimate_number?: string; zoho_warning?: string };
     revalidatePath(`/dashboard/subscriptions/${subscriptionId}`);
-    return { success: true, zohoEstimateNumber: data.zoho_estimate_number ?? undefined };
+    return {
+      success: true,
+      zohoEstimateNumber: data.zoho_estimate_number ?? undefined,
+      zohoWarning: data.zoho_warning ?? undefined,
+    };
   } catch {
     return { error: 'Server से connect नहीं हो पाया' };
   }

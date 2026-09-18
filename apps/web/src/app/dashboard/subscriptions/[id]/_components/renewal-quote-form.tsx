@@ -27,7 +27,7 @@ export function RenewalQuoteForm({
 }: Props) {
   const boundAction = generateRenewalQuoteAction.bind(null, subscriptionId);
   const [state, action] = useFormState(
-    async (_prev: { success?: boolean; error?: string; zohoEstimateNumber?: string } | null, fd: FormData) =>
+    async (_prev: { success?: boolean; error?: string; zohoEstimateNumber?: string; zohoWarning?: string } | null, fd: FormData) =>
       boundAction(fd),
     null,
   );
@@ -43,12 +43,18 @@ export function RenewalQuoteForm({
           {state.error}
         </div>
       )}
-      {state?.success && (
+      {state?.success && !state.zohoWarning && (
         <div className="px-4 py-3 rounded-lg bg-green-50 border border-green-200 text-green-700 text-sm">
           ✅ Renewal quote Zoho में create हो गई!
           {state.zohoEstimateNumber && (
             <span className="ml-2 font-mono font-semibold">{state.zohoEstimateNumber}</span>
           )}
+        </div>
+      )}
+      {state?.success && state.zohoWarning && (
+        <div className="px-4 py-3 rounded-lg bg-yellow-50 border border-yellow-300 text-yellow-800 text-sm">
+          ⚠️ Renewal record saved, but Zoho quote creation failed.
+          <div className="mt-1 text-xs opacity-80">{state.zohoWarning}</div>
         </div>
       )}
 

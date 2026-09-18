@@ -2225,6 +2225,7 @@ export class SubscriptionsService {
     // Push Estimate to Zoho
     let zohoEstimateId: string | null = null;
     let zohoEstimateNumber: string | null = null;
+    let zohoWarning: string | null = null;
 
     try {
       const zohoClient = await this.zoho.clientFor(sub.organizationId);
@@ -2234,9 +2235,11 @@ export class SubscriptionsService {
       );
       zohoEstimateId     = resp.estimate?.estimate_id ?? null;
       zohoEstimateNumber = resp.estimate?.estimate_number ?? null;
-    } catch (err) {
-      this.logger.warn(`Zoho estimate creation failed for sub ${id}: ${String(err)}`);
-      // Continue — we still log in renewal_history
+    } catch (err: any) {
+      const zohoMsg = err?.response?.data?.message ?? err?.response?.data ?? err?.message ?? String(err);
+      this.logger.error(`Zoho estimate creation failed for sub ${id}: ${JSON.stringify(zohoMsg)}`);
+      zohoWarning = typeof zohoMsg === 'string' ? zohoMsg : JSON.stringify(zohoMsg);
+      // Continue — DB renewal history is still recorded; zohoEstimateId/Number stay null
     }
 
     const today = new Date();
@@ -2270,8 +2273,8 @@ export class SubscriptionsService {
       },
     });
 
-    this.logger.log(`Renewal quote generated for sub ${sub.subscriptionNumber}${zohoEstimateNumber ? ` → Zoho ${zohoEstimateNumber}` : ' (offline)'}`);
-    return { renewal, zoho_estimate_id: zohoEstimateId, zoho_estimate_number: zohoEstimateNumber };
+    this.logger.log(`Renewal quote generated for sub ${sub.subscriptionNumber}${zohoEstimateNumber ? ` → Zoho ${zohoEstimateNumber}` : ' (Zoho failed)' }`);
+    return { renewal, zoho_estimate_id: zohoEstimateId, zoho_estimate_number: zohoEstimateNumber, zoho_warning: zohoWarning };
   }
 
   // ------------------------------------------------------------------
