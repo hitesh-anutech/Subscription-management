@@ -367,9 +367,10 @@ export class SubscriptionsService {
 
         // Build Zoho Estimate Payload
         const estimatePayload = {
-          customer_id: firstSub.zohoCustomerId,
-          date: this.formatDate(new Date()),
-          expiry_date: endIso,
+          customer_id:      firstSub.zohoCustomerId,
+          date:             this.formatDate(new Date()),
+          expiry_date:      endIso,
+          reference_number: `${firstSub.domain.domainName} (Renewal)`,
           line_items: [
             {
               item_id: firstSub.zohoItemId,
@@ -692,9 +693,10 @@ export class SubscriptionsService {
     });
 
     const estimatePayload = {
-      customer_id: custId,
-      date: this.formatDate(new Date()),
-      expiry_date: headerEndIso,
+      customer_id:      custId,
+      date:             this.formatDate(new Date()),
+      expiry_date:      headerEndIso,
+      reference_number: `${headerSub.domain.domainName} (Renewal)`,
       line_items: lineItems,
       ...(estimateCf.length ? { custom_fields: estimateCf } : {}),
     };
@@ -2329,8 +2331,9 @@ export class SubscriptionsService {
         }),
       ]);
       const estimatePayload = {
-        customer_id:  sub.zohoCustomerId,
-        expiry_date:  quoteExpiryStr,
+        customer_id:      sub.zohoCustomerId,
+        expiry_date:      quoteExpiryStr,
+        reference_number: `${sub.domain.domainName} (Pro-rata)`,
         line_items: [{
           item_id:     sub.zohoItemId,
           description: `Pro-rata: +${dto.additionalLicenses} additional licenses for ${periodDays} days (${this.formatDateDMY(effectiveDate)} → ${this.formatDateDMY(endDate)})\nDomain Name: ${sub.domain.domainName}`,
@@ -2608,8 +2611,9 @@ export class SubscriptionsService {
     }
 
     return {
-      customer_id: sub.zohoCustomerId,
-      expiry_date: quoteExpiry,
+      customer_id:      sub.zohoCustomerId,
+      expiry_date:      quoteExpiry,
+      reference_number: `${sub.domain.domainName} (Renewal)`,
       line_items: [{
         item_id:  sub.zohoItemId,
         quantity: qty,
