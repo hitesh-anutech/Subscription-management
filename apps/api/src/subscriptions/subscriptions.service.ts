@@ -346,8 +346,7 @@ export class SubscriptionsService {
         const businessTypeLabel = await this.zoho.getBusinessTypeLabel(firstSub.organizationId, 'Renewal');
         const { options: billingOpts } = await this.zoho.getBillingOptions(firstSub.organizationId);
         const subsPeriodLabel =
-          billingOpts.find(o => o.value === firstSub.billingCycle)?.label
-          || this.billingCycleZohoLabel(firstSub.billingCycle);
+          billingOpts.find(o => o.value === firstSub.billingCycle)?.label ?? '';
         const startIso = this.formatDate(newStartDate);
         const endIso = this.formatDate(adjustedEndDate);
         const costStr = firstSub.costPrice != null ? String(Number(firstSub.costPrice)) : '';
@@ -679,8 +678,7 @@ export class SubscriptionsService {
     const businessTypeLabel = await this.zoho.getBusinessTypeLabel(orgId, 'Renewal');
     const { options: billingOpts } = await this.zoho.getBillingOptions(orgId);
     const headerPeriodLabel =
-      billingOpts.find((o) => o.value === headerSub.billingCycle)?.label
-      || this.billingCycleZohoLabel(headerSub.billingCycle);
+      billingOpts.find((o) => o.value === headerSub.billingCycle)?.label ?? '';
     const domainSummary = renewable.length > 1
       ? `${headerSub.domain.domainName} +${renewable.length - 1} more`
       : headerSub.domain.domainName;
@@ -2328,7 +2326,7 @@ export class SubscriptionsService {
         customer_id: sub.zohoCustomerId,
         line_items: [{
           item_id:     sub.zohoItemId,
-          description: `Pro-rata: +${dto.additionalLicenses} licenses (${effectiveDateStr} → ${endDateStr})`,
+          description: `Pro-rata: +${dto.additionalLicenses} additional licenses for ${periodDays} days (${this.formatDateDMY(effectiveDate)} → ${this.formatDateDMY(endDate)})\nDomain Name: ${sub.domain.domainName}`,
           quantity:    dto.additionalLicenses,
           rate:        Math.round(dailyRate * periodDays * 100) / 100,
           ...(lineItemCf.length ? { item_custom_fields: lineItemCf } : {}),
