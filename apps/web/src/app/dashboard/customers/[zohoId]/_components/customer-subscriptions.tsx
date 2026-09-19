@@ -170,6 +170,8 @@ interface Sub {
   lifecycleStatus: string;
   zohoItemName: string | null;
   quantity: string;
+  subscriptionPrice: string;
+  billingCycle: string;
   startDate: string;
   endDate: string;
   domain: { id: string; domainName: string } | null;
@@ -241,12 +243,30 @@ export default function CustomerSubscriptions({
     ].some((v) => v.toLowerCase().includes(q));
   });
 
-  const newSubQuery = new URLSearchParams({
-    mode: 'manual',
-    org_id: orgId,
-    customer_id: customerId,
-    customer_name: customerName,
-  }).toString();
+  // When exactly 1 subscription is selected, pre-fill domain + dates + billing cycle.
+  const selectedSub = selectedIds.length === 1
+    ? subscriptions.find(s => s.id === selectedIds[0]) ?? null
+    : null;
+
+  const newSubHref = (() => {
+    const p = new URLSearchParams({
+      mode: 'manual',
+      org_id: orgId,
+      customer_id: customerId,
+      customer_name: customerName,
+    });
+    if (selectedSub) {
+      if (selectedSub.domain) {
+        p.set('domain_id', selectedSub.domain.id);
+        p.set('domain_name', selectedSub.domain.domainName);
+      }
+      p.set('start_date', selectedSub.startDate.split('T')[0]);
+      p.set('end_date', selectedSub.endDate.split('T')[0]);
+      p.set('billing_cycle', selectedSub.billingCycle);
+      p.set('cloned_from', selectedSub.subscriptionNumber);
+    }
+    return `/dashboard/subscriptions/new?${p.toString()}`;
+  })();
 
   const toggleOne = (id: string) =>
     setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -347,10 +367,15 @@ export default function CustomerSubscriptions({
         </h2>
         <div className="flex items-center gap-2">
           <Link
-            href={`/dashboard/subscriptions/new?${newSubQuery}`}
-            className="px-3 py-1.5 border border-slate-300 text-slate-700 text-xs font-semibold rounded-lg hover:bg-slate-50"
+            href={newSubHref as any}
+            title={selectedSub ? `${selectedSub.domain?.domainName ?? ''} ke dates/domain pre-fill होंगे — sirf Item aur Qty baro` : ''}
+            className={`px-3 py-1.5 border text-xs font-semibold rounded-lg transition-colors ${
+              selectedSub
+                ? 'border-blue-400 bg-blue-50 text-blue-700 hover:bg-blue-100'
+                : 'border-slate-300 text-slate-700 hover:bg-slate-50'
+            }`}
           >
-            + New Subscription
+            {selectedSub ? `+ New (from ${selectedSub.domain?.domainName ?? selectedSub.subscriptionNumber})` : '+ New Subscription'}
           </Link>
           <button
             onClick={handleDirectRenew}

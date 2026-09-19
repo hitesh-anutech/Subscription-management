@@ -12,6 +12,7 @@ import { getCurrentUser } from '@/lib/auth';
 import { DeleteSubscriptionButton } from '../_components/delete-subscription-button';
 import { HistoryDialog } from '@/components/history-dialog';
 import { OrderHistoryTimeline } from './_components/order-history-timeline';
+import { DomainSubscriptionsPanel } from './_components/domain-subscriptions-panel';
 
 export const dynamic = 'force-dynamic';
 
@@ -365,6 +366,13 @@ export default async function SubscriptionDetailPage({ params }: { params: Promi
               </div>
             )}
           </div>
+
+          {/* Domain sibling subscriptions — client-side fetch, hides when only 1 sub */}
+          <DomainSubscriptionsPanel
+            currentSubId={sub.id}
+            domainId={sub.domain.id}
+            domainName={sub.domain.domainName}
+          />
 
           {/* Order History Timeline — fresh sale + renewals + pro-rata */}
           <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">

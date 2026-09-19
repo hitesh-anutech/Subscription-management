@@ -126,6 +126,7 @@ export default async function SubscriptionsPage({
           <option value="Expired">Expired</option>
           <option value="Pending">Pending</option>
           <option value="Cancelled">Cancelled</option>
+          <option value="Inactive">Inactive</option>
         </select>
         <select name="billing" defaultValue={sp.billing ?? ''}
           className="px-3 py-2.5 rounded-xl border border-slate-200 text-sm bg-white focus:ring-2 focus:ring-blue-500/20 focus:outline-none min-w-[140px]">

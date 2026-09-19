@@ -27,6 +27,7 @@ export class SubscriptionsController {
     @Query('billing_cycle') billingCycle?: string,
     @Query('search')        search?: string,
     @Query('ids')           ids?: string,
+    @Query('domain_id')     domainId?: string,
     @Query('page')          page?: string,
     @Query('limit')         limit?: string,
   ) {
@@ -37,6 +38,7 @@ export class SubscriptionsController {
       expiringDays: expiringDays ? Number(expiringDays) : undefined,
       search,
       ids: ids ? ids.split(',').filter(Boolean) : undefined,
+      domainId,
       page:  page  ? Number(page)  : 1,
       limit: limit ? Number(limit) : 20,
     });

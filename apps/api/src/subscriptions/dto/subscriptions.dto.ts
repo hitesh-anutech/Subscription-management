@@ -65,6 +65,9 @@ export class UpdateSubscriptionDto {
   // Service period from Zoho line items — passed by the mapping UI so history row gets real dates
   @IsOptional() @IsDateString() serviceStartDate?: string;
   @IsOptional() @IsDateString() serviceEndDate?: string;
+
+  // Manual status override (used by the status-change dropdown on the detail page)
+  @IsOptional() @IsEnum(SubscriptionLifecycleStatus) lifecycleStatus?: SubscriptionLifecycleStatus;
 }
 
 export class BulkTransferCustomerDto {

@@ -37,6 +37,12 @@ function NewSubscriptionForm() {
   const queryInvoiceId    = sp.get('invoice_id') ?? '';
   const leadId            = sp.get('lead_id') ?? '';
   const quoteId           = sp.get('quote_id') ?? '';
+  // Pre-fill params (from customer page when a subscription is selected)
+  const queryDomainName   = sp.get('domain_name') ?? '';
+  const queryStartDate    = sp.get('start_date') ?? '';
+  const queryEndDate      = sp.get('end_date') ?? '';
+  const queryBillingCycle = sp.get('billing_cycle') ?? '';
+  const clonedFrom        = sp.get('cloned_from') ?? '';
 
   const items: SubItem[] = parseItems(sp.get('items'));
   const firstItem = items[0];
@@ -48,9 +54,9 @@ function NewSubscriptionForm() {
   const customerLocked = forceManual && !!queryCustomerId;
 
   const today = new Date().toISOString().split('T')[0];
-  const defaultCycle = firstItem?.billingCycle ?? 'annual';
-  const defaultStart = firstItem?.serviceStartDate || today;
-  const defaultEnd   = firstItem?.serviceEndDate || calcEndDate(defaultStart, defaultCycle);
+  const defaultCycle = firstItem?.billingCycle ?? (queryBillingCycle || 'annual');
+  const defaultStart = firstItem?.serviceStartDate || queryStartDate || today;
+  const defaultEnd   = firstItem?.serviceEndDate || queryEndDate || calcEndDate(defaultStart, defaultCycle);
 
   // Wildcard Mode State
   const [orgs, setOrgs] = useState<{id:string; name:string; isActive?: boolean}[]>([]);
@@ -60,7 +66,7 @@ function NewSubscriptionForm() {
   
   const [wildcardItemName, setWildcardItemName] = useState('');
   const [wildcardItemId, setWildcardItemId] = useState('');
-  const [wildcardDomain, setWildcardDomain] = useState('');
+  const [wildcardDomain, setWildcardDomain] = useState(queryDomainName);
   const [wildcardInvoiceId, setWildcardInvoiceId] = useState('');
 
   const [startDate,    setStartDate]    = useState(defaultStart);
@@ -184,12 +190,25 @@ function NewSubscriptionForm() {
           <div className="space-y-4 mb-4 pb-4 border-b border-slate-200">
             {customerLocked ? (
               // Customer-context mode — org + customer come pre-filled from the customer page.
-              <div className="p-3.5 bg-blue-50 border border-blue-200 rounded-lg">
-                <p className="text-xs text-blue-600 font-medium mb-0.5">Customer</p>
-                <p className="text-sm font-semibold text-blue-900">{finalCustomerName || finalCustomerId}</p>
-                <p className="text-xs text-blue-500 mt-1">
-                  नया subscription इसी customer के लिए जुड़ेगा। नीचे item, domain और dates भरें।
-                </p>
+              <div className="space-y-2">
+                <div className="p-3.5 bg-blue-50 border border-blue-200 rounded-lg">
+                  <p className="text-xs text-blue-600 font-medium mb-0.5">Customer</p>
+                  <p className="text-sm font-semibold text-blue-900">{finalCustomerName || finalCustomerId}</p>
+                  <p className="text-xs text-blue-500 mt-1">
+                    नया subscription इसी customer के लिए जुड़ेगा। नीचे item, domain और dates भरें।
+                  </p>
+                </div>
+                {clonedFrom && (
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2">
+                    <span className="text-amber-500 text-sm mt-0.5">📋</span>
+                    <div>
+                      <p className="text-xs font-semibold text-amber-800">Pre-filled from {clonedFrom}</p>
+                      <p className="text-xs text-amber-600 mt-0.5">
+                        Domain{queryDomainName ? ` (${queryDomainName})` : ''}, dates aur billing cycle pre-fill hain — sirf <strong>Item</strong> aur <strong>Qty</strong> bharna hai.
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <>

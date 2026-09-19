@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, Fragment } from 'react';
 import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { api, API_BASE } from '@/lib/api';
@@ -321,6 +321,9 @@ export function SubscriptionsTable({
   const [isPasteModalOpen, setIsPasteModalOpen] = useState(false);
   const [pasteText, setPasteText] = useState('');
   const [recentQuoteWarning, setRecentQuoteWarning] = useState<{ id: string; name: string; quoteNumber: string; daysAgo: number }[]>([]);
+  const [groupByCustomer, setGroupByCustomer] = useState(false);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [pendingQuoteIds, setPendingQuoteIds] = useState<string[] | null>(null);
   const [isImportingCsv, setIsImportingCsv] = useState(false);
   const [importResult, setImportResult] = useState<{
     importLogId?: string;
@@ -383,8 +386,10 @@ export function SubscriptionsTable({
     }
   };
 
-  const doGenerateQuotes = async () => {
+  const doGenerateQuotes = async (explicitIds?: string[]) => {
+    const idsToQuote = explicitIds ?? selectedIds;
     setRecentQuoteWarning([]);
+    setPendingQuoteIds(null);
     setIsQuoting(true);
     try {
       const res = await api.post<{
@@ -395,7 +400,7 @@ export function SubscriptionsTable({
         batchIds: string[];
         errors: string[];
       }>('/subscriptions/bulk-renewal-quote', {
-        subscriptionIds: selectedIds,
+        subscriptionIds: idsToQuote,
       });
 
       // Surface any group-level failures, but still proceed to review the ones that succeeded.
@@ -405,7 +410,7 @@ export function SubscriptionsTable({
           `${res.failedCount} failed:\n- ${res.errors.join('\n- ')}`,
         );
       }
-      setSelectedIds([]);
+      if (!explicitIds) setSelectedIds([]);
 
       // Next step: land on the batch review screen for the just-created quotes
       // (review → bulk-send → track status). Fall back to a refresh if nothing was created.
@@ -534,6 +539,53 @@ export function SubscriptionsTable({
     }
   };
 
+  const toggleGroupCollapse = (key: string) => {
+    setCollapsedGroups(prev => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  };
+
+  const toggleGroupSelection = (groupSubs: Subscription[]) => {
+    const ids = groupSubs.map(s => s.id);
+    const allSelected = ids.every(id => selectedIds.includes(id));
+    if (allSelected) {
+      setSelectedIds(prev => prev.filter(id => !ids.includes(id)));
+    } else {
+      setSelectedIds(prev => [...new Set([...prev, ...ids])]);
+    }
+  };
+
+  const handleGroupQuote = (groupSubs: Subscription[]) => {
+    const groupIds = groupSubs.map(s => s.id);
+    const recent = groupSubs
+      .filter(s => s.lastQuoteNumber && daysSince(s.lastQuoteDate) <= 30)
+      .map(s => ({
+        id: s.id,
+        name: s.zohoCustomerName ?? s.domain.domainName,
+        quoteNumber: s.lastQuoteNumber!,
+        daysAgo: daysSince(s.lastQuoteDate),
+      }));
+
+    if (recent.length > 0) {
+      setPendingQuoteIds(groupIds);
+      setRecentQuoteWarning(recent);
+    } else {
+      void doGenerateQuotes(groupIds);
+    }
+  };
+
+  // Compute customer groups for grouped view (null = flat mode)
+  const customerGroups: Map<string, Subscription[]> | null = groupByCustomer
+    ? subscriptions.reduce((map, sub) => {
+        const key = sub.zohoCustomerName ?? '(No Customer)';
+        if (!map.has(key)) map.set(key, []);
+        map.get(key)!.push(sub);
+        return map;
+      }, new Map<string, Subscription[]>())
+    : null;
+
   const handlePasteSelect = () => {
     const domainsToSelect = pasteText.split(/[\n,]+/).map(d => d.trim().toLowerCase()).filter(Boolean);
     const idsToSelect = subscriptions
@@ -600,6 +652,16 @@ export function SubscriptionsTable({
             className="px-3 py-1.5 bg-white border border-slate-200 text-slate-700 text-xs font-semibold rounded-lg hover:bg-slate-50 shadow-sm"
           >
             Bulk Select by Domains
+          </button>
+          <button
+            onClick={() => { setGroupByCustomer(v => !v); setCollapsedGroups(new Set()); }}
+            className={`px-3 py-1.5 border text-xs font-semibold rounded-lg shadow-sm transition-all ${
+              groupByCustomer
+                ? 'bg-blue-600 text-white border-blue-700 hover:bg-blue-700'
+                : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+            }`}
+          >
+            {groupByCustomer ? '▼ Grouped by Customer' : '⊞ Group by Customer'}
           </button>
           {isAdmin && (
             <button
@@ -703,76 +765,190 @@ export function SubscriptionsTable({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {subscriptions.map((sub) => {
-              const days = daysUntil(sub.endDate);
-              const isUrgent = days <= 30 && days >= 0;
-              const isSelected = selectedIds.includes(sub.id);
-              return (
-                <tr
-                  key={sub.id}
-                  className={`transition-colors ${isSelected ? 'bg-blue-50/60' : 'hover:bg-slate-50/80'}`}
-                >
-                  <td className="px-4 py-2.5">
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={() => toggleOne(sub.id)}
-                      className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                    />
-                  </td>
-                  <td className="px-4 py-2.5">
-                    {sub.zohoCustomerId ? (
-                      <Link
-                        href={`/dashboard/customers/${sub.zohoCustomerId}?org_id=${sub.organization.id}`}
-                        className="font-semibold text-blue-700 hover:underline truncate max-w-48 block text-[13px]"
-                      >
-                        {sub.zohoCustomerName ?? '—'}
-                      </Link>
-                    ) : (
-                      <p className="font-semibold text-slate-800 truncate max-w-48 text-[13px]">
-                        {sub.zohoCustomerName ?? '—'}
-                      </p>
-                    )}
-                    <p className="text-[11px] text-slate-400 mt-0.5">
-                      {sub.domain.domainName} · {sub.organization.name}
-                    </p>
-                  </td>
-                  <td className="px-4 py-2.5">
-                    <TruncatedTooltip text={sub.zohoItemName ?? '—'} className="text-slate-700 text-[13px]" />
-                    <p className="text-[11px] text-slate-400">{sub.billingCycle}</p>
-                  </td>
-                  <td className="px-4 py-2.5 text-right text-slate-700 text-[13px]">{sub.quantity}</td>
-                  <td className="px-4 py-2.5 text-right text-slate-700 font-medium text-[13px]">
-                    {money(Number(sub.subscriptionPrice), sub.currency)}
-                  </td>
-                  <td className="px-4 py-2.5 text-center">
-                    <p className={`text-[13px] ${isUrgent ? 'text-red-600 font-semibold' : 'text-slate-700'}`}>
-                      {fmt(sub.startDate)} <span className="text-slate-400">→</span> {fmt(sub.endDate)}
-                    </p>
-                    {days >= 0 && (
-                      <p className={`text-[11px] mt-0.5 ${isUrgent ? 'text-red-500 font-medium' : 'text-slate-400'}`}>
-                        {days === 0 ? 'Today' : `${days} days`}
-                      </p>
-                    )}
-                  </td>
-                  <td className="px-4 py-2.5 text-center">
-                    <StatusBadge status={sub.lifecycleStatus} endDate={sub.endDate} />
-                  </td>
-                  <td className="px-4 py-2.5 text-center">
-                    <LastQuoteCell sub={sub} />
-                  </td>
-                  <td className="px-4 py-2.5 text-right">
-                    <Link
-                      href={`/dashboard/subscriptions/${sub.id}`}
-                      title="View Details"
-                      className="p-1.5 rounded-lg border border-blue-100 bg-blue-50/50 text-blue-500 hover:bg-blue-100 hover:text-blue-700 transition-all active:scale-95 inline-flex"
+            {customerGroups
+              ? Array.from(customerGroups.entries()).map(([customerKey, groupSubs]) => {
+                  const isCollapsed = collapsedGroups.has(customerKey);
+                  const allSelected = groupSubs.every(s => selectedIds.includes(s.id));
+                  const someSelected = groupSubs.some(s => selectedIds.includes(s.id));
+                  const firstSub = groupSubs[0];
+                  return (
+                    <Fragment key={customerKey}>
+                      {/* Group header row */}
+                      <tr className="bg-slate-100/90 border-y border-slate-200">
+                        <td className="px-4 py-2">
+                          <input
+                            type="checkbox"
+                            checked={allSelected}
+                            ref={el => { if (el) el.indeterminate = someSelected && !allSelected; }}
+                            onChange={() => toggleGroupSelection(groupSubs)}
+                            className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                          />
+                        </td>
+                        <td colSpan={7} className="px-4 py-2">
+                          <div className="flex items-center gap-3">
+                            <button
+                              onClick={() => toggleGroupCollapse(customerKey)}
+                              className="text-slate-400 hover:text-slate-700 text-[11px] font-bold w-4 text-center shrink-0"
+                            >
+                              {isCollapsed ? '▶' : '▼'}
+                            </button>
+                            {firstSub.zohoCustomerId ? (
+                              <Link
+                                href={`/dashboard/customers/${firstSub.zohoCustomerId}?org_id=${firstSub.organization.id}`}
+                                className="font-bold text-blue-700 hover:underline text-[13px]"
+                              >
+                                {customerKey}
+                              </Link>
+                            ) : (
+                              <span className="font-bold text-slate-800 text-[13px]">{customerKey}</span>
+                            )}
+                            <span className="text-[11px] text-slate-500 bg-slate-200 px-2 py-0.5 rounded-full shrink-0">
+                              {groupSubs.length} subscription{groupSubs.length !== 1 ? 's' : ''}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-2 text-right">
+                          <button
+                            onClick={() => handleGroupQuote(groupSubs)}
+                            disabled={isQuoting}
+                            className="px-3 py-1 bg-blue-600 text-white text-[11px] font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-50 whitespace-nowrap"
+                          >
+                            {isQuoting ? 'Generating…' : 'Generate Quote'}
+                          </button>
+                        </td>
+                      </tr>
+                      {/* Group subscription rows */}
+                      {!isCollapsed && groupSubs.map((sub) => {
+                        const days = daysUntil(sub.endDate);
+                        const isUrgent = days <= 30 && days >= 0;
+                        const isSelected = selectedIds.includes(sub.id);
+                        return (
+                          <tr
+                            key={sub.id}
+                            className={`transition-colors ${isSelected ? 'bg-blue-50/60' : 'hover:bg-slate-50/80'}`}
+                          >
+                            <td className="px-4 py-2.5 pl-9">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => toggleOne(sub.id)}
+                                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                              />
+                            </td>
+                            <td className="px-4 py-2.5">
+                              <p className="text-slate-500 text-[11px] font-mono">{sub.domain.domainName}</p>
+                              <p className="text-[11px] text-slate-400 mt-0.5">{sub.organization.name}</p>
+                            </td>
+                            <td className="px-4 py-2.5">
+                              <TruncatedTooltip text={sub.zohoItemName ?? '—'} className="text-slate-700 text-[13px]" />
+                              <p className="text-[11px] text-slate-400">{sub.billingCycle}</p>
+                            </td>
+                            <td className="px-4 py-2.5 text-right text-slate-700 text-[13px]">{sub.quantity}</td>
+                            <td className="px-4 py-2.5 text-right text-slate-700 font-medium text-[13px]">
+                              {money(Number(sub.subscriptionPrice), sub.currency)}
+                            </td>
+                            <td className="px-4 py-2.5 text-center">
+                              <p className={`text-[13px] ${isUrgent ? 'text-red-600 font-semibold' : 'text-slate-700'}`}>
+                                {fmt(sub.startDate)} <span className="text-slate-400">→</span> {fmt(sub.endDate)}
+                              </p>
+                              {days >= 0 && (
+                                <p className={`text-[11px] mt-0.5 ${isUrgent ? 'text-red-500 font-medium' : 'text-slate-400'}`}>
+                                  {days === 0 ? 'Today' : `${days} days`}
+                                </p>
+                              )}
+                            </td>
+                            <td className="px-4 py-2.5 text-center">
+                              <StatusBadge status={sub.lifecycleStatus} endDate={sub.endDate} />
+                            </td>
+                            <td className="px-4 py-2.5 text-center">
+                              <LastQuoteCell sub={sub} />
+                            </td>
+                            <td className="px-4 py-2.5 text-right">
+                              <Link
+                                href={`/dashboard/subscriptions/${sub.id}`}
+                                title="View Details"
+                                className="p-1.5 rounded-lg border border-blue-100 bg-blue-50/50 text-blue-500 hover:bg-blue-100 hover:text-blue-700 transition-all active:scale-95 inline-flex"
+                              >
+                                <Eye className="w-4 h-4" />
+                              </Link>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </Fragment>
+                  );
+                })
+              : subscriptions.map((sub) => {
+                  const days = daysUntil(sub.endDate);
+                  const isUrgent = days <= 30 && days >= 0;
+                  const isSelected = selectedIds.includes(sub.id);
+                  return (
+                    <tr
+                      key={sub.id}
+                      className={`transition-colors ${isSelected ? 'bg-blue-50/60' : 'hover:bg-slate-50/80'}`}
                     >
-                      <Eye className="w-4 h-4" />
-                    </Link>
-                  </td>
-                </tr>
-              );
-            })}
+                      <td className="px-4 py-2.5">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleOne(sub.id)}
+                          className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        />
+                      </td>
+                      <td className="px-4 py-2.5">
+                        {sub.zohoCustomerId ? (
+                          <Link
+                            href={`/dashboard/customers/${sub.zohoCustomerId}?org_id=${sub.organization.id}`}
+                            className="font-semibold text-blue-700 hover:underline truncate max-w-48 block text-[13px]"
+                          >
+                            {sub.zohoCustomerName ?? '—'}
+                          </Link>
+                        ) : (
+                          <p className="font-semibold text-slate-800 truncate max-w-48 text-[13px]">
+                            {sub.zohoCustomerName ?? '—'}
+                          </p>
+                        )}
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          {sub.domain.domainName} · {sub.organization.name}
+                        </p>
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <TruncatedTooltip text={sub.zohoItemName ?? '—'} className="text-slate-700 text-[13px]" />
+                        <p className="text-[11px] text-slate-400">{sub.billingCycle}</p>
+                      </td>
+                      <td className="px-4 py-2.5 text-right text-slate-700 text-[13px]">{sub.quantity}</td>
+                      <td className="px-4 py-2.5 text-right text-slate-700 font-medium text-[13px]">
+                        {money(Number(sub.subscriptionPrice), sub.currency)}
+                      </td>
+                      <td className="px-4 py-2.5 text-center">
+                        <p className={`text-[13px] ${isUrgent ? 'text-red-600 font-semibold' : 'text-slate-700'}`}>
+                          {fmt(sub.startDate)} <span className="text-slate-400">→</span> {fmt(sub.endDate)}
+                        </p>
+                        {days >= 0 && (
+                          <p className={`text-[11px] mt-0.5 ${isUrgent ? 'text-red-500 font-medium' : 'text-slate-400'}`}>
+                            {days === 0 ? 'Today' : `${days} days`}
+                          </p>
+                        )}
+                      </td>
+                      <td className="px-4 py-2.5 text-center">
+                        <StatusBadge status={sub.lifecycleStatus} endDate={sub.endDate} />
+                      </td>
+                      <td className="px-4 py-2.5 text-center">
+                        <LastQuoteCell sub={sub} />
+                      </td>
+                      <td className="px-4 py-2.5 text-right">
+                        <Link
+                          href={`/dashboard/subscriptions/${sub.id}`}
+                          title="View Details"
+                          className="p-1.5 rounded-lg border border-blue-100 bg-blue-50/50 text-blue-500 hover:bg-blue-100 hover:text-blue-700 transition-all active:scale-95 inline-flex"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </Link>
+                      </td>
+                    </tr>
+                  );
+                })
+            }
           </tbody>
         </table>
       </div>
@@ -806,16 +982,16 @@ export function SubscriptionsTable({
             </div>
             <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex gap-3">
               <button
-                onClick={() => setRecentQuoteWarning([])}
+                onClick={() => { setRecentQuoteWarning([]); setPendingQuoteIds(null); }}
                 className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-white transition-colors"
               >
                 Cancel
               </button>
               <button
-                onClick={doGenerateQuotes}
+                onClick={() => void doGenerateQuotes(pendingQuoteIds ?? undefined)}
                 className="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold transition-colors"
               >
-                Generate Anyway ({selectedIds.length})
+                Generate Anyway ({pendingQuoteIds?.length ?? selectedIds.length})
               </button>
             </div>
           </div>

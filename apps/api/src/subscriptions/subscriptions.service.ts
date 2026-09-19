@@ -51,15 +51,17 @@ export class SubscriptionsService {
     expiringDays?: number;
     search?: string;
     ids?: string[];
+    domainId?: string;
     page?: number;
     limit?: number;
   }) {
-    const { orgId, status, billingCycle, expiringDays, search, ids, page = 1, limit = 20 } = params;
+    const { orgId, status, billingCycle, expiringDays, search, ids, domainId, page = 1, limit = 20 } = params;
     const skip = (page - 1) * limit;
 
     const where: Record<string, unknown> = {};
     if (orgId)        where.organizationId = orgId;
     if (billingCycle) where.billingCycle = billingCycle;
+    if (domainId)     where.domainId = domainId;
     Object.assign(where, this.buildLifecycleWhere(status, expiringDays));
     if (search) {
       where.OR = [
@@ -1342,8 +1344,12 @@ export class SubscriptionsService {
         result.endDate = { gt: soonCutoff };
         result.lifecycleStatus = { notIn: ['Cancelled', 'Inactive'] };
       } else {
+        // Cancelled, Pending, Inactive — use stored field directly
         result.lifecycleStatus = status;
       }
+    } else {
+      // No explicit filter — hide Inactive by default
+      result.lifecycleStatus = { not: 'Inactive' };
     }
 
     if (expiringDays) {
@@ -1944,6 +1950,7 @@ export class SubscriptionsService {
         ...(dto.nextRenewalDate   !== undefined && { nextRenewalDate: new Date(dto.nextRenewalDate) }),
         ...(dto.autoRenew         !== undefined && { autoRenew: dto.autoRenew }),
         ...(dto.notes             !== undefined && { notes: dto.notes }),
+        ...(dto.lifecycleStatus   !== undefined && { lifecycleStatus: dto.lifecycleStatus }),
         ...(dto.currency          !== undefined && { currency: dto.currency.toUpperCase() }),
         ...(dto.exchangeRate      !== undefined && { exchangeRate: dto.exchangeRate }),
         ...(dto.zohoItemId        !== undefined && { zohoItemId: dto.zohoItemId }),
