@@ -2340,13 +2340,30 @@ export class SubscriptionsService {
           cost_price:  costStr,
         }),
       ]);
+      const PRORATA_CURRENCY_PREFIX: Record<string, string> = {
+        INR: 'Rs ', USD: '$', EUR: '€', GBP: '£', AED: 'AED ', SGD: 'S$', AUD: 'A$', CAD: 'C$',
+      };
+      const PRORATA_CYCLE_LABEL: Record<string, string> = {
+        monthly: 'month', quarterly: 'quarter', half_yearly: '6 months',
+        annual: 'year', biennial: '2 years', triennial: '3 years', one_time: 'one-time',
+      };
+      const currencyCode = (sub.currency ?? 'INR').toUpperCase();
+      const currencyPrefix = PRORATA_CURRENCY_PREFIX[currencyCode] ?? `${currencyCode} `;
+      const cycleLabel = PRORATA_CYCLE_LABEL[sub.billingCycle] ?? sub.billingCycle.replace(/_/g, ' ');
+      const licenseWord = dto.additionalLicenses !== 1 ? 'licenses' : 'license';
+      const prorataDescription = [
+        `${dto.additionalLicenses} Additional ${licenseWord} on pro-rata basis.@${currencyPrefix}${Number(sub.subscriptionPrice).toLocaleString('en-IN')}/user/${cycleLabel}`,
+        `Domain Name: ${sub.domain.domainName}`,
+        `Subscription Period: ${periodDays} Days (${this.formatDateDMY(effectiveDate)} - ${this.formatDateDMY(endDate)})`,
+      ].join('\n');
+
       const estimatePayload = {
         customer_id:      sub.zohoCustomerId,
         expiry_date:      quoteExpiryStr,
         reference_number: `${sub.domain.domainName} (Pro-rata)`,
         line_items: [{
           item_id:     sub.zohoItemId,
-          description: `Pro-rata: +${dto.additionalLicenses} additional licenses for ${periodDays} days (${this.formatDateDMY(effectiveDate)} → ${this.formatDateDMY(endDate)})\nDomain Name: ${sub.domain.domainName}`,
+          description: prorataDescription,
           quantity:    dto.additionalLicenses,
           rate:        Math.round(dailyRate * periodDays * 100) / 100,
           ...(lineItemCf.length ? { item_custom_fields: lineItemCf } : {}),
