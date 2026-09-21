@@ -84,7 +84,7 @@ export class SubscriptionsService {
         include: {
           organization: { select: { id: true, name: true } },
           domain:       { select: { id: true, domainName: true } },
-          _count:       { select: { renewalHistory: true } },
+          _count:       { select: { renewalHistory: true, comments: true } },
           renewalHistory: {
             orderBy: { createdAt: 'desc' },
             take: 15,
@@ -131,6 +131,9 @@ export class SubscriptionsService {
           orderBy: { createdAt: 'desc' },
           take: 10,
         },
+        comments: {
+          orderBy: { createdAt: 'asc' },
+        },
       },
     });
     if (!sub) throw new NotFoundException(`Subscription ${id} not found`);
@@ -145,6 +148,21 @@ export class SubscriptionsService {
     }
 
     return sub;
+  }
+
+  // ------------------------------------------------------------------
+  // Comments
+  // ------------------------------------------------------------------
+  async addComment(subscriptionId: string, text: string, userEmail: string) {
+    await this.findOne(subscriptionId); // 404 guard
+    return this.prisma.subscriptionComment.create({
+      data: { subscriptionId, text, createdByEmail: userEmail },
+    });
+  }
+
+  async deleteComment(commentId: string) {
+    await this.prisma.subscriptionComment.delete({ where: { id: commentId } });
+    return { deleted: true };
   }
 
   // ------------------------------------------------------------------

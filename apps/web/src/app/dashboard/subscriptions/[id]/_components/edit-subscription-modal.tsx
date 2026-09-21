@@ -48,6 +48,7 @@ interface Props {
   autoRenew: boolean;
   lastQuoteNumber: string | null;
   lastInvoiceNumber: string | null;
+  iconOnly?: boolean;
 }
 
 function toDateInput(iso: string) {
@@ -68,6 +69,7 @@ function SaveBtn() {
 }
 
 export function EditSubscriptionButton(props: Props) {
+  const { iconOnly = false } = props;
   const [open, setOpen]         = useState(false);
   const [currency, setCurrency] = useState(props.currency || 'INR');
   const [selectedItem, setSelectedItem] = useState({ id: props.itemId, name: props.itemName });
@@ -91,12 +93,25 @@ export function EditSubscriptionButton(props: Props) {
 
   return (
     <>
-      <button
-        onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors"
-      >
-        ✏️ Edit
-      </button>
+      {iconOnly ? (
+        <button
+          onClick={() => setOpen(true)}
+          title="Edit Subscription"
+          className="w-7 h-7 rounded-lg border border-slate-200 bg-slate-50 text-slate-500 hover:bg-green-50 hover:border-green-200 hover:text-green-600 flex items-center justify-center transition-all"
+        >
+          <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+          </svg>
+        </button>
+      ) : (
+        <button
+          onClick={() => setOpen(true)}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors"
+        >
+          ✏️ Edit
+        </button>
+      )}
 
       {open && (
         <div

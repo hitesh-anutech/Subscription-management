@@ -14,19 +14,25 @@ interface Subscription {
   subscriptionNumber: string;
   zohoCustomerId: string | null;
   zohoCustomerName: string | null;
+  zohoItemId: string;
   zohoItemName: string | null;
   quantity: string;
   subscriptionPrice: string;
+  currency?: string;
+  exchangeRate: string | null;
   billingCycle: string;
   startDate: string;
   endDate: string;
+  autoRenew: boolean;
   lifecycleStatus: string;
   processStatus: string;
   lastQuoteNumber: string | null;
   lastQuoteDate: string | null;
+  nextRenewalPrice: string | null;
+  lastInvoiceNumber: string | null;
   organization: { id: string; name: string };
   domain: { id: string; domainName: string };
-  _count: { renewalHistory: number };
+  _count: { renewalHistory: number; comments: number };
   renewalHistory: {
     id: string; quoteNumber: string | null; quoteDate: string | null;
     quantity: string | null; sellingPrice: string | null; subtotalAmount: string | null;
@@ -74,52 +80,28 @@ export default async function SubscriptionsPage({
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Subscriptions</h1>
-          <p className="text-xs font-semibold text-slate-400 mt-1 bg-slate-100 border border-slate-200/50 inline-block px-2.5 py-1 rounded-lg">
-            🔄 {total} total across all orgs
-          </p>
+    <div className="space-y-3">
+      {/* Compact single-row header: title + filters + actions */}
+      <form method="GET" className="flex items-center gap-2 bg-white border border-slate-200/80 px-3 py-2 rounded-2xl shadow-sm flex-wrap">
+        {/* Title + count */}
+        <div className="flex items-center gap-2 shrink-0 mr-1">
+          <h1 className="text-base font-extrabold text-slate-900 tracking-tight">Subscriptions</h1>
+          <span className="text-[11px] font-semibold text-slate-400 bg-slate-100 border border-slate-200/60 px-2 py-0.5 rounded-lg whitespace-nowrap">
+            {total} total
+          </span>
         </div>
-        <div className="flex items-center gap-2.5 flex-wrap">
-          <Link
-            href="/dashboard/subscriptions/renewal-batches"
-            className="px-4 py-2.5 border border-purple-200 text-purple-600 text-xs font-bold rounded-xl bg-purple-50/30 hover:bg-purple-50 transition-all shadow-sm"
-          >
-            📦 Batch History
-          </Link>
-          {isAdmin && (
-            <>
-              <Link
-                href="/dashboard/subscriptions/import"
-                className="px-4 py-2.5 border border-slate-200 text-slate-600 text-xs font-bold rounded-xl bg-white hover:bg-slate-50 transition-all shadow-sm"
-              >
-                ↓ Import from Zoho
-              </Link>
-              <Link
-                href="/dashboard/subscriptions/import-csv"
-                className="px-4 py-2.5 border border-slate-200 text-slate-600 text-xs font-bold rounded-xl bg-white hover:bg-slate-50 transition-all shadow-sm"
-              >
-                ↥ Import CSV
-              </Link>
-            </>
-          )}
-          <Link
-            href="/dashboard/subscriptions/new"
-            className="px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold rounded-xl shadow-md shadow-blue-500/10 active:scale-[0.98] transition-all"
-          >
-            + New Subscription
-          </Link>
-        </div>
-      </div>
 
-      {/* Filter bar */}
-      <form method="GET" className="flex flex-wrap gap-2 bg-white border border-slate-200/80 p-2.5 rounded-2xl shadow-sm">
-        <SubscriptionSearchInput defaultValue={sp.search} />
+        {/* Divider */}
+        <div className="w-px h-5 bg-slate-200 shrink-0" />
+
+        {/* Search */}
+        <div className="flex-1 min-w-[180px]">
+          <SubscriptionSearchInput defaultValue={sp.search} />
+        </div>
+
+        {/* Filters */}
         <select name="status" defaultValue={sp.status ?? ''}
-          className="px-3 py-2.5 rounded-xl border border-slate-200 text-sm bg-white focus:ring-2 focus:ring-blue-500/20 focus:outline-none min-w-[140px]">
+          className="px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs bg-white focus:ring-2 focus:ring-blue-500/20 focus:outline-none">
           <option value="">All Statuses</option>
           <option value="Active">Active</option>
           <option value="Expiring_Soon">Expiring Soon</option>
@@ -129,37 +111,69 @@ export default async function SubscriptionsPage({
           <option value="Inactive">Inactive</option>
         </select>
         <select name="billing" defaultValue={sp.billing ?? ''}
-          className="px-3 py-2.5 rounded-xl border border-slate-200 text-sm bg-white focus:ring-2 focus:ring-blue-500/20 focus:outline-none min-w-[140px]">
+          className="px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs bg-white focus:ring-2 focus:ring-blue-500/20 focus:outline-none">
           <option value="">All Periods</option>
           <option value="monthly">Monthly</option>
           <option value="quarterly">Quarterly</option>
           <option value="half_yearly">Half-Yearly</option>
-          <option value="annual">Annual (1 Year)</option>
-          <option value="biennial">Biennial (2 Year)</option>
-          <option value="triennial">Triennial (3 Year)</option>
+          <option value="annual">Annual</option>
+          <option value="biennial">Biennial</option>
+          <option value="triennial">Triennial</option>
           <option value="one_time">One-Time</option>
         </select>
         <select name="expiring" defaultValue={sp.expiring ?? ''}
-          className="px-3 py-2.5 rounded-xl border border-slate-200 text-sm bg-white focus:ring-2 focus:ring-blue-500/20 focus:outline-none min-w-[140px]">
+          className="px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs bg-white focus:ring-2 focus:ring-blue-500/20 focus:outline-none">
           <option value="">Any Expiry</option>
-          <option value="7">Expiring in 7 days</option>
-          <option value="15">Expiring in 15 days</option>
-          <option value="30">Expiring in 30 days</option>
-          <option value="60">Expiring in 60 days</option>
+          <option value="7">7 days</option>
+          <option value="15">15 days</option>
+          <option value="30">30 days</option>
+          <option value="60">60 days</option>
         </select>
-        {/* preserve current page size when re-filtering */}
         <input type="hidden" name="limit" value={String(limit)} />
         <input type="hidden" name="page" value="1" />
         <button type="submit"
-          className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold rounded-xl shadow-md shadow-blue-500/10 active:scale-[0.98] transition-all">
+          className="px-3 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold rounded-lg shadow-sm active:scale-[0.98] transition-all shrink-0">
           Filter
         </button>
         {(sp.status || sp.expiring || sp.billing || sp.search) && (
           <Link href="/dashboard/subscriptions"
-            className="px-4 py-2.5 border border-slate-200 text-slate-600 text-xs font-bold rounded-xl hover:bg-slate-50 transition-all">
+            className="px-2.5 py-1.5 border border-slate-200 text-slate-500 text-xs font-semibold rounded-lg hover:bg-slate-50 transition-all shrink-0">
             Clear
           </Link>
         )}
+
+        {/* Divider */}
+        <div className="w-px h-5 bg-slate-200 shrink-0" />
+
+        {/* Action buttons */}
+        <Link
+          href="/dashboard/subscriptions/renewal-batches"
+          className="px-2.5 py-1.5 border border-purple-200 text-purple-600 text-xs font-bold rounded-lg bg-purple-50/30 hover:bg-purple-50 transition-all shrink-0 whitespace-nowrap"
+        >
+          📦 Batches
+        </Link>
+        {isAdmin && (
+          <>
+            <Link
+              href="/dashboard/subscriptions/import"
+              className="px-2.5 py-1.5 border border-slate-200 text-slate-600 text-xs font-bold rounded-lg bg-white hover:bg-slate-50 transition-all shrink-0 whitespace-nowrap"
+            >
+              ↓ Zoho Import
+            </Link>
+            <Link
+              href="/dashboard/subscriptions/import-csv"
+              className="px-2.5 py-1.5 border border-slate-200 text-slate-600 text-xs font-bold rounded-lg bg-white hover:bg-slate-50 transition-all shrink-0 whitespace-nowrap"
+            >
+              ↥ CSV Import
+            </Link>
+          </>
+        )}
+        <Link
+          href="/dashboard/subscriptions/new"
+          className="px-3 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold rounded-lg shadow-sm active:scale-[0.98] transition-all shrink-0 whitespace-nowrap"
+        >
+          + New
+        </Link>
       </form>
 
       {/* Batch filter banner */}

@@ -5,9 +5,9 @@ import { useState, useRef, useEffect, Fragment } from 'react';
 import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { api, API_BASE } from '@/lib/api';
-import { Eye, Trash2 } from 'lucide-react';
+import { Trash2 } from 'lucide-react';
 import { deleteMultipleSubscriptionsAction } from '../actions';
-import { TruncatedTooltip } from '@/components/truncated-tooltip';
+import { EditSubscriptionButton } from '../[id]/_components/edit-subscription-modal';
 
 interface RenewalHistoryLine {
   id: string;
@@ -29,26 +29,72 @@ interface RenewalHistoryLine {
   domain: { domainName: string };
 }
 
+interface Comment {
+  id: string;
+  text: string;
+  createdByEmail: string;
+  createdAt: string;
+}
+
 interface Subscription {
   id: string;
   subscriptionNumber: string;
   zohoCustomerId: string | null;
   zohoCustomerName: string | null;
+  zohoItemId: string;
   zohoItemName: string | null;
   quantity: string;
   subscriptionPrice: string;
   currency?: string;
+  exchangeRate: string | null;
   billingCycle: string;
   startDate: string;
   endDate: string;
+  autoRenew: boolean;
   lifecycleStatus: string;
   processStatus: string;
   lastQuoteNumber: string | null;
   lastQuoteDate: string | null;
+  nextRenewalPrice: string | null;
+  lastInvoiceNumber: string | null;
   organization: { id: string; name: string };
   domain: { id: string; domainName: string };
-  _count: { renewalHistory: number };
+  _count: { renewalHistory: number; comments: number };
   renewalHistory: RenewalHistoryLine[];
+}
+
+const CYCLE_BADGE_CLASS: Record<string, string> = {
+  monthly:     'bg-blue-100 text-blue-700',
+  quarterly:   'bg-violet-100 text-violet-700',
+  half_yearly: 'bg-amber-100 text-amber-700',
+  annual:      'bg-green-100 text-green-700',
+  biennial:    'bg-teal-100 text-teal-700',
+  triennial:   'bg-indigo-100 text-indigo-700',
+  one_time:    'bg-slate-100 text-slate-500',
+};
+
+const CYCLE_LABEL: Record<string, string> = {
+  monthly: 'Monthly', quarterly: 'Quarterly', half_yearly: 'Half-Yearly',
+  annual: 'Annual', biennial: 'Biennial', triennial: 'Triennial', one_time: 'One-Time',
+};
+
+function cycleLabel(cycle: string) {
+  return CYCLE_LABEL[cycle] ?? cycle.replace(/_/g, ' ');
+}
+
+function fmtDateTime(iso: string) {
+  return new Date(iso).toLocaleString('en-IN', {
+    day: '2-digit', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', hour12: true,
+  });
+}
+
+function initials(email: string) {
+  const name = email.split('@')[0];
+  const parts = name.split(/[._-]/);
+  return parts.length >= 2
+    ? (parts[0][0] + parts[1][0]).toUpperCase()
+    : name.slice(0, 2).toUpperCase();
 }
 
 const CURRENCY_SYMBOL: Record<string, string> = {
@@ -295,6 +341,189 @@ function LastQuoteCell({ sub }: { sub: Subscription }) {
   );
 }
 
+const COMMENTS_POPUP_W = 340;
+
+function RowCommentsButton({ subscriptionId, commentCount: initialCount }: { subscriptionId: string; commentCount: number }) {
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const [open, setOpen] = useState(false);
+  const [popupPos, setPopupPos] = useState<{ x: number; y: number } | null>(null);
+  const [mounted, setMounted] = useState(false);
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [count, setCount] = useState(initialCount);
+  const [loaded, setLoaded] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [text, setText] = useState('');
+  const [posting, setPosting] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => { setMounted(true); }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open]);
+
+  const openPopup = async () => {
+    if (!btnRef.current) return;
+    const rect = btnRef.current.getBoundingClientRect();
+    const x = Math.max(8, Math.min(rect.right - COMMENTS_POPUP_W, window.innerWidth - COMMENTS_POPUP_W - 8));
+    const y = rect.bottom + 6;
+    setPopupPos({ x, y });
+    setOpen(true);
+    if (!loaded) {
+      setLoading(true);
+      try {
+        const res = await fetch(`${API_BASE}/subscriptions/${subscriptionId}`, { credentials: 'include' });
+        const data = await res.json() as { comments?: Comment[] };
+        setComments(data.comments ?? []);
+        setCount(data.comments?.length ?? initialCount);
+        setLoaded(true);
+      } catch { /* keep empty */ } finally {
+        setLoading(false);
+      }
+    }
+  };
+
+  const handlePost = async () => {
+    const trimmed = text.trim();
+    if (!trimmed || posting) return;
+    setPosting(true);
+    try {
+      const res = await fetch(`${API_BASE}/subscriptions/${subscriptionId}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ text: trimmed }),
+      });
+      const data = await res.json() as Comment;
+      if (!res.ok) throw new Error('Failed');
+      setComments(prev => [...prev, data]);
+      setCount(prev => prev + 1);
+      setText('');
+      textareaRef.current?.focus();
+    } catch { /* ignore */ } finally {
+      setPosting(false);
+    }
+  };
+
+  const handleDelete = async (commentId: string) => {
+    setDeletingId(commentId);
+    try {
+      await fetch(`${API_BASE}/subscriptions/${subscriptionId}/comments/${commentId}`, {
+        method: 'DELETE', credentials: 'include',
+      });
+      setComments(prev => prev.filter(c => c.id !== commentId));
+      setCount(prev => Math.max(0, prev - 1));
+    } catch { /* ignore */ } finally {
+      setDeletingId(null);
+    }
+  };
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        onClick={() => (open ? setOpen(false) : void openPopup())}
+        title={`Comments (${count})`}
+        className={`relative w-7 h-7 rounded-lg border flex items-center justify-center transition-all ${
+          open
+            ? 'bg-indigo-50 border-indigo-200 text-indigo-600'
+            : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-indigo-50 hover:border-indigo-200 hover:text-indigo-600'
+        }`}
+      >
+        <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+        </svg>
+        {count > 0 && (
+          <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-indigo-600 text-white text-[8px] font-bold flex items-center justify-center border border-white leading-none">
+            {count > 9 ? '9+' : count}
+          </span>
+        )}
+      </button>
+
+      {open && popupPos && mounted && createPortal(
+        <>
+          <div className="fixed inset-0 z-[9998]" onClick={() => setOpen(false)} />
+          <div
+            style={{ position: 'fixed', left: popupPos.x, top: popupPos.y, width: COMMENTS_POPUP_W, zIndex: 9999 }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden">
+              <div className="px-3 py-2.5 border-b border-slate-100 flex items-center justify-between">
+                <span className="text-[11px] font-bold text-slate-700 flex items-center gap-1.5">
+                  <svg width="12" height="12" fill="none" stroke="#4F46E5" strokeWidth={2} viewBox="0 0 24 24">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                  </svg>
+                  Comments {count > 0 && <span className="text-slate-400 font-normal">({count})</span>}
+                </span>
+                <button onClick={() => setOpen(false)} className="text-slate-300 hover:text-slate-500 text-sm leading-none">✕</button>
+              </div>
+
+              <div className="max-h-56 overflow-y-auto">
+                {loading && (
+                  <div className="px-3 py-4 text-center">
+                    <span className="inline-block w-4 h-4 border-2 border-slate-200 border-t-indigo-500 rounded-full animate-spin" />
+                  </div>
+                )}
+                {!loading && comments.length === 0 && (
+                  <p className="px-3 py-4 text-center text-[11px] text-slate-400">No comments yet.</p>
+                )}
+                {!loading && comments.map(c => (
+                  <div key={c.id} className="px-3 py-2 border-b border-slate-50 flex gap-2 group last:border-0">
+                    <div className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 text-[9px] font-bold flex items-center justify-center shrink-0 mt-0.5">
+                      {initials(c.createdByEmail)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="text-[10px] font-semibold text-slate-700">{c.createdByEmail.split('@')[0]}</span>
+                        <span className="text-[9px] text-slate-400">{fmtDateTime(c.createdAt)}</span>
+                      </div>
+                      <p className="text-[11px] text-slate-600 mt-0.5 whitespace-pre-wrap break-words">{c.text}</p>
+                    </div>
+                    <button
+                      onClick={() => void handleDelete(c.id)}
+                      disabled={deletingId === c.id}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-300 hover:text-red-500 disabled:opacity-30 shrink-0 mt-0.5"
+                    >
+                      {deletingId === c.id
+                        ? <span className="inline-block w-3 h-3 border border-current border-t-transparent rounded-full animate-spin" />
+                        : <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                      }
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              <div className="px-3 py-2.5 border-t border-slate-100 flex gap-2">
+                <textarea
+                  ref={textareaRef}
+                  value={text}
+                  onChange={e => setText(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) void handlePost(); }}
+                  placeholder="Comment likhao… (Ctrl+Enter)"
+                  rows={2}
+                  className="flex-1 px-2.5 py-1.5 text-[11px] border border-slate-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-300 placeholder:text-slate-300"
+                />
+                <button
+                  onClick={() => void handlePost()}
+                  disabled={!text.trim() || posting}
+                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-400 text-white text-[11px] font-bold rounded-lg self-end transition-colors"
+                >
+                  {posting ? <span className="inline-block w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : 'Post'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>,
+        document.body,
+      )}
+    </>
+  );
+}
+
 function StatusBadge({ status, endDate }: { status: string; endDate: string }) {
   const eff = effectiveStatus(status, endDate);
   const label = eff.replace('_', ' ');
@@ -324,6 +553,7 @@ export function SubscriptionsTable({
   const [groupByCustomer, setGroupByCustomer] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [pendingQuoteIds, setPendingQuoteIds] = useState<string[] | null>(null);
+  const [pendingCombined, setPendingCombined] = useState(false);
   const [isImportingCsv, setIsImportingCsv] = useState(false);
   const [importResult, setImportResult] = useState<{
     importLogId?: string;
@@ -421,6 +651,32 @@ export function SubscriptionsTable({
       }
     } catch (err: any) {
       alert(`Error: ${err.message}`);
+    } finally {
+      setIsQuoting(false);
+    }
+  };
+
+  const doGenerateCombinedQuote = async (groupIds: string[]) => {
+    setIsQuoting(true);
+    try {
+      const res = await api.post<{
+        renewalBatchId: string;
+        zohoEstimateNumber: string | null;
+        lineCount: number;
+        domainCount: number;
+        skippedCount: number;
+      }>('/subscriptions/combined-renewal-quote', { subscriptionIds: groupIds });
+
+      if (res.skippedCount > 0) {
+        alert(`${res.skippedCount} subscriptions skipped (not renewable status).`);
+      }
+      if (res.renewalBatchId) {
+        router.push(`/dashboard/subscriptions/renewal-batches?ids=${res.renewalBatchId}`);
+      } else {
+        router.refresh();
+      }
+    } catch (err: any) {
+      alert(`Combined Quote Error: ${err.message}`);
     } finally {
       setIsQuoting(false);
     }
@@ -573,6 +829,26 @@ export function SubscriptionsTable({
       setRecentQuoteWarning(recent);
     } else {
       void doGenerateQuotes(groupIds);
+    }
+  };
+
+  const handleGroupCombinedQuote = (groupSubs: Subscription[]) => {
+    const groupIds = groupSubs.map(s => s.id);
+    const recent = groupSubs
+      .filter(s => s.lastQuoteNumber && daysSince(s.lastQuoteDate) <= 30)
+      .map(s => ({
+        id: s.id,
+        name: s.zohoCustomerName ?? s.domain.domainName,
+        quoteNumber: s.lastQuoteNumber!,
+        daysAgo: daysSince(s.lastQuoteDate),
+      }));
+
+    if (recent.length > 0) {
+      setPendingQuoteIds(groupIds);
+      setPendingCombined(true);
+      setRecentQuoteWarning(recent);
+    } else {
+      void doGenerateCombinedQuote(groupIds);
     }
   };
 
@@ -755,13 +1031,11 @@ export function SubscriptionsTable({
                 />
               </th>
               <th className="text-left px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">Customer / Domain</th>
-              <th className="text-left px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">Item</th>
-              <th className="text-right px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">Qty</th>
-              <th className="text-right px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">Price</th>
-              <th className="text-center px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">Subs. Period</th>
+              <th className="text-left px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide min-w-[280px]">Item</th>
+              <th className="text-right px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">Qty / Price</th>
               <th className="text-center px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">Status</th>
               <th className="text-center px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">Last Quote</th>
-              <th className="px-4 py-3 w-10"></th>
+              <th className="px-4 py-3 w-20"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -784,7 +1058,7 @@ export function SubscriptionsTable({
                             className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                           />
                         </td>
-                        <td colSpan={7} className="px-4 py-2">
+                        <td colSpan={5} className="px-4 py-2">
                           <div className="flex items-center gap-3">
                             <button
                               onClick={() => toggleGroupCollapse(customerKey)}
@@ -808,13 +1082,25 @@ export function SubscriptionsTable({
                           </div>
                         </td>
                         <td className="px-4 py-2 text-right">
-                          <button
-                            onClick={() => handleGroupQuote(groupSubs)}
-                            disabled={isQuoting}
-                            className="px-3 py-1 bg-blue-600 text-white text-[11px] font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-50 whitespace-nowrap"
-                          >
-                            {isQuoting ? 'Generating…' : 'Generate Quote'}
-                          </button>
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={() => handleGroupQuote(groupSubs)}
+                              disabled={isQuoting}
+                              className="px-3 py-1 bg-blue-600 text-white text-[11px] font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-50 whitespace-nowrap"
+                            >
+                              {isQuoting ? 'Generating…' : 'Generate Quote'}
+                            </button>
+                            {groupSubs.length > 1 && (
+                              <button
+                                onClick={() => handleGroupCombinedQuote(groupSubs)}
+                                disabled={isQuoting}
+                                title="One combined estimate — all subscriptions as separate line items (different renewal dates allowed)"
+                                className="px-3 py-1 bg-violet-600 text-white text-[11px] font-semibold rounded-lg hover:bg-violet-700 disabled:opacity-50 whitespace-nowrap"
+                              >
+                                🔗 Combined
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                       {/* Group subscription rows */}
@@ -825,9 +1111,10 @@ export function SubscriptionsTable({
                         return (
                           <tr
                             key={sub.id}
-                            className={`transition-colors ${isSelected ? 'bg-blue-50/60' : 'hover:bg-slate-50/80'}`}
+                            onClick={() => router.push(`/dashboard/subscriptions/${sub.id}`)}
+                            className={`transition-colors cursor-pointer ${isSelected ? 'bg-blue-50/60' : 'hover:bg-slate-50/80'}`}
                           >
-                            <td className="px-4 py-2.5 pl-9">
+                            <td className="px-4 py-2.5 pl-9" onClick={e => e.stopPropagation()}>
                               <input
                                 type="checkbox"
                                 checked={isSelected}
@@ -839,23 +1126,19 @@ export function SubscriptionsTable({
                               <p className="text-slate-500 text-[11px] font-mono">{sub.domain.domainName}</p>
                               <p className="text-[11px] text-slate-400 mt-0.5">{sub.organization.name}</p>
                             </td>
-                            <td className="px-4 py-2.5">
-                              <TruncatedTooltip text={sub.zohoItemName ?? '—'} className="text-slate-700 text-[13px]" />
-                              <p className="text-[11px] text-slate-400">{sub.billingCycle}</p>
-                            </td>
-                            <td className="px-4 py-2.5 text-right text-slate-700 text-[13px]">{sub.quantity}</td>
-                            <td className="px-4 py-2.5 text-right text-slate-700 font-medium text-[13px]">
-                              {money(Number(sub.subscriptionPrice), sub.currency)}
-                            </td>
-                            <td className="px-4 py-2.5 text-center">
-                              <p className={`text-[13px] ${isUrgent ? 'text-red-600 font-semibold' : 'text-slate-700'}`}>
-                                {fmt(sub.startDate)} <span className="text-slate-400">→</span> {fmt(sub.endDate)}
+                            <td className="px-4 py-2.5 min-w-[280px]">
+                              <p className="text-slate-700 text-[13px] leading-snug">{sub.zohoItemName ?? '—'}</p>
+                              <p className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1 flex-wrap">
+                                {fmt(sub.startDate)} <span className="text-slate-300">→</span> {fmt(sub.endDate)}
+                                <span className="text-slate-300">·</span>
+                                <span className={`text-[9px] font-bold px-1.5 py-px rounded ${CYCLE_BADGE_CLASS[sub.billingCycle] ?? 'bg-slate-100 text-slate-500'}`}>
+                                  {cycleLabel(sub.billingCycle)}
+                                </span>
                               </p>
-                              {days >= 0 && (
-                                <p className={`text-[11px] mt-0.5 ${isUrgent ? 'text-red-500 font-medium' : 'text-slate-400'}`}>
-                                  {days === 0 ? 'Today' : `${days} days`}
-                                </p>
-                              )}
+                            </td>
+                            <td className="px-4 py-2.5 text-right">
+                              <p className="text-[13px] text-slate-700 font-medium">{sub.quantity}</p>
+                              <p className="text-[11px] text-slate-400">{money(Number(sub.subscriptionPrice), sub.currency)}</p>
                             </td>
                             <td className="px-4 py-2.5 text-center">
                               <StatusBadge status={sub.lifecycleStatus} endDate={sub.endDate} />
@@ -863,14 +1146,28 @@ export function SubscriptionsTable({
                             <td className="px-4 py-2.5 text-center">
                               <LastQuoteCell sub={sub} />
                             </td>
-                            <td className="px-4 py-2.5 text-right">
-                              <Link
-                                href={`/dashboard/subscriptions/${sub.id}`}
-                                title="View Details"
-                                className="p-1.5 rounded-lg border border-blue-100 bg-blue-50/50 text-blue-500 hover:bg-blue-100 hover:text-blue-700 transition-all active:scale-95 inline-flex"
-                              >
-                                <Eye className="w-4 h-4" />
-                              </Link>
+                            <td className="px-4 py-2.5" onClick={e => e.stopPropagation()}>
+                              <div className="flex items-center justify-end gap-1.5">
+                                <RowCommentsButton subscriptionId={sub.id} commentCount={sub._count.comments} />
+                                <EditSubscriptionButton
+                                  iconOnly
+                                  subscriptionId={sub.id}
+                                  itemId={sub.zohoItemId}
+                                  itemName={sub.zohoItemName ?? ''}
+                                  orgId={sub.organization.id}
+                                  quantity={Number(sub.quantity)}
+                                  currency={sub.currency ?? 'INR'}
+                                  exchangeRate={Number(sub.exchangeRate ?? 1)}
+                                  billingCycle={sub.billingCycle}
+                                  price={Number(sub.subscriptionPrice)}
+                                  nextRenewalPrice={sub.nextRenewalPrice !== null ? Number(sub.nextRenewalPrice) : null}
+                                  startDate={sub.startDate}
+                                  endDate={sub.endDate}
+                                  autoRenew={sub.autoRenew}
+                                  lastQuoteNumber={sub.lastQuoteNumber}
+                                  lastInvoiceNumber={sub.lastInvoiceNumber}
+                                />
+                              </div>
                             </td>
                           </tr>
                         );
@@ -885,9 +1182,10 @@ export function SubscriptionsTable({
                   return (
                     <tr
                       key={sub.id}
-                      className={`transition-colors ${isSelected ? 'bg-blue-50/60' : 'hover:bg-slate-50/80'}`}
+                      onClick={() => router.push(`/dashboard/subscriptions/${sub.id}`)}
+                      className={`transition-colors cursor-pointer ${isSelected ? 'bg-blue-50/60' : 'hover:bg-slate-50/80'}`}
                     >
-                      <td className="px-4 py-2.5">
+                      <td className="px-4 py-2.5" onClick={e => e.stopPropagation()}>
                         <input
                           type="checkbox"
                           checked={isSelected}
@@ -895,7 +1193,7 @@ export function SubscriptionsTable({
                           className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                         />
                       </td>
-                      <td className="px-4 py-2.5">
+                      <td className="px-4 py-2.5" onClick={e => e.stopPropagation()}>
                         {sub.zohoCustomerId ? (
                           <Link
                             href={`/dashboard/customers/${sub.zohoCustomerId}?org_id=${sub.organization.id}`}
@@ -912,23 +1210,19 @@ export function SubscriptionsTable({
                           {sub.domain.domainName} · {sub.organization.name}
                         </p>
                       </td>
-                      <td className="px-4 py-2.5">
-                        <TruncatedTooltip text={sub.zohoItemName ?? '—'} className="text-slate-700 text-[13px]" />
-                        <p className="text-[11px] text-slate-400">{sub.billingCycle}</p>
-                      </td>
-                      <td className="px-4 py-2.5 text-right text-slate-700 text-[13px]">{sub.quantity}</td>
-                      <td className="px-4 py-2.5 text-right text-slate-700 font-medium text-[13px]">
-                        {money(Number(sub.subscriptionPrice), sub.currency)}
-                      </td>
-                      <td className="px-4 py-2.5 text-center">
-                        <p className={`text-[13px] ${isUrgent ? 'text-red-600 font-semibold' : 'text-slate-700'}`}>
-                          {fmt(sub.startDate)} <span className="text-slate-400">→</span> {fmt(sub.endDate)}
+                      <td className="px-4 py-2.5 min-w-[280px]">
+                        <p className="text-slate-700 text-[13px] leading-snug">{sub.zohoItemName ?? '—'}</p>
+                        <p className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1 flex-wrap">
+                          {fmt(sub.startDate)} <span className="text-slate-300">→</span> {fmt(sub.endDate)}
+                          <span className="text-slate-300">·</span>
+                          <span className={`text-[9px] font-bold px-1.5 py-px rounded ${CYCLE_BADGE_CLASS[sub.billingCycle] ?? 'bg-slate-100 text-slate-500'}`}>
+                            {cycleLabel(sub.billingCycle)}
+                          </span>
                         </p>
-                        {days >= 0 && (
-                          <p className={`text-[11px] mt-0.5 ${isUrgent ? 'text-red-500 font-medium' : 'text-slate-400'}`}>
-                            {days === 0 ? 'Today' : `${days} days`}
-                          </p>
-                        )}
+                      </td>
+                      <td className="px-4 py-2.5 text-right">
+                        <p className="text-[13px] text-slate-700 font-medium">{sub.quantity}</p>
+                        <p className="text-[11px] text-slate-400">{money(Number(sub.subscriptionPrice), sub.currency)}</p>
                       </td>
                       <td className="px-4 py-2.5 text-center">
                         <StatusBadge status={sub.lifecycleStatus} endDate={sub.endDate} />
@@ -936,14 +1230,28 @@ export function SubscriptionsTable({
                       <td className="px-4 py-2.5 text-center">
                         <LastQuoteCell sub={sub} />
                       </td>
-                      <td className="px-4 py-2.5 text-right">
-                        <Link
-                          href={`/dashboard/subscriptions/${sub.id}`}
-                          title="View Details"
-                          className="p-1.5 rounded-lg border border-blue-100 bg-blue-50/50 text-blue-500 hover:bg-blue-100 hover:text-blue-700 transition-all active:scale-95 inline-flex"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </Link>
+                      <td className="px-4 py-2.5" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-end gap-1.5">
+                          <RowCommentsButton subscriptionId={sub.id} commentCount={sub._count.comments} />
+                          <EditSubscriptionButton
+                            iconOnly
+                            subscriptionId={sub.id}
+                            itemId={sub.zohoItemId}
+                            itemName={sub.zohoItemName ?? ''}
+                            orgId={sub.organization.id}
+                            quantity={Number(sub.quantity)}
+                            currency={sub.currency ?? 'INR'}
+                            exchangeRate={Number(sub.exchangeRate ?? 1)}
+                            billingCycle={sub.billingCycle}
+                            price={Number(sub.subscriptionPrice)}
+                            nextRenewalPrice={sub.nextRenewalPrice !== null ? Number(sub.nextRenewalPrice) : null}
+                            startDate={sub.startDate}
+                            endDate={sub.endDate}
+                            autoRenew={sub.autoRenew}
+                            lastQuoteNumber={sub.lastQuoteNumber}
+                            lastInvoiceNumber={sub.lastInvoiceNumber}
+                          />
+                        </div>
                       </td>
                     </tr>
                   );
@@ -982,13 +1290,21 @@ export function SubscriptionsTable({
             </div>
             <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex gap-3">
               <button
-                onClick={() => { setRecentQuoteWarning([]); setPendingQuoteIds(null); }}
+                onClick={() => { setRecentQuoteWarning([]); setPendingQuoteIds(null); setPendingCombined(false); }}
                 className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-white transition-colors"
               >
                 Cancel
               </button>
               <button
-                onClick={() => void doGenerateQuotes(pendingQuoteIds ?? undefined)}
+                onClick={() => {
+                  const ids = pendingQuoteIds ?? undefined;
+                  const isCombined = pendingCombined;
+                  setRecentQuoteWarning([]);
+                  setPendingQuoteIds(null);
+                  setPendingCombined(false);
+                  if (isCombined && ids) void doGenerateCombinedQuote(ids);
+                  else void doGenerateQuotes(ids);
+                }}
                 className="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold transition-colors"
               >
                 Generate Anyway ({pendingQuoteIds?.length ?? selectedIds.length})

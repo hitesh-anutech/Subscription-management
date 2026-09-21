@@ -43,7 +43,7 @@ export function CustomersBrowser({ isAdmin = false }: { isAdmin?: boolean }) {
   const [orgs, setOrgs] = useState<Org[]>([]);
   const [orgId, setOrgId] = useState('');
   const [search, setSearch] = useState('');
-  const [query, setQuery] = useState('');            // committed search term
+  const [query, setQuery] = useState('');
 
   const [catalog, setCatalog] = useState<CustomizableColumn[]>([]);
   const [selectedCols, setSelectedCols] = useState<string[]>(DEFAULT_COLUMNS);
@@ -62,13 +62,33 @@ export function CustomersBrowser({ isAdmin = false }: { isAdmin?: boolean }) {
 
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchMounted = useRef(false);
+  const orgsRef = useRef<Org[]>([]);
 
   const [importing, startImport] = useTransition();
   const [importMsg, setImportMsg] = useState<string | null>(null);
 
+  // dropdown open states
+  const [viewsOpen, setViewsOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const viewsRef = useRef<HTMLDivElement>(null);
+  const importRef = useRef<HTMLDivElement>(null);
+
   const colByKey = useMemo(() => new Map(catalog.map(c => [c.key, c])), [catalog]);
 
-  // ---- initial load: orgs + saved views ----
+  // keep orgsRef in sync
+  useEffect(() => { orgsRef.current = orgs; }, [orgs]);
+
+  // close dropdowns on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (viewsRef.current && !viewsRef.current.contains(e.target as Node)) setViewsOpen(false);
+      if (importRef.current && !importRef.current.contains(e.target as Node)) setImportOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  // ---- initial load ----
   useEffect(() => {
     fetch(`${API_BASE}/organizations`, { credentials: 'include' })
       .then(r => r.json())
@@ -84,7 +104,7 @@ export function CustomersBrowser({ isAdmin = false }: { isAdmin?: boolean }) {
       .catch(() => {});
   }, []);
 
-  // ---- load column catalog whenever org changes ----
+  // ---- load columns ----
   const loadColumns = useCallback(async (oid: string) => {
     if (!oid) return;
     try {
@@ -94,19 +114,35 @@ export function CustomersBrowser({ isAdmin = false }: { isAdmin?: boolean }) {
     } catch { setCatalog([]); }
   }, []);
 
-  // ---- fetch rows ----
+  // ---- fetch rows — supports orgId='' (all companies) ----
   const fetchRows = useCallback(async (oid: string, q: string, goToPage: number, pp: number) => {
-    if (!oid) return;
     setLoading(true);
-    const p = new URLSearchParams({ q, page: String(goToPage), limit: String(pp) });
     try {
-      const res = await fetch(`${API_BASE}/organizations/${oid}/customer-rows?${p}`, { credentials: 'include' });
-      if (!res.ok) { setMsg('❌ Customers load nahi ho paaye'); setRows([]); setTotal(0); return; }
-      const d = await res.json() as { rows: CustomerRow[]; total: number; page: number };
-      setRows(d.rows ?? []);
-      setTotal(d.total ?? 0);
-      setPage(d.page ?? goToPage);
-      setMsg((d.rows?.length ?? 0) === 0 ? 'Koi customer nahi mila.' : null);
+      if (oid) {
+        // single org
+        const p = new URLSearchParams({ q, page: String(goToPage), limit: String(pp) });
+        const res = await fetch(`${API_BASE}/organizations/${oid}/customer-rows?${p}`, { credentials: 'include' });
+        if (!res.ok) { setMsg('❌ Customers load nahi ho paaye'); setRows([]); setTotal(0); return; }
+        const d = await res.json() as { rows: CustomerRow[]; total: number; page: number };
+        setRows(d.rows ?? []); setTotal(d.total ?? 0); setPage(d.page ?? goToPage);
+        setMsg((d.rows?.length ?? 0) === 0 ? 'Koi customer nahi mila.' : null);
+      } else {
+        // all companies — parallel fetch, client-side paginate
+        const allOrgs = orgsRef.current;
+        if (allOrgs.length === 0) { setRows([]); setTotal(0); setLoading(false); return; }
+        const allParams = new URLSearchParams({ q, page: '1', limit: '1000' });
+        const results = await Promise.all(
+          allOrgs.map(o =>
+            fetch(`${API_BASE}/organizations/${o.id}/customer-rows?${allParams}`, { credentials: 'include' })
+              .then(r => r.ok ? r.json() as Promise<{ rows: CustomerRow[] }> : { rows: [] as CustomerRow[] })
+              .catch(() => ({ rows: [] as CustomerRow[] })),
+          ),
+        );
+        const all = results.flatMap(d => d.rows ?? []);
+        const start = (goToPage - 1) * pp;
+        setRows(all.slice(start, start + pp)); setTotal(all.length); setPage(goToPage);
+        setMsg(all.length === 0 ? 'Koi customer nahi mila.' : null);
+      }
     } catch {
       setMsg('Server se connect nahi ho paaya');
       setRows([]); setTotal(0);
@@ -115,15 +151,14 @@ export function CustomersBrowser({ isAdmin = false }: { isAdmin?: boolean }) {
     }
   }, []);
 
-  // org change → reload catalog + rows (reset to page 1)
+  // org change → reload catalog + rows
   useEffect(() => {
-    if (!orgId) return;
-    void loadColumns(orgId);
+    void loadColumns(orgId || orgsRef.current[0]?.id || '');
     void fetchRows(orgId, query, 1, perPage);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId]);
 
-  // live search — debounce 350 ms; skip on initial mount to avoid double-fetch with org effect
+  // live search debounce
   useEffect(() => {
     if (!searchMounted.current) { searchMounted.current = true; return; }
     if (searchTimer.current) clearTimeout(searchTimer.current);
@@ -143,17 +178,18 @@ export function CustomersBrowser({ isAdmin = false }: { isAdmin?: boolean }) {
   const runImport = () => {
     setImportMsg(null);
     startImport(async () => {
-      const res = await syncCustomersAction(orgId);
+      const targetOrg = orgId || orgsRef.current[0]?.id || '';
+      const res = await syncCustomersAction(targetOrg);
       if (res.error) setImportMsg(`❌ ${res.error}`);
       else {
         setImportMsg(`✅ Synced ${res.synced ?? 0}`);
-        await loadColumns(orgId);
+        await loadColumns(targetOrg);
         await fetchRows(orgId, query, 1, perPage);
       }
     });
   };
 
-  // ---- client-side sort (current page) ----
+  // client-side sort
   const sortedRows = useMemo(() => {
     if (!sort) return rows;
     const col = colByKey.get(sort.key);
@@ -174,8 +210,9 @@ export function CustomersBrowser({ isAdmin = false }: { isAdmin?: boolean }) {
     const raw = row.fields[key];
     if (key === 'displayName') {
       const name = String(raw || row.zohoId);
+      const linkOrgId = orgId || orgsRef.current[0]?.id || '';
       return (
-        <Link href={`/dashboard/customers/${row.zohoId}?org_id=${orgId}`} className="font-medium text-blue-700 hover:underline">
+        <Link href={`/dashboard/customers/${row.zohoId}?org_id=${linkOrgId}`} className="font-medium text-blue-700 hover:underline">
           {name}
         </Link>
       );
@@ -193,7 +230,7 @@ export function CustomersBrowser({ isAdmin = false }: { isAdmin?: boolean }) {
     return <span title={v}>{v}</span>;
   };
 
-  // ---- CSV export (current page, selected columns) ----
+  // CSV export
   const exportCsv = () => {
     const cols = selectedCols.map(k => colByKey.get(k)).filter((c): c is CustomizableColumn => !!c);
     const header = cols.map(c => `"${c.label}"`).join(',');
@@ -210,7 +247,7 @@ export function CustomersBrowser({ isAdmin = false }: { isAdmin?: boolean }) {
     URL.revokeObjectURL(url);
   };
 
-  // ---- saved views ----
+  // saved views
   const applyView = (view: SavedView) => {
     setActiveViewId(view.id);
     setSelectedCols(view.columns.length ? view.columns : DEFAULT_COLUMNS);
@@ -218,7 +255,7 @@ export function CustomersBrowser({ isAdmin = false }: { isAdmin?: boolean }) {
     const q = view.search ?? '';
     setSearch(q); setQuery(q);
     if (view.orgId && orgs.some(o => o.id === view.orgId) && view.orgId !== orgId) {
-      setOrgId(view.orgId);   // org change effect will re-fetch
+      setOrgId(view.orgId);
     } else {
       void fetchRows(orgId, q, 1, perPage);
     }
@@ -255,94 +292,165 @@ export function CustomersBrowser({ isAdmin = false }: { isAdmin?: boolean }) {
 
   const shownCols = selectedCols.map(k => colByKey.get(k)).filter((c): c is CustomizableColumn => !!c);
   const totalPages = Math.max(1, Math.ceil(total / perPage));
+  const activeView = views.find(v => v.id === activeViewId);
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Customers</h1>
-          <p className="text-xs font-semibold text-slate-400 mt-1 bg-slate-100 border border-slate-200/50 inline-block px-2.5 py-1 rounded-lg">
-            👥 {total} customer{total === 1 ? '' : 's'} · Zoho Books master
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          {importMsg && <span className="text-xs font-semibold text-slate-500 bg-slate-50 px-2 py-1 rounded border border-slate-200">{importMsg}</span>}
-          {isAdmin && orgId && (
-            <button type="button" onClick={runImport} disabled={importing}
-              className="px-4 py-2.5 border border-slate-200 hover:bg-slate-50 disabled:opacity-50 text-xs font-bold rounded-xl transition-all shadow-sm bg-white">
-              {importing ? '⏳ Importing…' : '🔄 Import from Zoho'}
-            </button>
-          )}
-        </div>
-      </div>
+    <div className="space-y-3">
+      {/* ── Compact single-row header ── */}
+      <div className="flex items-center gap-2 bg-white border border-slate-200/80 px-3 py-2 rounded-2xl shadow-sm flex-wrap">
 
-      {/* Org pills (Modern Pill-Shape design) */}
-      {orgs.length > 0 && (
-        <div className="flex gap-2 flex-wrap bg-white/50 border border-slate-200/50 p-2 rounded-2xl max-w-max">
-          {orgs.map((o) => (
-            <button key={o.id} type="button" onClick={() => { setActiveViewId(''); setOrgId(o.id); }}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 ${
-                o.id === orgId ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/10 border-transparent' : 'bg-white hover:bg-slate-100 text-slate-600 border border-slate-200/60'
-              }`}>
-              {o.name}
-            </button>
-          ))}
+        {/* Title + count */}
+        <div className="flex items-center gap-2 shrink-0 mr-1">
+          <h1 className="text-base font-extrabold text-slate-900 tracking-tight">Customers</h1>
+          <span className="text-[11px] font-semibold text-slate-400 bg-slate-100 border border-slate-200/60 px-2 py-0.5 rounded-lg whitespace-nowrap">
+            {total} total
+          </span>
         </div>
-      )}
 
-      {/* Search */}
-      <div className="flex gap-2 bg-white border border-slate-200/80 p-2.5 rounded-2xl shadow-sm">
-        <input value={search} onChange={e => setSearch(e.target.value)}
+        <div className="w-px h-5 bg-slate-200 shrink-0" />
+
+        {/* Search */}
+        <input
+          value={search}
+          onChange={e => setSearch(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter') runSearch(); }}
           placeholder="Search name, email, GSTIN…"
-          className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-slate-50/50" />
-        <button type="button" onClick={runSearch} className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-xs font-bold rounded-xl shadow-md shadow-blue-500/10 hover:from-blue-500 hover:to-indigo-500 active:scale-[0.98] transition-all">Search</button>
-        {query && (
-          <button type="button" onClick={clearSearch} className="px-4 py-2.5 border border-slate-200 text-slate-600 text-xs font-bold rounded-xl hover:bg-slate-50 transition-all">Clear</button>
-        )}
-      </div>
+          className="flex-1 min-w-[180px] px-3 py-1.5 rounded-lg border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-slate-50/50"
+        />
 
-      {/* Saved views + column/export toolbar */}
-      <div className="flex flex-wrap items-center gap-3 bg-white/40 border border-slate-200/50 p-3 rounded-2xl">
-        <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Views:</span>
-        <select value={activeViewId}
-          onChange={e => { const v = views.find(x => x.id === e.target.value); if (v) applyView(v); else setActiveViewId(''); }}
-          className="px-2.5 py-2 border border-slate-200 rounded-xl text-xs font-bold bg-white min-w-40 focus:outline-none">
-          <option value="">— Select a view —</option>
-          {views.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+        {/* Company dropdown */}
+        <select
+          value={orgId}
+          onChange={e => { setActiveViewId(''); setOrgId(e.target.value); }}
+          className="px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs bg-white focus:ring-2 focus:ring-blue-500/20 focus:outline-none"
+        >
+          <option value="">All Companies</option>
+          {orgs.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
         </select>
-        {activeViewId && (
-          <button type="button" onClick={() => deleteView(activeViewId)}
-            className="px-2.5 py-2 text-xs font-bold text-red-500 hover:text-red-700 transition-colors">Delete View</button>
-        )}
-        <button type="button" onClick={saveCurrentView}
-          className="px-3.5 py-2 border border-slate-200 text-slate-700 text-xs font-bold rounded-xl bg-white hover:bg-slate-50 transition-all shadow-sm">
-          💾 Save current view
-        </button>
 
-        <div className="ml-auto flex items-center gap-2">
-          <button type="button" onClick={() => setShowColsModal(true)}
-            className="px-3.5 py-2 border border-slate-200 text-slate-700 text-xs font-bold rounded-xl bg-white hover:bg-slate-50 transition-all shadow-sm">
-            ⚙ Customize Columns ({shownCols.length})
+        {/* Search + Clear */}
+        <button type="button" onClick={runSearch}
+          className="px-3 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-xs font-bold rounded-lg shadow-sm active:scale-[0.98] transition-all shrink-0">
+          Search
+        </button>
+        {query && (
+          <button type="button" onClick={clearSearch}
+            className="px-2.5 py-1.5 border border-slate-200 text-slate-500 text-xs font-semibold rounded-lg hover:bg-slate-50 transition-all shrink-0">
+            Clear
           </button>
-          {isAdmin && (
-            <button type="button" onClick={exportCsv} disabled={rows.length === 0}
-              className="px-4 py-2 bg-gradient-to-r from-slate-800 to-slate-900 hover:from-slate-700 hover:to-slate-800 disabled:opacity-40 text-white text-xs font-bold rounded-xl transition-all shadow-sm">
-              ⬇ Export CSV
-            </button>
+        )}
+
+        <div className="w-px h-5 bg-slate-200 shrink-0" />
+
+        {/* Views dropdown */}
+        <div ref={viewsRef} className="relative shrink-0">
+          <button
+            type="button"
+            onClick={() => { setViewsOpen(v => !v); setImportOpen(false); }}
+            className={`px-2.5 py-1.5 border text-xs font-bold rounded-lg transition-all whitespace-nowrap flex items-center gap-1 ${
+              viewsOpen || activeViewId
+                ? 'bg-indigo-50 border-indigo-200 text-indigo-700'
+                : 'border-slate-200 text-slate-700 bg-white hover:bg-slate-50'
+            }`}
+          >
+            ⚙ Views{activeView ? ` · ${activeView.name}` : ''} <span className="text-[10px] opacity-60">▾</span>
+          </button>
+          {viewsOpen && (
+            <div className="absolute top-full left-0 mt-1 w-56 bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-hidden py-1">
+              {views.length === 0 && (
+                <p className="px-4 py-2 text-[11px] text-slate-400 italic">No saved views yet.</p>
+              )}
+              {views.map(v => (
+                <button
+                  key={v.id}
+                  type="button"
+                  onClick={() => { applyView(v); setViewsOpen(false); }}
+                  className={`w-full text-left px-4 py-2 text-xs font-semibold transition-colors flex items-center justify-between gap-2 ${
+                    activeViewId === v.id ? 'bg-indigo-50 text-indigo-700' : 'text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  <span className="truncate">{v.name}</span>
+                  {activeViewId === v.id && <span className="shrink-0 text-indigo-500">✓</span>}
+                </button>
+              ))}
+              {views.length > 0 && <div className="border-t border-slate-100 my-1" />}
+              <button
+                type="button"
+                onClick={() => { void saveCurrentView(); setViewsOpen(false); }}
+                className="w-full text-left px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+              >
+                💾 Save current view
+              </button>
+              {activeViewId && (
+                <button
+                  type="button"
+                  onClick={() => { void deleteView(activeViewId); setViewsOpen(false); }}
+                  className="w-full text-left px-4 py-2 text-xs font-semibold text-red-500 hover:bg-red-50 transition-colors"
+                >
+                  🗑 Delete this view
+                </button>
+              )}
+              <div className="border-t border-slate-100 my-1" />
+              <button
+                type="button"
+                onClick={() => { setShowColsModal(true); setViewsOpen(false); }}
+                className="w-full text-left px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+              >
+                ⚙ Customize Columns ({shownCols.length})
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Import/Export dropdown */}
+        <div ref={importRef} className="relative shrink-0">
+          <button
+            type="button"
+            onClick={() => { setImportOpen(v => !v); setViewsOpen(false); }}
+            className={`px-2.5 py-1.5 border text-xs font-bold rounded-lg transition-all whitespace-nowrap flex items-center gap-1 ${
+              importOpen ? 'bg-slate-100 border-slate-300 text-slate-800' : 'border-slate-200 text-slate-700 bg-white hover:bg-slate-50'
+            }`}
+          >
+            {importing ? '⏳' : '↓'} Import <span className="text-[10px] opacity-60">▾</span>
+          </button>
+          {importOpen && (
+            <div className="absolute top-full right-0 mt-1 w-52 bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-hidden py-1">
+              {isAdmin && (
+                <button
+                  type="button"
+                  onClick={() => { runImport(); setImportOpen(false); }}
+                  disabled={importing}
+                  className="w-full text-left px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 transition-colors"
+                >
+                  🔄 Import from Zoho
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => { exportCsv(); setImportOpen(false); }}
+                disabled={rows.length === 0}
+                className="w-full text-left px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 transition-colors"
+              >
+                ⬇ Export CSV
+              </button>
+            </div>
           )}
         </div>
       </div>
 
-      {msg && <div className="text-xs font-semibold text-slate-600 bg-slate-100 border border-slate-200/50 rounded-xl px-4 py-3 shadow-inner">{msg}</div>}
+      {/* Notification messages */}
+      {(msg || importMsg) && (
+        <div className="text-xs font-semibold text-slate-600 bg-slate-100 border border-slate-200/50 rounded-xl px-4 py-2">
+          {importMsg ?? msg}
+        </div>
+      )}
 
       {/* Table */}
       <div className="bg-white border border-slate-200/80 rounded-2xl overflow-hidden shadow-sm">
         {rows.length === 0 ? (
           <div className="text-center py-16 text-slate-400">
             <p className="font-bold text-slate-700">{loading ? '⏳ Loading…' : 'कोई customer नहीं मिला'}</p>
-            {!loading && <p className="text-xs mt-1 text-slate-500">ऊपर “Import from Zoho” से customers sync करो।</p>}
+            {!loading && <p className="text-xs mt-1 text-slate-500">↓ Import dropdown se customers sync karo.</p>}
           </div>
         ) : (
           <>

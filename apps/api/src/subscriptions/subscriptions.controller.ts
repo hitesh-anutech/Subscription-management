@@ -10,7 +10,7 @@ import {
   RenewalQuoteDto, ProrataQuoteDto, StartSubscriptionDto,
   ImportSubscriptionsBatchDto, BulkUpdatePriceDto, BulkRenewalQuoteDto,
   CombinedRenewalQuoteDto, BulkCreateFromQuoteDto, BulkTransferCustomerDto,
-  InlineImportZohoDocDto,
+  InlineImportZohoDocDto, CreateCommentDto,
 } from './dto/subscriptions.dto';
 import { CurrentUser, AuthUser } from '../auth/decorators/current-user.decorator';
 
@@ -239,6 +239,19 @@ export class SubscriptionsController {
   @Patch(':id')
   update(@Param('id') id: string, @Body() dto: UpdateSubscriptionDto, @CurrentUser() user: AuthUser) {
     return this.service.update(id, dto, user);
+  }
+
+  /** POST /api/subscriptions/:id/comments — add a comment to a subscription */
+  @Post(':id/comments')
+  addComment(@Param('id') id: string, @Body() dto: CreateCommentDto, @CurrentUser() user: AuthUser) {
+    return this.service.addComment(id, dto.text, user.email);
+  }
+
+  /** DELETE /api/subscriptions/:id/comments/:commentId */
+  @Delete(':id/comments/:commentId')
+  @HttpCode(HttpStatus.OK)
+  deleteComment(@Param('commentId') commentId: string) {
+    return this.service.deleteComment(commentId);
   }
 
   /** POST /api/subscriptions/:id/renewal-quote */

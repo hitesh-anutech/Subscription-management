@@ -70,6 +70,10 @@ export class UpdateSubscriptionDto {
   @IsOptional() @IsEnum(SubscriptionLifecycleStatus) lifecycleStatus?: SubscriptionLifecycleStatus;
 }
 
+export class CreateCommentDto {
+  @IsString() @MaxLength(2000) text!: string;
+}
+
 export class BulkTransferCustomerDto {
   @IsArray() @IsString({ each: true }) subscriptionIds!: string[];
   @IsString() zohoCustomerId!: string;

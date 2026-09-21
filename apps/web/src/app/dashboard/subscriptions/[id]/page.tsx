@@ -13,6 +13,7 @@ import { DeleteSubscriptionButton } from '../_components/delete-subscription-but
 import { HistoryDialog } from '@/components/history-dialog';
 import { OrderHistoryTimeline } from './_components/order-history-timeline';
 import { DomainSubscriptionsPanel } from './_components/domain-subscriptions-panel';
+import { SubscriptionComments } from './_components/subscription-comments';
 
 export const dynamic = 'force-dynamic';
 
@@ -78,6 +79,7 @@ interface Subscription {
   originLead: { id: string; leadNumber: string; companyName: string } | null;
   originQuickQuote: { id: string; quoteNumber: string } | null;
   renewalHistory: RenewalHistory[];
+  comments: { id: string; text: string; createdByEmail: string; createdAt: string }[];
 }
 
 /** Order-history timeline row — real history rows + a synthesized Fresh entry
@@ -372,6 +374,12 @@ export default async function SubscriptionDetailPage({ params }: { params: Promi
             currentSubId={sub.id}
             domainId={sub.domain.id}
             domainName={sub.domain.domainName}
+          />
+
+          {/* Comments */}
+          <SubscriptionComments
+            subscriptionId={sub.id}
+            initialComments={sub.comments}
           />
 
           {/* Order History Timeline — fresh sale + renewals + pro-rata */}
