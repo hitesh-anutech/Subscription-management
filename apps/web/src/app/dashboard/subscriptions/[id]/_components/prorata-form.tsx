@@ -21,6 +21,12 @@ interface Props {
   billingCycle: string;
 }
 
+function fmtDate(iso: string) {
+  const d = iso.split('T')[0]; // strip time if present
+  const [y, m, day] = d.split('-');
+  return `${day}/${m}/${y}`;
+}
+
 function calcProrata(price: number, cycle: string, additionalLicenses: number, effectiveDate: string, endDate: string) {
   const cycleDaysMap: Record<string, number> = {
     monthly: 30, quarterly: 90, half_yearly: 182, annual: 365, biennial: 730, triennial: 1095,
@@ -98,7 +104,7 @@ export function ProrataForm({ subscriptionId, subscriptionPrice, endDate, billin
       {preview && preview.periodDays > 0 && (
         <div className="bg-indigo-50 border border-indigo-200 rounded-lg px-4 py-3 text-xs text-indigo-800 space-y-1">
           <p className="font-semibold">Pro-rata Preview</p>
-          <p>Period: <strong>{preview.periodDays} days</strong> ({effectiveDate} → {endDate})</p>
+          <p>Period: <strong>{preview.periodDays} days</strong> ({fmtDate(effectiveDate)} → {fmtDate(endDate)})</p>
           <p>Daily rate: ₹{preview.dailyRate} per license</p>
           <p className="text-sm font-bold text-indigo-900">
             Total: ₹{preview.subtotal.toLocaleString('en-IN')} for {additionalLicenses} license{additionalLicenses > 1 ? 's' : ''}
