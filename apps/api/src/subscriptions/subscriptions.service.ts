@@ -1112,7 +1112,7 @@ export class SubscriptionsService {
       if (!orgVal) return activeOrgs.length === 1 ? activeOrgs[0].id : null;
       if (orgCache.has(orgVal)) return orgCache.get(orgVal) ?? null;
       const m = activeOrgs.find(
-        (o) => o.name.toLowerCase() === orgVal.toLowerCase() || o.zohoOrgId === orgVal,
+        (o) => norm(o.name) === norm(orgVal) || o.zohoOrgId === orgVal,
       );
       orgCache.set(orgVal, m?.id ?? null);
       return m?.id ?? null;
