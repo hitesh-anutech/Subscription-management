@@ -317,10 +317,7 @@ export class SubscriptionsService {
         // Determine new dates based on firstSub's cycle
         const newStartDate = new Date(firstSub.endDate);
         newStartDate.setDate(newStartDate.getDate() + 1);
-        const newEndDate = this.addBillingCycle(newStartDate, firstSub.billingCycle as BillingCycle);
-        // adjust end date to be inclusive (e.g. minus 1 day)
-        const adjustedEndDate = new Date(newEndDate);
-        adjustedEndDate.setDate(adjustedEndDate.getDate() - 1);
+        const adjustedEndDate = this.addBillingCycle(newStartDate, firstSub.billingCycle as BillingCycle);
 
         const isBulk = domainCount >= 100;
 
@@ -575,9 +572,7 @@ export class SubscriptionsService {
     const subInfos: SubInfo[] = renewable.map((s) => {
       const newStart = new Date(s.endDate);
       newStart.setDate(newStart.getDate() + 1);
-      const newEnd = this.addBillingCycle(newStart, s.billingCycle as BillingCycle);
-      const adjEnd = new Date(newEnd);
-      adjEnd.setDate(adjEnd.getDate() - 1);
+      const adjEnd = this.addBillingCycle(newStart, s.billingCycle as BillingCycle);
       const override = priceOverrides?.[s.id];
       const unitPrice = override !== undefined
         ? Number(override)
@@ -691,9 +686,7 @@ export class SubscriptionsService {
     // Header custom fields — from the nearest-renewal sub (per user's decision).
     const headerStart = new Date(headerSub.endDate);
     headerStart.setDate(headerStart.getDate() + 1);
-    const headerEnd = this.addBillingCycle(headerStart, headerSub.billingCycle as BillingCycle);
-    const headerAdjEnd = new Date(headerEnd);
-    headerAdjEnd.setDate(headerAdjEnd.getDate() - 1);
+    const headerAdjEnd = this.addBillingCycle(headerStart, headerSub.billingCycle as BillingCycle);
     const headerEndIso = this.formatDate(headerAdjEnd);
 
     const businessTypeLabel = await this.zoho.getBusinessTypeLabel(orgId, 'Renewal');
@@ -1995,9 +1988,7 @@ export class SubscriptionsService {
       const effectiveCycle   = (dto.billingCycle ?? existing.billingCycle) as BillingCycle;
       const renewStart = new Date(effectiveEndDate);
       renewStart.setDate(renewStart.getDate() + 1);
-      const renewEndRaw = this.addBillingCycle(renewStart, effectiveCycle);
-      const renewEnd = new Date(renewEndRaw);
-      renewEnd.setDate(renewEnd.getDate() - 1);
+      const renewEnd = this.addBillingCycle(renewStart, effectiveCycle);
 
       const orClauses: Prisma.RenewalHistoryWhereInput[] = [];
       if (quoteSame)   orClauses.push({ quoteNumber:   dto.lastQuoteNumber!.trim() });
@@ -2026,8 +2017,7 @@ export class SubscriptionsService {
       const renewalEnd = dto.serviceEndDate
         ? new Date(dto.serviceEndDate)
         : (() => {
-            const raw = this.addBillingCycle(renewalStart, existing.billingCycle as BillingCycle);
-            const d = new Date(raw); d.setDate(d.getDate() - 1); return d;
+            return this.addBillingCycle(renewalStart, existing.billingCycle as BillingCycle);
           })();
 
       // Check for an existing row with the same Zoho document ID or number
@@ -2319,7 +2309,7 @@ export class SubscriptionsService {
       throw new BadRequestException('Effective date must be before subscription end date');
     }
 
-    const periodDays = Math.ceil((endDate.getTime() - effectiveDate.getTime()) / 86_400_000);
+    const periodDays = Math.ceil((endDate.getTime() - effectiveDate.getTime()) / 86_400_000) + 1;
     const cycledays  = this.billingCycleDays(sub.billingCycle, effectiveDate);
     const dailyRate  = Number(sub.subscriptionPrice) / cycledays;
     const prorataSubtotal = Math.round(periodDays * dailyRate * dto.additionalLicenses * 100) / 100;
