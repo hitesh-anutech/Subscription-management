@@ -852,12 +852,42 @@ export class SubscriptionsService {
       orderBy: { endDate: 'asc' },
     });
 
+    // Batch-load human-readable Customer Numbers and Item SKUs from ZohoCache
+    const orgIds      = [...new Set(subscriptions.map(s => s.organizationId))];
+    const customerIds = [...new Set(subscriptions.map(s => s.zohoCustomerId))];
+    const itemIds     = [...new Set(subscriptions.map(s => s.zohoItemId))];
+
+    const [customerCaches, itemCaches] = await Promise.all([
+      this.prisma.zohoCache.findMany({
+        where: { entityType: 'customer', organizationId: { in: orgIds }, zohoId: { in: customerIds } },
+        select: { organizationId: true, zohoId: true, extra: true },
+      }),
+      this.prisma.zohoCache.findMany({
+        where: { entityType: 'item', organizationId: { in: orgIds }, zohoId: { in: itemIds } },
+        select: { organizationId: true, zohoId: true, extra: true },
+      }),
+    ]);
+
+    // key = "orgId:zohoId" → human-readable value
+    const customerNumMap = new Map<string, string>(
+      customerCaches.map(c => [
+        `${c.organizationId}:${c.zohoId}`,
+        ((c.extra as Record<string, unknown>)?.contact_number as string) ?? '',
+      ]),
+    );
+    const itemSkuMap = new Map<string, string>(
+      itemCaches.map(i => [
+        `${i.organizationId}:${i.zohoId}`,
+        ((i.extra as Record<string, unknown>)?.sku as string) ?? '',
+      ]),
+    );
+
     const csvData = subscriptions.map(sub => ({
       ID: sub.id,
       Subscription_Number: sub.subscriptionNumber,
-      Customer_Number: sub.zohoCustomerId,
+      Customer_Number: customerNumMap.get(`${sub.organizationId}:${sub.zohoCustomerId}`) || sub.zohoCustomerId,
       Customer_Name: sub.zohoCustomerName,
-      Item_SKU: sub.zohoItemId,
+      Item_SKU: itemSkuMap.get(`${sub.organizationId}:${sub.zohoItemId}`) || sub.zohoItemId,
       Item_Name: sub.zohoItemName,
       Domain_Name: sub.domain?.domainName,
       Start_Date: sub.startDate ? this.formatDate(sub.startDate) : '',
