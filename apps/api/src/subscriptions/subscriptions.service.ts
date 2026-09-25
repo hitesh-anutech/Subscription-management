@@ -52,10 +52,11 @@ export class SubscriptionsService {
     search?: string;
     ids?: string[];
     domainId?: string;
+    renewalStatus?: string;
     page?: number;
     limit?: number;
   }) {
-    const { orgId, status, billingCycle, expiringDays, search, ids, domainId, page = 1, limit = 20 } = params;
+    const { orgId, status, billingCycle, expiringDays, search, ids, domainId, renewalStatus, page = 1, limit = 20 } = params;
     const skip = (page - 1) * limit;
 
     const where: Record<string, unknown> = {};
@@ -74,6 +75,15 @@ export class SubscriptionsService {
       ];
     }
     if (ids?.length) where.id = { in: ids };
+
+    if (renewalStatus === 'needs_quote') {
+      where.lifecycleStatus = { in: ['Expired', 'Expiring_Soon'] };
+      where.processStatus   = 'None';
+    } else if (renewalStatus === 'quoted') {
+      where.processStatus   = { in: ['Renewal_Quoted', 'Renewal_Invoiced'] };
+    } else if (renewalStatus === 'paid') {
+      where.processStatus   = 'Renewal_Paid';
+    }
 
     const [subscriptions, total] = await Promise.all([
       this.prisma.subscription.findMany({
@@ -797,7 +807,12 @@ export class SubscriptionsService {
       }
       await tx.subscription.updateMany({
         where: { id: { in: subIds } },
-        data: { processStatus: 'Renewal_Quoted' },
+        data: {
+          processStatus:   'Renewal_Quoted',
+          lastQuoteId:     estimate.estimate_id,
+          lastQuoteNumber: estimate.estimate_number,
+          lastQuoteDate:   new Date(),
+        },
       });
     });
 
@@ -2275,6 +2290,16 @@ export class SubscriptionsService {
     try {
       const zohoClient = await this.zoho.clientFor(sub.organizationId);
       const estimatePayload = await this.buildEstimatePayload(sub, qty, price, newStartDate, newEndDate, 'Renewal');
+      if (dto.addonItems?.length) {
+        for (const addon of dto.addonItems) {
+          estimatePayload.line_items.push({
+            item_id: addon.zohoItemId,
+            quantity: addon.quantity,
+            rate: addon.rate,
+            description: addon.itemName,
+          });
+        }
+      }
       const resp = await zohoClient.post<{ estimate: { estimate_id: string; estimate_number: string } }>(
         '/estimates', estimatePayload,
       );
@@ -2341,8 +2366,9 @@ export class SubscriptionsService {
 
     const periodDays = Math.ceil((endDate.getTime() - effectiveDate.getTime()) / 86_400_000) + 1;
     const cycledays  = this.billingCycleDays(sub.billingCycle, effectiveDate);
-    const dailyRate  = Number(sub.subscriptionPrice) / cycledays;
-    const prorataSubtotal = Math.round(periodDays * dailyRate * dto.additionalLicenses * 100) / 100;
+    const dailyRate       = Number(sub.subscriptionPrice) / cycledays;
+    const perLicenseRate  = Math.ceil(dailyRate * periodDays);   // round up to nearest ₹
+    const prorataSubtotal = perLicenseRate * dto.additionalLicenses;
 
     let zohoEstimateId: string | null = null;
     let zohoEstimateNumber: string | null = null;
@@ -2403,7 +2429,7 @@ export class SubscriptionsService {
           item_id:     sub.zohoItemId,
           description: prorataDescription,
           quantity:    dto.additionalLicenses,
-          rate:        Math.round(dailyRate * periodDays * 100) / 100,
+          rate:        perLicenseRate,
           ...(lineItemCf.length ? { item_custom_fields: lineItemCf } : {}),
         }],
         custom_fields: estimateCf,
@@ -2919,6 +2945,23 @@ export class SubscriptionsService {
         invoiceDate: zohoInvoiceDate ? new Date(zohoInvoiceDate) : new Date(),
       },
     });
+
+    // Sync lastInvoice* to every subscription linked via this quote (covers both
+    // single-sub and multi-sub combined quotes). Idempotent with the webhook handler.
+    const linkedHistoryRows = await this.prisma.renewalHistory.findMany({
+      where: { quoteId: row.quoteId },
+      select: { subscriptionId: true },
+    });
+    if (linkedHistoryRows.length > 0) {
+      await this.prisma.subscription.updateMany({
+        where: { id: { in: linkedHistoryRows.map(r => r.subscriptionId) } },
+        data: {
+          lastInvoiceId:     zohoInvoiceId,
+          lastInvoiceNumber: zohoInvoiceNumber,
+          lastInvoiceDate:   zohoInvoiceDate ? new Date(zohoInvoiceDate) : new Date(),
+        },
+      });
+    }
 
     return {
       ok: true,

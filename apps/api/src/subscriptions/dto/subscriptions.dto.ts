@@ -80,10 +80,19 @@ export class BulkTransferCustomerDto {
   @IsString() zohoCustomerName!: string;
 }
 
+export class AddonItemDto {
+  @IsString() zohoItemId!: string;
+  @IsString() itemName!: string;
+  @IsNumber() @Min(0) quantity!: number;
+  @IsNumber() @Min(0) rate!: number;
+}
+
 export class RenewalQuoteDto {
   @IsOptional() @IsNumber() @Min(0) overridePrice?: number;
   @IsOptional() @IsNumber() @Min(1) overrideQuantity?: number;
   @IsOptional() @IsString() @MaxLength(2000) notes?: string;
+  @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => AddonItemDto)
+  addonItems?: AddonItemDto[];
 }
 
 export class ProrataQuoteDto {

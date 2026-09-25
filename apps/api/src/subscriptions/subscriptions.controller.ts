@@ -21,15 +21,16 @@ export class SubscriptionsController {
   /** GET /api/subscriptions */
   @Get()
   list(
-    @Query('org_id')        orgId?: string,
-    @Query('status')        status?: string,
-    @Query('expiring_days') expiringDays?: string,
-    @Query('billing_cycle') billingCycle?: string,
-    @Query('search')        search?: string,
-    @Query('ids')           ids?: string,
-    @Query('domain_id')     domainId?: string,
-    @Query('page')          page?: string,
-    @Query('limit')         limit?: string,
+    @Query('org_id')         orgId?: string,
+    @Query('status')         status?: string,
+    @Query('expiring_days')  expiringDays?: string,
+    @Query('billing_cycle')  billingCycle?: string,
+    @Query('search')         search?: string,
+    @Query('ids')            ids?: string,
+    @Query('domain_id')      domainId?: string,
+    @Query('renewal_status') renewalStatus?: string,
+    @Query('page')           page?: string,
+    @Query('limit')          limit?: string,
   ) {
     return this.service.list({
       orgId,
@@ -39,6 +40,7 @@ export class SubscriptionsController {
       search,
       ids: ids ? ids.split(',').filter(Boolean) : undefined,
       domainId,
+      renewalStatus,
       page:  page  ? Number(page)  : 1,
       limit: limit ? Number(limit) : 20,
     });

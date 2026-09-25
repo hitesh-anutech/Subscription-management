@@ -107,6 +107,24 @@ function money(amount: number, currency = 'INR'): string {
   return `${sym}${amount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 }
 
+const PROCESS_STATUS_STYLES: Record<string, string> = {
+  Renewal_Quoted:   'bg-blue-100 text-blue-700',
+  Renewal_Invoiced: 'bg-indigo-100 text-indigo-700',
+  Renewal_Paid:     'bg-emerald-100 text-emerald-800',
+  Prorata_Quoted:   'bg-blue-100 text-blue-700',
+  Prorata_Invoiced: 'bg-indigo-100 text-indigo-700',
+  Prorata_Paid:     'bg-emerald-100 text-emerald-800',
+};
+
+function ProcessStatusBadge({ status }: { status: string }) {
+  if (!status || status === 'None') return null;
+  return (
+    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold mt-1 ${PROCESS_STATUS_STYLES[status] ?? 'bg-slate-100 text-slate-600'}`}>
+      {status.replace(/_/g, ' ')}
+    </span>
+  );
+}
+
 const STATUS_STYLES: Record<string, string> = {
   Active:         'bg-green-100 text-green-700',
   Expiring_Soon:  'bg-amber-100 text-amber-700',
@@ -1141,7 +1159,10 @@ export function SubscriptionsTable({
                               <p className="text-[11px] text-slate-400">{money(Number(sub.subscriptionPrice), sub.currency)}</p>
                             </td>
                             <td className="px-4 py-2.5 text-center">
-                              <StatusBadge status={sub.lifecycleStatus} endDate={sub.endDate} />
+                              <div className="flex flex-col items-center gap-0.5">
+                                <StatusBadge status={sub.lifecycleStatus} endDate={sub.endDate} />
+                                <ProcessStatusBadge status={sub.processStatus} />
+                              </div>
                             </td>
                             <td className="px-4 py-2.5 text-center">
                               <LastQuoteCell sub={sub} />
@@ -1225,7 +1246,10 @@ export function SubscriptionsTable({
                         <p className="text-[11px] text-slate-400">{money(Number(sub.subscriptionPrice), sub.currency)}</p>
                       </td>
                       <td className="px-4 py-2.5 text-center">
-                        <StatusBadge status={sub.lifecycleStatus} endDate={sub.endDate} />
+                        <div className="flex flex-col items-center gap-0.5">
+                          <StatusBadge status={sub.lifecycleStatus} endDate={sub.endDate} />
+                          <ProcessStatusBadge status={sub.processStatus} />
+                        </div>
                       </td>
                       <td className="px-4 py-2.5 text-center">
                         <LastQuoteCell sub={sub} />

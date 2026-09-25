@@ -36,7 +36,8 @@ function calcProrata(price: number, cycle: string, additionalLicenses: number, e
     (new Date(endDate).getTime() - new Date(effectiveDate).getTime()) / 86_400_000,
   ) + 1);
   const dailyRate = price / cycleDays;
-  const subtotal = Math.round(dailyRate * periodDays * additionalLicenses * 100) / 100;
+  const perLicenseRate = Math.ceil(dailyRate * periodDays);
+  const subtotal = perLicenseRate * additionalLicenses;
   return { periodDays, dailyRate: Math.round(dailyRate * 100) / 100, subtotal };
 }
 

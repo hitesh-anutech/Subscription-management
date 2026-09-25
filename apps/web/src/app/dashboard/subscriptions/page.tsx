@@ -46,7 +46,7 @@ interface Subscription {
 export default async function SubscriptionsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; expiring?: string; billing?: string; search?: string; page?: string; ids?: string; limit?: string }>;
+  searchParams: Promise<{ status?: string; expiring?: string; billing?: string; search?: string; page?: string; ids?: string; limit?: string; renewal_status?: string }>;
 }) {
   const sp = await searchParams;
   const user = await getCurrentUser();
@@ -62,10 +62,11 @@ export default async function SubscriptionsPage({
 
   try {
     const params = new URLSearchParams();
-    if (sp.status)   params.set('status', sp.status);
-    if (sp.expiring) params.set('expiring_days', sp.expiring);
-    if (sp.billing)  params.set('billing_cycle', sp.billing);
-    if (sp.search)   params.set('search', sp.search);
+    if (sp.status)          params.set('status', sp.status);
+    if (sp.expiring)        params.set('expiring_days', sp.expiring);
+    if (sp.billing)         params.set('billing_cycle', sp.billing);
+    if (sp.search)          params.set('search', sp.search);
+    if (sp.renewal_status)  params.set('renewal_status', sp.renewal_status);
     if (sp.ids)      params.set('ids', sp.ids);
     params.set('page', String(page));
     params.set('limit', String(limit));
@@ -129,13 +130,20 @@ export default async function SubscriptionsPage({
           <option value="30">30 days</option>
           <option value="60">60 days</option>
         </select>
+        <select name="renewal_status" defaultValue={sp.renewal_status ?? ''}
+          className="px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs bg-white focus:ring-2 focus:ring-blue-500/20 focus:outline-none">
+          <option value="">All Quotes</option>
+          <option value="needs_quote">⚠ Needs Quote</option>
+          <option value="quoted">📋 Quote Sent</option>
+          <option value="paid">✅ Renewal Paid</option>
+        </select>
         <input type="hidden" name="limit" value={String(limit)} />
         <input type="hidden" name="page" value="1" />
         <button type="submit"
           className="px-3 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold rounded-lg shadow-sm active:scale-[0.98] transition-all shrink-0">
           Filter
         </button>
-        {(sp.status || sp.expiring || sp.billing || sp.search) && (
+        {(sp.status || sp.expiring || sp.billing || sp.search || sp.renewal_status) && (
           <Link href="/dashboard/subscriptions"
             className="px-2.5 py-1.5 border border-slate-200 text-slate-500 text-xs font-semibold rounded-lg hover:bg-slate-50 transition-all shrink-0">
             Clear

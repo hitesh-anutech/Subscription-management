@@ -415,6 +415,7 @@ export default async function SubscriptionDetailPage({ params }: { params: Promi
               <h3 className="text-sm font-semibold text-emerald-800 mb-3">🔄 Renewal Quote</h3>
               <RenewalQuoteForm
                 subscriptionId={sub.id}
+                orgId={sub.organization.id}
                 currentPrice={renewalPrice}
                 currentQuantity={Number(sub.quantity)}
                 currentEndDate={sub.endDate}
