@@ -693,6 +693,7 @@ model Subscription {
   lastInvoiceNumber               String?   @map("last_invoice_number") @db.VarChar(80)
   lastInvoiceDate                 DateTime? @map("last_invoice_date") @db.Date
 
+  subscriptionCategory            String?   @map("subscription_category") @db.VarChar(100)
   notes                           String?
   metadata                        Json      @default("{}")
   createdAt                       DateTime  @default(now()) @map("created_at") @db.Timestamptz
