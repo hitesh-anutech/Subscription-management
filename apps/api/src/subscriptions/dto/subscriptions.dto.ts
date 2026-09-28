@@ -27,6 +27,7 @@ export class CreateSubscriptionDto {
   @IsDateString() endDate!: string;
   @IsOptional() @IsDateString() nextRenewalDate?: string;
   @IsOptional() @IsBoolean() autoRenew?: boolean;
+  @IsOptional() @IsString() @MaxLength(100) subscriptionCategory?: string;
   @IsOptional() @IsString() @MaxLength(2000) notes?: string;
 
   // Initial lifecycle status — defaults to Pending if omitted
@@ -48,6 +49,7 @@ export class UpdateSubscriptionDto {
   @IsOptional() @IsDateString() endDate?: string;
   @IsOptional() @IsDateString() nextRenewalDate?: string;
   @IsOptional() @IsBoolean() autoRenew?: boolean;
+  @IsOptional() @IsString() @MaxLength(100) subscriptionCategory?: string;
   @IsOptional() @IsString() @MaxLength(2000) notes?: string;
 
   // Billing currency + exchange rate (1 unit of currency = exchangeRate INR)

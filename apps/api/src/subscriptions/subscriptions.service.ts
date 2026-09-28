@@ -53,16 +53,18 @@ export class SubscriptionsService {
     ids?: string[];
     domainId?: string;
     renewalStatus?: string;
+    category?: string;
     page?: number;
     limit?: number;
   }) {
-    const { orgId, status, billingCycle, expiringDays, search, ids, domainId, renewalStatus, page = 1, limit = 20 } = params;
+    const { orgId, status, billingCycle, expiringDays, search, ids, domainId, renewalStatus, category, page = 1, limit = 20 } = params;
     const skip = (page - 1) * limit;
 
     const where: Record<string, unknown> = {};
     if (orgId)        where.organizationId = orgId;
     if (billingCycle) where.billingCycle = billingCycle;
     if (domainId)     where.domainId = domainId;
+    if (category)     where.subscriptionCategory = category;
     Object.assign(where, this.buildLifecycleWhere(status, expiringDays));
     if (search) {
       where.OR = [
@@ -1549,6 +1551,7 @@ export class SubscriptionsService {
           endDate:           new Date(dto.endDate),
           nextRenewalDate:   dto.nextRenewalDate ? new Date(dto.nextRenewalDate) : null,
           autoRenew:         dto.autoRenew ?? false,
+          subscriptionCategory: dto.subscriptionCategory ?? null,
           notes:             dto.notes,
           // Lifecycle status (defaults to Pending in schema when omitted)
           ...(dto.lifecycleStatus && { lifecycleStatus: dto.lifecycleStatus }),
@@ -2004,7 +2007,8 @@ export class SubscriptionsService {
         ...(dto.startDate         !== undefined && { startDate: new Date(dto.startDate) }),
         ...(dto.endDate           !== undefined && { endDate: new Date(dto.endDate) }),
         ...(dto.nextRenewalDate   !== undefined && { nextRenewalDate: new Date(dto.nextRenewalDate) }),
-        ...(dto.autoRenew         !== undefined && { autoRenew: dto.autoRenew }),
+        ...(dto.autoRenew             !== undefined && { autoRenew: dto.autoRenew }),
+        ...(dto.subscriptionCategory  !== undefined && { subscriptionCategory: dto.subscriptionCategory || null }),
         ...(dto.notes             !== undefined && { notes: dto.notes }),
         ...(dto.lifecycleStatus   !== undefined && { lifecycleStatus: dto.lifecycleStatus }),
         ...(dto.currency          !== undefined && { currency: dto.currency.toUpperCase() }),
@@ -2291,12 +2295,27 @@ export class SubscriptionsService {
       const zohoClient = await this.zoho.clientFor(sub.organizationId);
       const estimatePayload = await this.buildEstimatePayload(sub, qty, price, newStartDate, newEndDate, 'Renewal');
       if (dto.addonItems?.length) {
+        // Build line-item custom fields + description suffix once — same period/domain for all addons
+        const startIso = newStartDate.toISOString().split('T')[0];
+        const endIso   = newEndDate.toISOString().split('T')[0];
+        const periodLabel = CYCLE_LABEL[sub.billingCycle] ?? sub.billingCycle;
+        const periodValue = `${periodLabel} (${this.formatDateDMY(newStartDate)} to ${this.formatDateDMY(newEndDate)})`;
+        const addonLineItemCf = await this.zoho.buildCustomFields(sub.organizationId, 'items', {
+          domain_name: sub.domain.domainName,
+          start_date:  startIso,
+          end_date:    endIso,
+        });
+        const descSuffix = `Domain Name: ${sub.domain.domainName}\nSubscription Period: ${periodValue}`;
+
         for (const addon of dto.addonItems) {
+          const cachedDesc = await this.getZohoItemDesc(sub.organizationId, addon.zohoItemId);
+          const addonDesc  = cachedDesc ? `${cachedDesc}\n${descSuffix}` : descSuffix;
           estimatePayload.line_items.push({
-            item_id: addon.zohoItemId,
+            name: addon.itemName,
             quantity: addon.quantity,
             rate: addon.rate,
-            description: addon.itemName,
+            description: addonDesc,
+            ...(addonLineItemCf.length ? { item_custom_fields: addonLineItemCf } : {}),
           });
         }
       }
@@ -2366,8 +2385,15 @@ export class SubscriptionsService {
 
     const periodDays = Math.ceil((endDate.getTime() - effectiveDate.getTime()) / 86_400_000) + 1;
     const cycledays  = this.billingCycleDays(sub.billingCycle, effectiveDate);
-    const dailyRate       = Number(sub.subscriptionPrice) / cycledays;
-    const perLicenseRate  = Math.ceil(dailyRate * periodDays);   // round up to nearest ₹
+    const dailyRate = Number(sub.subscriptionPrice) / cycledays;
+
+    const roundingSetting = await this.prisma.appSettings.findUnique({
+      where: { uq_app_settings_key: { category: 'subscription', settingKey: 'prorata_rounding' } },
+    });
+    const roundingRule = (roundingSetting?.settingValue as string | null) ?? 'up';
+    const applyRounding = roundingRule === 'nearest' ? Math.round : roundingRule === 'down' ? Math.floor : Math.ceil;
+
+    const perLicenseRate  = applyRounding(dailyRate * periodDays);
     const prorataSubtotal = perLicenseRate * dto.additionalLicenses;
 
     let zohoEstimateId: string | null = null;
@@ -2655,7 +2681,7 @@ export class SubscriptionsService {
     const { options: billingOpts } = await this.zoho.getBillingOptions(sub.organizationId);
     const subsPeriodLabel = billingOpts.find((o) => o.value === String(sub.billingCycle))?.label ?? '';
 
-    const [customFields, lineItemCf, zohoItemDesc] = await Promise.all([
+    const [customFields, lineItemCf, cachedItemRow] = await Promise.all([
       this.zoho.buildCustomFields(sub.organizationId, 'estimates', {
         domain_name:             sub.domain.domainName,
         business_type:           businessLabel,
@@ -2674,9 +2700,18 @@ export class SubscriptionsService {
         end_date:    endIso,
         cost_price:  costStr,
       }),
-      // buildEstimatePayload always produces 1 line item → always show Zoho item description
-      this.getZohoItemDesc(sub.organizationId, sub.zohoItemId),
+      // Validate zohoItemId against our synced cache. Sending a stale/invalid item_id
+      // causes Zoho to throw "Invalid value passed for Product ID". If the item isn't
+      // in our cache we fall back to a name-only free-form line item.
+      sub.zohoItemId
+        ? this.prisma.zohoCache.findUnique({
+            where: { uq_zoho_cache_entity: { organizationId: sub.organizationId, entityType: 'item', zohoId: sub.zohoItemId } },
+            select: { extra: true },
+          })
+        : Promise.resolve(null),
     ]);
+    const itemFoundInCache = !!cachedItemRow;
+    const zohoItemDesc = ((cachedItemRow?.extra as Record<string, unknown>)?.description as string) ?? '';
 
     const todayMidnight = new Date();
     todayMidnight.setHours(0, 0, 0, 0);
@@ -2706,7 +2741,8 @@ export class SubscriptionsService {
       expiry_date:      quoteExpiry,
       reference_number: `${sub.domain.domainName} (Renewal)`,
       line_items: [{
-        item_id:  sub.zohoItemId,
+        ...(itemFoundInCache ? { item_id: sub.zohoItemId } : {}),
+        name:     sub.zohoItemName || 'Subscription Renewal',
         quantity: qty,
         rate:     price,
         description: lineDesc,

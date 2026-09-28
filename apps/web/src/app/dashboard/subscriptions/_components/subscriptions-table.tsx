@@ -552,6 +552,84 @@ function StatusBadge({ status, endDate }: { status: string; endDate: string }) {
   );
 }
 
+// ─── Column Customization ────────────────────────────────────────────────────
+
+const COLUMN_DEFS = [
+  { id: 'domain',       label: 'Domain',       defaultOn: true  },
+  { id: 'item',         label: 'Item',         defaultOn: true  },
+  { id: 'qty_price',    label: 'Qty / Price',  defaultOn: true  },
+  { id: 'status',       label: 'Status',       defaultOn: true  },
+  { id: 'last_quote',   label: 'Last Quote',   defaultOn: true  },
+  { id: 'last_invoice', label: 'Last Invoice', defaultOn: false },
+] as const;
+
+type ColId = (typeof COLUMN_DEFS)[number]['id'];
+
+function useColumns() {
+  const KEY = 'subs_columns_v1';
+  const defaults = COLUMN_DEFS.filter((c) => c.defaultOn).map((c) => c.id);
+  const [visible, setVisible] = useState<ColId[]>(defaults);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(KEY);
+      if (stored) setVisible(JSON.parse(stored) as ColId[]);
+    } catch { /* keep defaults */ }
+  }, []);
+
+  const toggle = (id: ColId) =>
+    setVisible((prev) => {
+      const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
+      localStorage.setItem(KEY, JSON.stringify(next));
+      return next;
+    });
+  const has = (id: ColId) => visible.includes(id);
+  return { visible, toggle, has };
+}
+
+function ColumnsPanel({ visible, toggle }: { visible: ColId[]; toggle: (id: ColId) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className={`px-3 py-1.5 border text-xs font-semibold rounded-lg shadow-sm transition-all ${
+          open ? 'bg-slate-100 border-slate-300 text-slate-800' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+        }`}
+      >
+        Columns ▾
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full mt-1 z-20 bg-white border border-slate-200 rounded-xl shadow-lg p-3 w-44">
+          {COLUMN_DEFS.map((col) => (
+            <label key={col.id} className="flex items-center gap-2 py-1.5 cursor-pointer text-[13px] text-slate-700 hover:text-slate-900">
+              <input
+                type="checkbox"
+                checked={visible.includes(col.id)}
+                onChange={() => toggle(col.id)}
+                className="rounded border-slate-300 text-[#286FAD] focus:ring-[#286FAD]/20"
+              />
+              {col.label}
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export function SubscriptionsTable({
   subscriptions,
   initialSelectedIds,
@@ -584,6 +662,7 @@ export function SubscriptionsTable({
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
+  const { visible, toggle, has } = useColumns();
 
   if (subscriptions.length === 0) {
     return (
@@ -957,6 +1036,7 @@ export function SubscriptionsTable({
           >
             {groupByCustomer ? '▼ Grouped by Customer' : '⊞ Group by Customer'}
           </button>
+          <ColumnsPanel visible={visible} toggle={toggle} />
           {isAdmin && (
             <button
               onClick={handleBulkDelete}
@@ -1048,11 +1128,13 @@ export function SubscriptionsTable({
                   className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                 />
               </th>
-              <th className="text-left px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">Customer / Domain</th>
-              <th className="text-left px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide min-w-[280px]">Item</th>
-              <th className="text-right px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">Qty / Price</th>
-              <th className="text-center px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">Status</th>
-              <th className="text-center px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">Last Quote</th>
+              <th className="text-left px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">Customer</th>
+              {has('domain')       && <th className="text-left px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">Domain</th>}
+              {has('item')         && <th className="text-left px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide min-w-[260px]">Item</th>}
+              {has('qty_price')    && <th className="text-right px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">Qty / Price</th>}
+              {has('status')       && <th className="text-center px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">Status</th>}
+              {has('last_quote')   && <th className="text-center px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">Last Quote</th>}
+              {has('last_invoice') && <th className="text-center px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">Last Invoice</th>}
               <th className="px-4 py-3 w-20"></th>
             </tr>
           </thead>
@@ -1076,7 +1158,7 @@ export function SubscriptionsTable({
                             className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                           />
                         </td>
-                        <td colSpan={5} className="px-4 py-2">
+                        <td colSpan={1 + COLUMN_DEFS.filter((c) => visible.includes(c.id)).length} className="px-4 py-2">
                           <div className="flex items-center gap-3">
                             <button
                               onClick={() => toggleGroupCollapse(customerKey)}
@@ -1140,33 +1222,53 @@ export function SubscriptionsTable({
                                 className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                               />
                             </td>
+                            {/* Customer col (always) — org name; customer shown in group header */}
                             <td className="px-4 py-2.5">
-                              <p className="text-slate-500 text-[11px] font-mono">{sub.domain.domainName}</p>
-                              <p className="text-[11px] text-slate-400 mt-0.5">{sub.organization.name}</p>
+                              <p className="text-[11px] text-slate-400">{sub.organization.name}</p>
                             </td>
-                            <td className="px-4 py-2.5 min-w-[280px]">
-                              <p className="text-slate-700 text-[13px] leading-snug">{sub.zohoItemName ?? '—'}</p>
-                              <p className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1 flex-wrap">
-                                {fmt(sub.startDate)} <span className="text-slate-300">→</span> {fmt(sub.endDate)}
-                                <span className="text-slate-300">·</span>
-                                <span className={`text-[9px] font-bold px-1.5 py-px rounded ${CYCLE_BADGE_CLASS[sub.billingCycle] ?? 'bg-slate-100 text-slate-500'}`}>
-                                  {cycleLabel(sub.billingCycle)}
-                                </span>
-                              </p>
-                            </td>
-                            <td className="px-4 py-2.5 text-right">
-                              <p className="text-[13px] text-slate-700 font-medium">{sub.quantity}</p>
-                              <p className="text-[11px] text-slate-400">{money(Number(sub.subscriptionPrice), sub.currency)}</p>
-                            </td>
-                            <td className="px-4 py-2.5 text-center">
-                              <div className="flex flex-col items-center gap-0.5">
-                                <StatusBadge status={sub.lifecycleStatus} endDate={sub.endDate} />
-                                <ProcessStatusBadge status={sub.processStatus} />
-                              </div>
-                            </td>
-                            <td className="px-4 py-2.5 text-center">
-                              <LastQuoteCell sub={sub} />
-                            </td>
+                            {has('domain') && (
+                              <td className="px-4 py-2.5">
+                                <p className="text-[13px] font-mono text-slate-500">{sub.domain.domainName}</p>
+                              </td>
+                            )}
+                            {has('item') && (
+                              <td className="px-4 py-2.5 min-w-[260px]">
+                                <p className="text-slate-700 text-[13px] leading-snug">{sub.zohoItemName ?? '—'}</p>
+                                <p className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1 flex-wrap">
+                                  {fmt(sub.startDate)} <span className="text-slate-300">→</span> {fmt(sub.endDate)}
+                                  <span className="text-slate-300">·</span>
+                                  <span className={`text-[9px] font-bold px-1.5 py-px rounded ${CYCLE_BADGE_CLASS[sub.billingCycle] ?? 'bg-slate-100 text-slate-500'}`}>
+                                    {cycleLabel(sub.billingCycle)}
+                                  </span>
+                                </p>
+                              </td>
+                            )}
+                            {has('qty_price') && (
+                              <td className="px-4 py-2.5 text-right">
+                                <p className="text-[13px] text-slate-700 font-medium">{sub.quantity}</p>
+                                <p className="text-[11px] text-slate-400">{money(Number(sub.subscriptionPrice), sub.currency)}</p>
+                              </td>
+                            )}
+                            {has('status') && (
+                              <td className="px-4 py-2.5 text-center">
+                                <div className="flex flex-col items-center gap-0.5">
+                                  <StatusBadge status={sub.lifecycleStatus} endDate={sub.endDate} />
+                                  <ProcessStatusBadge status={sub.processStatus} />
+                                </div>
+                              </td>
+                            )}
+                            {has('last_quote') && (
+                              <td className="px-4 py-2.5 text-center">
+                                <LastQuoteCell sub={sub} />
+                              </td>
+                            )}
+                            {has('last_invoice') && (
+                              <td className="px-4 py-2.5 text-center">
+                                {sub.lastInvoiceNumber
+                                  ? <p className="text-[11px] font-mono text-slate-600">{sub.lastInvoiceNumber}</p>
+                                  : <p className="text-[11px] text-slate-300">—</p>}
+                              </td>
+                            )}
                             <td className="px-4 py-2.5" onClick={e => e.stopPropagation()}>
                               <div className="flex items-center justify-end gap-1.5">
                                 <RowCommentsButton subscriptionId={sub.id} commentCount={sub._count.comments} />
@@ -1214,6 +1316,7 @@ export function SubscriptionsTable({
                           className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                         />
                       </td>
+                      {/* Customer (always visible) */}
                       <td className="px-4 py-2.5" onClick={e => e.stopPropagation()}>
                         {sub.zohoCustomerId ? (
                           <Link
@@ -1227,33 +1330,52 @@ export function SubscriptionsTable({
                             {sub.zohoCustomerName ?? '—'}
                           </p>
                         )}
-                        <p className="text-[11px] text-slate-400 mt-0.5">
-                          {sub.domain.domainName} · {sub.organization.name}
-                        </p>
+                        <p className="text-[11px] text-slate-400 mt-0.5">{sub.organization.name}</p>
                       </td>
-                      <td className="px-4 py-2.5 min-w-[280px]">
-                        <p className="text-slate-700 text-[13px] leading-snug">{sub.zohoItemName ?? '—'}</p>
-                        <p className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1 flex-wrap">
-                          {fmt(sub.startDate)} <span className="text-slate-300">→</span> {fmt(sub.endDate)}
-                          <span className="text-slate-300">·</span>
-                          <span className={`text-[9px] font-bold px-1.5 py-px rounded ${CYCLE_BADGE_CLASS[sub.billingCycle] ?? 'bg-slate-100 text-slate-500'}`}>
-                            {cycleLabel(sub.billingCycle)}
-                          </span>
-                        </p>
-                      </td>
-                      <td className="px-4 py-2.5 text-right">
-                        <p className="text-[13px] text-slate-700 font-medium">{sub.quantity}</p>
-                        <p className="text-[11px] text-slate-400">{money(Number(sub.subscriptionPrice), sub.currency)}</p>
-                      </td>
-                      <td className="px-4 py-2.5 text-center">
-                        <div className="flex flex-col items-center gap-0.5">
-                          <StatusBadge status={sub.lifecycleStatus} endDate={sub.endDate} />
-                          <ProcessStatusBadge status={sub.processStatus} />
-                        </div>
-                      </td>
-                      <td className="px-4 py-2.5 text-center">
-                        <LastQuoteCell sub={sub} />
-                      </td>
+                      {/* Domain column (optional) */}
+                      {has('domain') && (
+                        <td className="px-4 py-2.5">
+                          <p className="text-[13px] font-mono text-slate-500">{sub.domain.domainName}</p>
+                        </td>
+                      )}
+                      {has('item') && (
+                        <td className="px-4 py-2.5 min-w-[260px]">
+                          <p className="text-slate-700 text-[13px] leading-snug">{sub.zohoItemName ?? '—'}</p>
+                          <p className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1 flex-wrap">
+                            {fmt(sub.startDate)} <span className="text-slate-300">→</span> {fmt(sub.endDate)}
+                            <span className="text-slate-300">·</span>
+                            <span className={`text-[9px] font-bold px-1.5 py-px rounded ${CYCLE_BADGE_CLASS[sub.billingCycle] ?? 'bg-slate-100 text-slate-500'}`}>
+                              {cycleLabel(sub.billingCycle)}
+                            </span>
+                          </p>
+                        </td>
+                      )}
+                      {has('qty_price') && (
+                        <td className="px-4 py-2.5 text-right">
+                          <p className="text-[13px] text-slate-700 font-medium">{sub.quantity}</p>
+                          <p className="text-[11px] text-slate-400">{money(Number(sub.subscriptionPrice), sub.currency)}</p>
+                        </td>
+                      )}
+                      {has('status') && (
+                        <td className="px-4 py-2.5 text-center">
+                          <div className="flex flex-col items-center gap-0.5">
+                            <StatusBadge status={sub.lifecycleStatus} endDate={sub.endDate} />
+                            <ProcessStatusBadge status={sub.processStatus} />
+                          </div>
+                        </td>
+                      )}
+                      {has('last_quote') && (
+                        <td className="px-4 py-2.5 text-center">
+                          <LastQuoteCell sub={sub} />
+                        </td>
+                      )}
+                      {has('last_invoice') && (
+                        <td className="px-4 py-2.5 text-center">
+                          {sub.lastInvoiceNumber
+                            ? <p className="text-[11px] font-mono text-slate-600">{sub.lastInvoiceNumber}</p>
+                            : <p className="text-[11px] text-slate-300">—</p>}
+                        </td>
+                      )}
                       <td className="px-4 py-2.5" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-1.5">
                           <RowCommentsButton subscriptionId={sub.id} commentCount={sub._count.comments} />

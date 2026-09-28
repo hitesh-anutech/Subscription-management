@@ -261,7 +261,6 @@ export function ZohoItemSearch({
               <button key={item.id} type="button"
                 onClick={() => {
                   onSelect(item.zohoId, item.displayName ?? item.zohoId, rate, desc);
-                  onChange(item.displayName ?? item.zohoId);
                   setOpen(false);
                 }}
                 className="w-full text-left px-3 py-1.5 hover:bg-slate-50 border-b border-slate-100 last:border-0"

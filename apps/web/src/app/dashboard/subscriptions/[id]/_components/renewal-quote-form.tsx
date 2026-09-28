@@ -87,7 +87,7 @@ export function RenewalQuoteForm({
     if (overridePrice    && Number(overridePrice)    > 0) body.overridePrice    = Number(overridePrice);
     if (overrideQuantity && Number(overrideQuantity) > 0) body.overrideQuantity = Number(overrideQuantity);
 
-    const filledAddons = addonItems.filter(a => a.zohoItemId && a.rate > 0);
+    const filledAddons = addonItems.filter(a => a.itemName.trim() !== '');
     if (filledAddons.length > 0) {
       body.addonItems = filledAddons.map(a => ({
         zohoItemId: a.zohoItemId,
@@ -111,7 +111,7 @@ export function RenewalQuoteForm({
     }
   }
 
-  const filledAddonCount = addonItems.filter(a => a.zohoItemId).length;
+  const filledAddonCount = addonItems.filter(a => a.itemName.trim() !== '').length;
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
@@ -185,20 +185,35 @@ export function RenewalQuoteForm({
           <div className="p-3 bg-amber-50/50 border-t border-amber-200 space-y-2">
             {addonItems.map((addon, idx) => (
               <div key={addon.id} className="rounded border border-amber-200 bg-white p-2 space-y-1.5">
-                {/* item search — full width */}
+                {/* item search / selected chip — full width */}
                 <div className="flex items-center gap-1.5">
                   <span className="text-[10px] font-semibold text-amber-700 uppercase tracking-wide shrink-0">
                     Item {idx + 1}
                   </span>
-                  <div className="flex-1">
-                    <ZohoItemSearch
-                      orgId={orgId}
-                      value={addon.itemSearch}
-                      onChange={name => updateAddon(addon.id, { itemSearch: name, zohoItemId: '', itemName: '' })}
-                      onSelect={(zohoItemId, name, rate) =>
-                        updateAddon(addon.id, { zohoItemId, itemName: name, itemSearch: name, rate })
-                      }
-                    />
+                  <div className="flex-1 min-w-0">
+                    {addon.itemName ? (
+                      <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-green-300 bg-green-50 min-w-0">
+                        <span className="text-green-600 text-xs font-bold leading-none shrink-0">✓</span>
+                        <span className="text-sm font-medium text-green-800 flex-1 truncate min-w-0">{addon.itemName}</span>
+                        <button
+                          type="button"
+                          onClick={() => updateAddon(addon.id, { zohoItemId: '', itemName: '', itemSearch: '' })}
+                          className="text-green-500 hover:text-red-500 text-xs font-bold leading-none px-0.5"
+                          title="Change item"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ) : (
+                      <ZohoItemSearch
+                        orgId={orgId}
+                        value={addon.itemSearch}
+                        onChange={name => updateAddon(addon.id, { itemSearch: name, zohoItemId: '', itemName: '' })}
+                        onSelect={(zohoItemId, name, rate) =>
+                          updateAddon(addon.id, { zohoItemId, itemName: name, itemSearch: name, rate })
+                        }
+                      />
+                    )}
                   </div>
                   <button
                     type="button"
