@@ -5,6 +5,7 @@ import { SubscriptionsTable } from './_components/subscriptions-table';
 import { PageSizeSelector } from './_components/page-size-selector';
 import { getCurrentUser } from '@/lib/auth';
 import { SubscriptionSearchInput } from './_components/search-input';
+import { FilterPanel } from './_components/filter-panel';
 
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Subscriptions' };
@@ -46,7 +47,7 @@ interface Subscription {
 export default async function SubscriptionsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; expiring?: string; billing?: string; search?: string; page?: string; ids?: string; limit?: string; renewal_status?: string }>;
+  searchParams: Promise<{ status?: string; expiring?: string; billing?: string; search?: string; page?: string; ids?: string; limit?: string; renewal_status?: string; category?: string }>;
 }) {
   const sp = await searchParams;
   const user = await getCurrentUser();
@@ -57,6 +58,7 @@ export default async function SubscriptionsPage({
 
   let subscriptions: Subscription[] = [];
   let total = 0;
+  let categories: { itemValue: string; itemLabel: string }[] = [];
   const page = Number(sp.page ?? 1);
   const limit = [25, 50, 100, 200, 500].includes(Number(sp.limit)) ? Number(sp.limit) : 25;
 
@@ -67,15 +69,18 @@ export default async function SubscriptionsPage({
     if (sp.billing)         params.set('billing_cycle', sp.billing);
     if (sp.search)          params.set('search', sp.search);
     if (sp.renewal_status)  params.set('renewal_status', sp.renewal_status);
+    if (sp.category)        params.set('category', sp.category);
     if (sp.ids)      params.set('ids', sp.ids);
     params.set('page', String(page));
     params.set('limit', String(limit));
 
-    const data = await api.get<{ subscriptions: Subscription[]; total: number }>(
-      `/subscriptions?${params.toString()}`,
-    );
+    const [data, catData] = await Promise.all([
+      api.get<{ subscriptions: Subscription[]; total: number }>(`/subscriptions?${params.toString()}`),
+      api.get<{ itemValue: string; itemLabel: string }[]>('/master-data/subscription_category').catch(() => []),
+    ]);
     subscriptions = data.subscriptions ?? [];
     total = data.total ?? 0;
+    categories = catData ?? [];
   } catch {
     // empty state
   }
@@ -100,50 +105,16 @@ export default async function SubscriptionsPage({
           <SubscriptionSearchInput defaultValue={sp.search} />
         </div>
 
-        {/* Filters */}
-        <select name="status" defaultValue={sp.status ?? ''}
-          className="px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs bg-white focus:ring-2 focus:ring-blue-500/20 focus:outline-none">
-          <option value="">All Statuses</option>
-          <option value="Active">Active</option>
-          <option value="Expiring_Soon">Expiring Soon</option>
-          <option value="Expired">Expired</option>
-          <option value="Pending">Pending</option>
-          <option value="Cancelled">Cancelled</option>
-          <option value="Inactive">Inactive</option>
-        </select>
-        <select name="billing" defaultValue={sp.billing ?? ''}
-          className="px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs bg-white focus:ring-2 focus:ring-blue-500/20 focus:outline-none">
-          <option value="">All Periods</option>
-          <option value="monthly">Monthly</option>
-          <option value="quarterly">Quarterly</option>
-          <option value="half_yearly">Half-Yearly</option>
-          <option value="annual">Annual</option>
-          <option value="biennial">Biennial</option>
-          <option value="triennial">Triennial</option>
-          <option value="one_time">One-Time</option>
-        </select>
-        <select name="expiring" defaultValue={sp.expiring ?? ''}
-          className="px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs bg-white focus:ring-2 focus:ring-blue-500/20 focus:outline-none">
-          <option value="">Any Expiry</option>
-          <option value="7">7 days</option>
-          <option value="15">15 days</option>
-          <option value="30">30 days</option>
-          <option value="60">60 days</option>
-        </select>
-        <select name="renewal_status" defaultValue={sp.renewal_status ?? ''}
-          className="px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs bg-white focus:ring-2 focus:ring-blue-500/20 focus:outline-none">
-          <option value="">All Quotes</option>
-          <option value="needs_quote">⚠ Needs Quote</option>
-          <option value="quoted">📋 Quote Sent</option>
-          <option value="paid">✅ Renewal Paid</option>
-        </select>
+        {/* Filter popup panel — self-contained client component, uses router.push */}
+        <FilterPanel categories={categories} />
         <input type="hidden" name="limit" value={String(limit)} />
-        <input type="hidden" name="page" value="1" />
-        <button type="submit"
-          className="px-3 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold rounded-lg shadow-sm active:scale-[0.98] transition-all shrink-0">
-          Filter
-        </button>
-        {(sp.status || sp.expiring || sp.billing || sp.search || sp.renewal_status) && (
+        {/* Preserve active filters when search form is submitted (Enter key) */}
+        {sp.status         && <input type="hidden" name="status"         value={sp.status} />}
+        {sp.billing        && <input type="hidden" name="billing"        value={sp.billing} />}
+        {sp.expiring       && <input type="hidden" name="expiring"       value={sp.expiring} />}
+        {sp.renewal_status && <input type="hidden" name="renewal_status" value={sp.renewal_status} />}
+        {sp.category       && <input type="hidden" name="category"       value={sp.category} />}
+        {(sp.status || sp.expiring || sp.billing || sp.search || sp.renewal_status || sp.category) && (
           <Link href="/dashboard/subscriptions"
             className="px-2.5 py-1.5 border border-slate-200 text-slate-500 text-xs font-semibold rounded-lg hover:bg-slate-50 transition-all shrink-0">
             Clear

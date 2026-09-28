@@ -46,6 +46,8 @@ interface Props {
   startDate: string;   // ISO
   endDate: string;     // ISO
   autoRenew: boolean;
+  subscriptionCategory?: string | null;
+  categories?: { itemValue: string; itemLabel: string }[];
   lastQuoteNumber: string | null;
   lastInvoiceNumber: string | null;
   iconOnly?: boolean;
@@ -69,7 +71,7 @@ function SaveBtn() {
 }
 
 export function EditSubscriptionButton(props: Props) {
-  const { iconOnly = false } = props;
+  const { iconOnly = false, categories = [] } = props;
   const [open, setOpen]         = useState(false);
   const [currency, setCurrency] = useState(props.currency || 'INR');
   const [selectedItem, setSelectedItem] = useState({ id: props.itemId, name: props.itemName });
@@ -165,6 +167,23 @@ export function EditSubscriptionButton(props: Props) {
                   <label htmlFor="auto_renew" className="text-sm text-slate-700">Auto Renew</label>
                 </div>
               </div>
+
+              {/* Category */}
+              {categories.length > 0 && (
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Category</label>
+                  <select
+                    name="subscription_category"
+                    defaultValue={props.subscriptionCategory ?? ''}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">— No Category —</option>
+                    {categories.map((c) => (
+                      <option key={c.itemValue} value={c.itemValue}>{c.itemLabel}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               {/* Currency selector */}
               <div className="grid grid-cols-2 gap-4">

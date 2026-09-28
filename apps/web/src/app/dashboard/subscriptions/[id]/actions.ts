@@ -70,7 +70,8 @@ export async function updateSubscriptionAction(
   const nextRenewalPrice  = formData.get('next_renewal_price') as string | null;
   const startDate         = formData.get('start_date') as string | null;
   const endDate           = formData.get('end_date') as string | null;
-  const autoRenew         = formData.get('auto_renew');
+  const autoRenew            = formData.get('auto_renew');
+  const subscriptionCategory = (formData.get('subscription_category') as string | null) ?? null;
   const lastQuoteNumber   = (formData.get('last_quote_number') as string | null)?.trim() || null;
   const lastInvoiceNumber = (formData.get('last_invoice_number') as string | null)?.trim() || null;
   const zohoItemId        = (formData.get('zoho_item_id')   as string | null)?.trim() || undefined;
@@ -86,6 +87,7 @@ export async function updateSubscriptionAction(
   if (startDate)                                           body.startDate         = startDate;
   if (endDate)                                             body.endDate           = endDate;
   body.autoRenew = autoRenew === 'on' || autoRenew === 'true';
+  body.subscriptionCategory = subscriptionCategory || null;
   if (lastQuoteNumber)   body.lastQuoteNumber   = lastQuoteNumber;
   if (lastInvoiceNumber) body.lastInvoiceNumber = lastInvoiceNumber;
   if (zohoItemId)        body.zohoItemId        = zohoItemId;

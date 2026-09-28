@@ -76,6 +76,14 @@ function NewSubscriptionForm() {
   const [price,        setPrice]        = useState(firstItem?.price ?? 0);
   const [costPrice,    setCostPrice]    = useState(firstItem?.costPrice ?? 0);
   const [endTouched,   setEndTouched]   = useState(false);
+  const [categories,   setCategories]   = useState<{ itemValue: string; itemLabel: string }[]>([]);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/master-data/subscription_category`, { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d) => setCategories(Array.isArray(d) ? d : []))
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (isWildcard && !orgs.length) {
@@ -375,6 +383,22 @@ function NewSubscriptionForm() {
             ₹{totalAmount.toLocaleString('en-IN')} / {billingCycle}
           </span>
         </div>
+
+        {/* Category */}
+        {categories.length > 0 && (
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">Category (optional)</label>
+            <select
+              name="subscription_category"
+              className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">— No Category —</option>
+              {categories.map((c) => (
+                <option key={c.itemValue} value={c.itemValue}>{c.itemLabel}</option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {/* Notes */}
         <div>

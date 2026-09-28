@@ -226,7 +226,7 @@ export function SubscriptionLifecycleForm({ subSettings, convSettings }: Props) 
             </label>
             <select
               name="prorata_rounding"
-              defaultValue={val(subSettings, 'prorata_rounding', 'nearest')}
+              defaultValue={val(subSettings, 'prorata_rounding', 'up')}
               className="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
             >
               <option value="nearest">Nearest (0.5 → up)</option>

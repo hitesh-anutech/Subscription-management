@@ -158,6 +158,7 @@ export async function createSubscriptionAction(
     lastInvoiceId:     formData.get('zoho_invoice_id') as string || undefined,
     lastInvoiceNumber: formData.get('zoho_invoice_number') as string || undefined,
     lastInvoiceDate:   formData.get('start_date') as string || undefined,
+    subscriptionCategory: formData.get('subscription_category') as string || undefined,
     notes:             formData.get('notes') as string || undefined,
     lifecycleStatus:   'Active',   // created as Active — invoice already exists
   };

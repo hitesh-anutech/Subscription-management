@@ -19,6 +19,7 @@ interface Props {
   subscriptionPrice: number;
   endDate: string;
   billingCycle: string;
+  prorataRounding?: 'up' | 'nearest' | 'down';
 }
 
 function fmtDate(iso: string) {
@@ -27,7 +28,7 @@ function fmtDate(iso: string) {
   return `${day}/${m}/${y}`;
 }
 
-function calcProrata(price: number, cycle: string, additionalLicenses: number, effectiveDate: string, endDate: string) {
+function calcProrata(price: number, cycle: string, additionalLicenses: number, effectiveDate: string, endDate: string, rounding: 'up' | 'nearest' | 'down' = 'up') {
   const cycleDaysMap: Record<string, number> = {
     monthly: 30, quarterly: 90, half_yearly: 182, annual: 365, biennial: 730, triennial: 1095,
   };
@@ -36,17 +37,18 @@ function calcProrata(price: number, cycle: string, additionalLicenses: number, e
     (new Date(endDate).getTime() - new Date(effectiveDate).getTime()) / 86_400_000,
   ) + 1);
   const dailyRate = price / cycleDays;
-  const perLicenseRate = Math.ceil(dailyRate * periodDays);
+  const applyRounding = rounding === 'nearest' ? Math.round : rounding === 'down' ? Math.floor : Math.ceil;
+  const perLicenseRate = applyRounding(dailyRate * periodDays);
   const subtotal = perLicenseRate * additionalLicenses;
   return { periodDays, dailyRate: Math.round(dailyRate * 100) / 100, subtotal };
 }
 
-export function ProrataForm({ subscriptionId, subscriptionPrice, endDate, billingCycle }: Props) {
+export function ProrataForm({ subscriptionId, subscriptionPrice, endDate, billingCycle, prorataRounding = 'up' }: Props) {
   const [additionalLicenses, setAdditionalLicenses] = useState(1);
   const [effectiveDate, setEffectiveDate] = useState(new Date().toISOString().split('T')[0]);
 
   const preview = effectiveDate && additionalLicenses > 0
-    ? calcProrata(subscriptionPrice, billingCycle, additionalLicenses, effectiveDate, endDate)
+    ? calcProrata(subscriptionPrice, billingCycle, additionalLicenses, effectiveDate, endDate, prorataRounding)
     : null;
 
   const boundAction = generateProrataQuoteAction.bind(null, subscriptionId);

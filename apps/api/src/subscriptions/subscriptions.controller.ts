@@ -29,6 +29,7 @@ export class SubscriptionsController {
     @Query('ids')            ids?: string,
     @Query('domain_id')      domainId?: string,
     @Query('renewal_status') renewalStatus?: string,
+    @Query('category')       category?: string,
     @Query('page')           page?: string,
     @Query('limit')          limit?: string,
   ) {
@@ -41,6 +42,7 @@ export class SubscriptionsController {
       ids: ids ? ids.split(',').filter(Boolean) : undefined,
       domainId,
       renewalStatus,
+      category,
       page:  page  ? Number(page)  : 1,
       limit: limit ? Number(limit) : 20,
     });

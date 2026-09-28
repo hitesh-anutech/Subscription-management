@@ -58,7 +58,7 @@ export function DashboardShell({ initials, displayName, children }: Props) {
   return (
     <div className="h-screen flex flex-col bg-slate-50/50 overflow-hidden">
       {/* Top bar */}
-      <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-md px-6 py-3.5 flex items-center justify-between border-b border-slate-200/60 shadow-sm">
+      <header className="sticky top-0 z-40 bg-white px-6 py-3 flex items-center justify-between border-b border-slate-200 shadow-sm">
         <div className="flex items-center gap-3">
           <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-600 shadow-md shadow-blue-500/10">
             <span className="text-white text-base font-black">E</span>
@@ -76,7 +76,7 @@ export function DashboardShell({ initials, displayName, children }: Props) {
 
         <div className="flex items-center gap-3 text-sm">
           <BugReporter />
-          <div className="flex items-center gap-2.5 bg-slate-100/80 px-3 py-1.5 rounded-xl border border-slate-200/30">
+          <div className="flex items-center gap-2.5 bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200">
             <span className="w-6 h-6 bg-gradient-to-tr from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center text-[10px] font-bold text-white shadow-sm">
               {initials}
             </span>

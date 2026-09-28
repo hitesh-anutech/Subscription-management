@@ -67,6 +67,7 @@ interface Subscription {
   endDate: string;
   nextRenewalDate: string | null;
   autoRenew: boolean;
+  subscriptionCategory: string | null;
   lifecycleStatus: string;
   processStatus: string;
   notes: string | null;
@@ -107,6 +108,18 @@ export default async function SubscriptionDetailPage({ params }: { params: Promi
   } catch {
     notFound();
   }
+
+  let prorataRounding: 'up' | 'nearest' | 'down' = 'up';
+  let subscriptionCategories: { itemValue: string; itemLabel: string }[] = [];
+  try {
+    const [settingsData, catData] = await Promise.all([
+      api.get<{ settings: { key: string; value: string }[] }>('/settings/subscription'),
+      api.get<{ itemValue: string; itemLabel: string }[]>('/master-data/subscription_category').catch(() => []),
+    ]);
+    const found = settingsData.settings?.find((s) => s.key === 'prorata_rounding');
+    if (found?.value === 'nearest' || found?.value === 'down') prorataRounding = found.value;
+    subscriptionCategories = catData ?? [];
+  } catch { /* keep default */ }
 
   const canRenew = ['Active', 'Expiring_Soon', 'Expired'].includes(sub.lifecycleStatus);
   const canProrata = ['Active', 'Expiring_Soon'].includes(sub.lifecycleStatus);
@@ -253,6 +266,8 @@ export default async function SubscriptionDetailPage({ params }: { params: Promi
                   startDate={sub.startDate}
                   endDate={sub.endDate}
                   autoRenew={sub.autoRenew}
+                  subscriptionCategory={sub.subscriptionCategory ?? null}
+                  categories={subscriptionCategories}
                   lastQuoteNumber={sub.lastQuoteNumber ?? null}
                   lastInvoiceNumber={sub.lastInvoiceNumber ?? null}
                 />
@@ -361,6 +376,14 @@ export default async function SubscriptionDetailPage({ params }: { params: Promi
                 </div>
               ))}
             </div>
+            {sub.subscriptionCategory && (
+              <div className="mt-3 pt-3 border-t border-slate-100 flex items-center gap-2">
+                <p className="text-xs text-slate-400">Category</p>
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-violet-100 text-violet-700">
+                  {subscriptionCategories.find((c) => c.itemValue === sub.subscriptionCategory)?.itemLabel ?? sub.subscriptionCategory}
+                </span>
+              </div>
+            )}
             {sub.notes && (
               <div className="mt-4 pt-4 border-t border-slate-100">
                 <p className="text-xs text-slate-400 mb-1">Notes</p>
@@ -432,6 +455,7 @@ export default async function SubscriptionDetailPage({ params }: { params: Promi
                 subscriptionPrice={Number(sub.subscriptionPrice)}
                 endDate={sub.endDate}
                 billingCycle={sub.billingCycle}
+                prorataRounding={prorataRounding}
               />
             </div>
           )}

@@ -7,6 +7,7 @@ export interface SearchResult {
   title: string;
   subtitle: string;
   status?: string;
+  extra?: string;
   href: string;
 }
 
@@ -62,8 +63,9 @@ export class SearchService {
           ],
         },
         select: { id: true, subscriptionNumber: true, zohoCustomerName: true,
-                  zohoItemName: true, lifecycleStatus: true,
-                  domain: { select: { domainName: true } } },
+                  zohoItemName: true, lifecycleStatus: true, endDate: true,
+                  domain: { select: { domainName: true } },
+                  organization: { select: { name: true } } },
         take: perType,
       }),
 
@@ -75,7 +77,8 @@ export class SearchService {
             { zohoCustomerName: { contains: term, mode: 'insensitive' } },
           ],
         },
-        select: { id: true, domainName: true, zohoCustomerName: true, status: true },
+        select: { id: true, domainName: true, zohoCustomerName: true, status: true,
+                  organization: { select: { name: true } } },
         take: perType,
       }),
 
@@ -91,7 +94,7 @@ export class SearchService {
         },
         select: {
           id: true, zohoId: true, displayName: true, email: true,
-          organization: { select: { name: true } },
+          organization: { select: { id: true, name: true } },
         },
         take: perType,
       }),
@@ -114,29 +117,41 @@ export class SearchService {
         status: q.status,
         href: `/dashboard/quick-quotes/${q.id}`,
       })),
-      ...subscriptions.map((s) => ({
-        type: 'subscription' as const,
-        id: s.id,
-        title: s.zohoCustomerName ?? s.zohoItemName ?? 'Subscription',
-        subtitle: `${s.subscriptionNumber} · ${s.domain.domainName}`,
-        status: s.lifecycleStatus,
-        href: `/dashboard/subscriptions/${s.id}`,
-      })),
+      ...subscriptions.map((s) => {
+        const endFmt = s.endDate
+          ? new Date(s.endDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+          : null;
+        const parts = [s.subscriptionNumber, s.domain.domainName, s.zohoItemName, endFmt ? `ends ${endFmt}` : null].filter(Boolean);
+        return {
+          type: 'subscription' as const,
+          id: s.id,
+          title: s.zohoCustomerName ?? s.zohoItemName ?? 'Subscription',
+          subtitle: parts.join(' · '),
+          extra: s.organization.name,
+          status: s.lifecycleStatus,
+          href: `/dashboard/subscriptions/${s.id}`,
+        };
+      }),
       ...domains.map((d) => ({
         type: 'domain' as const,
         id: d.id,
         title: d.domainName,
         subtitle: d.zohoCustomerName ?? '',
+        extra: d.organization.name,
         status: d.status,
-        href: `/dashboard/domains`,
+        href: `/dashboard/domains?search=${encodeURIComponent(d.domainName)}`,
       })),
-      ...customers.map((c) => ({
-        type: 'customer' as const,
-        id: c.id,
-        title: c.displayName ?? c.zohoId,
-        subtitle: `${c.email ?? ''} · ${(c as { organization?: { name?: string } }).organization?.name ?? ''}`,
-        href: `/dashboard/domains`,
-      })),
+      ...customers.map((c) => {
+        const org = (c as { organization?: { id?: string; name?: string } }).organization;
+        return {
+          type: 'customer' as const,
+          id: c.id,
+          title: c.displayName ?? c.zohoId,
+          subtitle: c.email ?? '',
+          extra: org?.name || undefined,
+          href: `/dashboard/customers/${c.zohoId}?org_id=${org?.id ?? ''}`,
+        };
+      }),
     ];
 
     return results.slice(0, limit);

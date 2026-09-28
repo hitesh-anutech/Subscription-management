@@ -26,7 +26,7 @@ export function SidebarNavLink({ href, label, icon, exact, collapsed }: SidebarN
         title={label}
         className={`flex items-center justify-center w-10 h-10 mx-auto rounded-lg transition-all duration-200 ${
           isActive
-            ? 'bg-green-600 text-white shadow-sm'
+            ? 'bg-[#286FAD] text-white shadow-sm'
             : 'text-slate-400 hover:bg-white/10 hover:text-white'
         }`}
       >
@@ -40,7 +40,7 @@ export function SidebarNavLink({ href, label, icon, exact, collapsed }: SidebarN
       href={href as never}
       className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
         isActive
-          ? 'bg-green-600 text-white shadow-sm'
+          ? 'bg-[#286FAD] text-white shadow-sm'
           : 'text-slate-300 hover:bg-white/10 hover:text-white'
       }`}
     >
