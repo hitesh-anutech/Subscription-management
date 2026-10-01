@@ -47,7 +47,7 @@ interface Subscription {
 export default async function SubscriptionsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; expiring?: string; billing?: string; search?: string; page?: string; ids?: string; limit?: string; renewal_status?: string; category?: string }>;
+  searchParams: Promise<{ status?: string; expiring?: string; expiring_on?: string; billing?: string; search?: string; page?: string; ids?: string; limit?: string; renewal_status?: string; category?: string }>;
 }) {
   const sp = await searchParams;
   const user = await getCurrentUser();
@@ -66,6 +66,7 @@ export default async function SubscriptionsPage({
     const params = new URLSearchParams();
     if (sp.status)          params.set('status', sp.status);
     if (sp.expiring)        params.set('expiring_days', sp.expiring);
+    if (sp.expiring_on)     params.set('expiring_on', sp.expiring_on);
     if (sp.billing)         params.set('billing_cycle', sp.billing);
     if (sp.search)          params.set('search', sp.search);
     if (sp.renewal_status)  params.set('renewal_status', sp.renewal_status);
@@ -112,9 +113,10 @@ export default async function SubscriptionsPage({
         {sp.status         && <input type="hidden" name="status"         value={sp.status} />}
         {sp.billing        && <input type="hidden" name="billing"        value={sp.billing} />}
         {sp.expiring       && <input type="hidden" name="expiring"       value={sp.expiring} />}
+        {sp.expiring_on    && <input type="hidden" name="expiring_on"    value={sp.expiring_on} />}
         {sp.renewal_status && <input type="hidden" name="renewal_status" value={sp.renewal_status} />}
         {sp.category       && <input type="hidden" name="category"       value={sp.category} />}
-        {(sp.status || sp.expiring || sp.billing || sp.search || sp.renewal_status || sp.category) && (
+        {(sp.status || sp.expiring || sp.expiring_on || sp.billing || sp.search || sp.renewal_status || sp.category) && (
           <Link href="/dashboard/subscriptions"
             className="px-2.5 py-1.5 border border-slate-200 text-slate-500 text-xs font-semibold rounded-lg hover:bg-slate-50 transition-all shrink-0">
             Clear

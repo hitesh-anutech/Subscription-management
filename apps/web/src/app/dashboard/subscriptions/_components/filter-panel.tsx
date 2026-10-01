@@ -7,6 +7,16 @@ interface Props {
   categories: { itemValue: string; itemLabel: string }[];
 }
 
+function todayPlusN(n: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + n);
+  return d.toISOString().split('T')[0];
+}
+
+function fmtDate(iso: string): string {
+  return new Date(iso + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
 export function FilterPanel({ categories }: Props) {
   const router       = useRouter();
   const searchParams = useSearchParams();
@@ -17,6 +27,7 @@ export function FilterPanel({ categories }: Props) {
   const [status,         setStatus]        = useState(searchParams.get('status')         ?? '');
   const [billing,        setBilling]       = useState(searchParams.get('billing')        ?? '');
   const [expiring,       setExpiring]      = useState(searchParams.get('expiring')       ?? '');
+  const [expiringOn,     setExpiringOn]    = useState(searchParams.get('expiring_on')    ?? '');
   const [renewalStatus,  setRenewalStatus] = useState(searchParams.get('renewal_status') ?? '');
   const [category,       setCategory]      = useState(searchParams.get('category')       ?? '');
 
@@ -25,11 +36,12 @@ export function FilterPanel({ categories }: Props) {
     setStatus(searchParams.get('status')         ?? '');
     setBilling(searchParams.get('billing')       ?? '');
     setExpiring(searchParams.get('expiring')     ?? '');
+    setExpiringOn(searchParams.get('expiring_on') ?? '');
     setRenewalStatus(searchParams.get('renewal_status') ?? '');
     setCategory(searchParams.get('category')     ?? '');
   }, [searchParams]);
 
-  const activeCount = [status, billing, expiring, renewalStatus, category].filter(Boolean).length;
+  const activeCount = [status, billing, expiring, expiringOn, renewalStatus, category].filter(Boolean).length;
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -39,12 +51,24 @@ export function FilterPanel({ categories }: Props) {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
+  // Mutually exclusive: picking one clears the other
+  const handleExpiringChange = (val: string) => {
+    setExpiring(val);
+    if (val) setExpiringOn('');
+  };
+
+  const handleExpiringOnChange = (val: string) => {
+    setExpiringOn(val);
+    if (val) setExpiring('');
+  };
+
   const apply = () => {
     const params = new URLSearchParams(searchParams.toString());
     params.set('page', '1');
     if (status)        params.set('status', status);         else params.delete('status');
     if (billing)       params.set('billing', billing);       else params.delete('billing');
     if (expiring)      params.set('expiring', expiring);     else params.delete('expiring');
+    if (expiringOn)    params.set('expiring_on', expiringOn); else params.delete('expiring_on');
     if (renewalStatus) params.set('renewal_status', renewalStatus); else params.delete('renewal_status');
     if (category)      params.set('category', category);     else params.delete('category');
     router.push(`/dashboard/subscriptions?${params.toString()}`);
@@ -116,7 +140,7 @@ export function FilterPanel({ categories }: Props) {
             <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Expiring In</label>
             <select
               value={expiring}
-              onChange={(e) => setExpiring(e.target.value)}
+              onChange={(e) => handleExpiringChange(e.target.value)}
               className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-[#286FAD]/20"
             >
               <option value="">Any Expiry</option>
@@ -125,6 +149,32 @@ export function FilterPanel({ categories }: Props) {
               <option value="30">30 days</option>
               <option value="60">60 days</option>
             </select>
+          </div>
+
+          <div>
+            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Expiring On</label>
+            {expiring && !expiringOn && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => handleExpiringOnChange(todayPlusN(Number(expiring)))}
+                  className="w-full px-2.5 py-1.5 rounded-lg border border-[#286FAD]/40 bg-[#286FAD]/5 text-[#286FAD] text-[10px] font-bold hover:bg-[#286FAD]/10 transition-colors text-left"
+                >
+                  After {expiring} days → {fmtDate(todayPlusN(Number(expiring)))}
+                </button>
+                <div className="flex items-center gap-1.5 my-1.5">
+                  <div className="flex-1 h-px bg-slate-100" />
+                  <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wide">or</span>
+                  <div className="flex-1 h-px bg-slate-100" />
+                </div>
+              </>
+            )}
+            <input
+              type="date"
+              value={expiringOn}
+              onChange={(e) => handleExpiringOnChange(e.target.value)}
+              className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-[#286FAD]/20"
+            />
           </div>
 
           <div>

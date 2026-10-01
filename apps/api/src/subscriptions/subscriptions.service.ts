@@ -49,6 +49,7 @@ export class SubscriptionsService {
     status?: string;
     billingCycle?: string;
     expiringDays?: number;
+    expiringOn?: string;
     search?: string;
     ids?: string[];
     domainId?: string;
@@ -57,7 +58,7 @@ export class SubscriptionsService {
     page?: number;
     limit?: number;
   }) {
-    const { orgId, status, billingCycle, expiringDays, search, ids, domainId, renewalStatus, category, page = 1, limit = 20 } = params;
+    const { orgId, status, billingCycle, expiringDays, expiringOn, search, ids, domainId, renewalStatus, category, page = 1, limit = 20 } = params;
     const skip = (page - 1) * limit;
 
     const where: Record<string, unknown> = {};
@@ -65,7 +66,7 @@ export class SubscriptionsService {
     if (billingCycle) where.billingCycle = billingCycle;
     if (domainId)     where.domainId = domainId;
     if (category)     where.subscriptionCategory = category;
-    Object.assign(where, this.buildLifecycleWhere(status, expiringDays));
+    Object.assign(where, this.buildLifecycleWhere(status, expiringDays, expiringOn));
     if (search) {
       where.OR = [
         { subscriptionNumber: { contains: search, mode: 'insensitive' } },
@@ -1381,7 +1382,7 @@ export class SubscriptionsService {
    * Active / Expiring_Soon / Expired are computed from endDate so stale DB values are bypassed.
    * Cancelled, Inactive, Pending are manually set and use the stored field.
    */
-  private buildLifecycleWhere(status?: string, expiringDays?: number): Record<string, unknown> {
+  private buildLifecycleWhere(status?: string, expiringDays?: number, expiringOn?: string): Record<string, unknown> {
     // Use UTC midnight so date comparisons align with how Zoho date-strings are stored
     // (new Date('YYYY-MM-DD') is always parsed as UTC midnight by the JS spec).
     // Using setHours() on an IST server would shift the boundary by -5:30h, causing
@@ -1414,6 +1415,18 @@ export class SubscriptionsService {
       const cutoff = new Date(today);
       cutoff.setUTCDate(cutoff.getUTCDate() + expiringDays);
       result.endDate = { gte: today, lte: cutoff };
+      if (!status || dateStatuses.has(status)) {
+        result.lifecycleStatus = { notIn: ['Cancelled', 'Inactive'] };
+      }
+    }
+
+    // expiringOn: match subscriptions expiring on a specific calendar date.
+    // "YYYY-MM-DD" is parsed as UTC midnight, so gte/lt gives the full day window.
+    if (expiringOn) {
+      const onDate = new Date(expiringOn);
+      const nextDay = new Date(onDate);
+      nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+      result.endDate = { gte: onDate, lt: nextDay };
       if (!status || dateStatuses.has(status)) {
         result.lifecycleStatus = { notIn: ['Cancelled', 'Inactive'] };
       }
