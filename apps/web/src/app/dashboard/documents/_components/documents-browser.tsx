@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CustomizeColumnsModal, type CustomizableColumn } from '@/components/customize-columns-modal';
 import { ViewPdfButton } from '@/components/view-pdf-button';
-import { AiBulkMapModal } from './ai-bulk-map-modal';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3001/api';
 
@@ -242,8 +241,6 @@ export function DocumentsBrowser({ isAdmin = false }: { isAdmin?: boolean }) {
   const [docType, setDocType] = useState<DocType>('estimates');
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [filterOpen, setFilterOpen] = useState(false);
-  const [bulkMapOpen, setBulkMapOpen] = useState(false);
-
   const [catalog, setCatalog] = useState<CustomizableColumn[]>([]);
   const [selectedCols, setSelectedCols] = useState<string[]>(DEFAULT_COLUMNS);
   const [showColsModal, setShowColsModal] = useState(false);
@@ -500,16 +497,10 @@ export function DocumentsBrowser({ isAdmin = false }: { isAdmin?: boolean }) {
             ⚙ Columns ({shownCols.length})
           </button>
           {isAdmin && (
-            <>
-              <button type="button" onClick={() => setBulkMapOpen(true)}
-                className="px-3 py-1.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white text-xs font-bold rounded-lg transition-all shadow-sm whitespace-nowrap">
-                ✦ AI Auto-Map
-              </button>
-              <button type="button" onClick={exportCsv} disabled={rows.length === 0}
-                className="px-3 py-1.5 bg-gradient-to-r from-slate-800 to-slate-900 hover:from-slate-700 hover:to-slate-800 disabled:opacity-40 text-white text-xs font-bold rounded-lg transition-all shadow-sm whitespace-nowrap">
-                ⬇ Export CSV
-              </button>
-            </>
+            <button type="button" onClick={exportCsv} disabled={rows.length === 0}
+              className="px-3 py-1.5 bg-gradient-to-r from-slate-800 to-slate-900 hover:from-slate-700 hover:to-slate-800 disabled:opacity-40 text-white text-xs font-bold rounded-lg transition-all shadow-sm whitespace-nowrap">
+              ⬇ Export CSV
+            </button>
           )}
         </div>
       </div>
@@ -610,9 +601,6 @@ export function DocumentsBrowser({ isAdmin = false }: { isAdmin?: boolean }) {
         />
       )}
 
-      {bulkMapOpen && (
-        <AiBulkMapModal orgs={orgs} onClose={() => setBulkMapOpen(false)} />
-      )}
     </div>
   );
 }
