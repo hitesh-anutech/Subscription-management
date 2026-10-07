@@ -33,9 +33,11 @@ interface CacheCustomer {
 }
 interface Sub {
   id: string; subscriptionNumber: string; lifecycleStatus: string; processStatus: string;
-  zohoItemName: string | null; quantity: string; subscriptionPrice: string;
+  zohoItemId: string; zohoItemName: string | null; quantity: string; subscriptionPrice: string;
+  currency: string; exchangeRate: string | null; nextRenewalPrice: string | null;
+  autoRenew: boolean; subscriptionCategory: string | null;
   billingCycle: string; startDate: string; endDate: string;
-  lastInvoiceNumber: string | null; lastInvoiceDate: string | null;
+  lastQuoteNumber: string | null; lastInvoiceNumber: string | null; lastInvoiceDate: string | null;
   domain: { id: string; domainName: string } | null;
 }
 interface Dom { id: string; domainName: string; createdAt: string }
@@ -90,16 +92,19 @@ export default async function CustomerDetailPage({
 
   let detail: Detail;
   let org: Org | null = null;
+  let categories: { itemValue: string; itemLabel: string }[] = [];
   try {
-    const [detailRes, orgsRes] = await Promise.allSettled([
+    const [detailRes, orgsRes, catRes] = await Promise.allSettled([
       api.get<Detail>(`/organizations/${orgId}/customers/${zohoId}`),
       api.get<{ organizations: Org[] }>('/organizations'),
+      api.get<{ itemValue: string; itemLabel: string }[]>('/master-data/subscription_category'),
     ]);
     if (detailRes.status === 'rejected') notFound();
     detail = (detailRes as PromiseFulfilledResult<Detail>).value;
     if (orgsRes.status === 'fulfilled') {
       org = orgsRes.value.organizations.find(o => o.id === orgId) ?? null;
     }
+    if (catRes.status === 'fulfilled') categories = catRes.value ?? [];
   } catch {
     notFound();
   }
@@ -355,6 +360,7 @@ export default async function CustomerDetailPage({
         customerName={name}
         subscriptions={subscriptions}
         isAdmin={isAdmin}
+        categories={categories}
       />
 
       {/* ── Mapped Domains (collapsible — native <details>, no JS needed) ── */}

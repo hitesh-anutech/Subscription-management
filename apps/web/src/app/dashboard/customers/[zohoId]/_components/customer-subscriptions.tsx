@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, useEffect, useRef } from 'react';
 import { Eye } from 'lucide-react';
-import { TruncatedTooltip } from '@/components/truncated-tooltip';
+import { EditSubscriptionButton } from '../../../subscriptions/[id]/_components/edit-subscription-modal';
 
 interface CustomerResult {
   zohoId: string;
@@ -168,12 +168,20 @@ interface Sub {
   id: string;
   subscriptionNumber: string;
   lifecycleStatus: string;
+  zohoItemId: string;
   zohoItemName: string | null;
   quantity: string;
   subscriptionPrice: string;
+  currency: string;
+  exchangeRate: string | null;
+  nextRenewalPrice: string | null;
+  autoRenew: boolean;
+  subscriptionCategory: string | null;
   billingCycle: string;
   startDate: string;
   endDate: string;
+  lastQuoteNumber: string | null;
+  lastInvoiceNumber: string | null;
   domain: { id: string; domainName: string } | null;
 }
 
@@ -199,12 +207,14 @@ export default function CustomerSubscriptions({
   customerName,
   subscriptions,
   isAdmin,
+  categories = [],
 }: {
   orgId: string;
   customerId: string;
   customerName: string;
   subscriptions: Sub[];
   isAdmin: boolean;
+  categories?: { itemValue: string; itemLabel: string }[];
 }) {
   const router = useRouter();
   const renewable = subscriptions.filter((s) => RENEWABLE.includes(s.lifecycleStatus));
@@ -539,11 +549,12 @@ export default function CustomerSubscriptions({
                     className="rounded border-slate-300 text-purple-600 focus:ring-purple-500"
                   />
                 </th>
-                <th className="px-4 py-2.5 text-xs font-semibold text-slate-500">Sub #</th>
+                <th className="px-4 py-2.5 text-xs font-semibold text-slate-500 whitespace-nowrap">Sub #</th>
                 <th className="px-4 py-2.5 text-xs font-semibold text-slate-500">Item</th>
                 <th className="px-4 py-2.5 text-xs font-semibold text-slate-500">Domain</th>
                 <th className="px-4 py-2.5 text-xs font-semibold text-slate-500 text-right">Qty</th>
-                <th className="px-4 py-2.5 text-xs font-semibold text-slate-500">Term</th>
+                <th className="px-4 py-2.5 text-xs font-semibold text-slate-500 whitespace-nowrap">Last Quote</th>
+                <th className="px-4 py-2.5 text-xs font-semibold text-slate-500 whitespace-nowrap">Last Invoice</th>
                 <th className="px-4 py-2.5 text-xs font-semibold text-slate-500 text-center">Status</th>
                 <th className="px-4 py-2.5 text-xs font-semibold text-slate-500 text-right">Actions</th>
               </tr>
@@ -564,7 +575,7 @@ export default function CustomerSubscriptions({
                         className="rounded border-slate-300 text-purple-600 focus:ring-purple-500"
                       />
                     </td>
-                    <td className="px-4 py-3 font-mono text-xs">
+                    <td className="px-4 py-3 font-mono text-xs whitespace-nowrap">
                       <Link
                         href={`/dashboard/subscriptions/${s.id}`}
                         className="text-blue-600 hover:underline"
@@ -573,18 +584,24 @@ export default function CustomerSubscriptions({
                         {s.subscriptionNumber}
                       </Link>
                     </td>
-                    <td className="px-4 py-3">
-                      <TruncatedTooltip text={s.zohoItemName ?? '—'} className="text-slate-800" />
+                    <td className="px-4 py-3 min-w-[200px]">
+                      <p className="text-slate-800 text-xs font-medium leading-snug">{s.zohoItemName ?? '—'}</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5 whitespace-nowrap">
+                        {fmt(s.startDate)} — {fmt(s.endDate)}
+                        {isExpiring && (
+                          <span className="ml-1.5 px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-semibold text-[9px]">
+                            {days}d
+                          </span>
+                        )}
+                      </p>
                     </td>
-                    <td className="px-4 py-3 text-blue-600 text-xs">{s.domain?.domainName || '—'}</td>
+                    <td className="px-4 py-3 text-blue-600 text-xs whitespace-nowrap">{s.domain?.domainName || '—'}</td>
                     <td className="px-4 py-3 text-right text-slate-700">{Number(s.quantity)}</td>
-                    <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">
-                      {fmt(s.startDate)} — {fmt(s.endDate)}
-                      {isExpiring && (
-                        <span className="ml-1.5 px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-semibold text-xs">
-                          {days}d
-                        </span>
-                      )}
+                    <td className="px-4 py-3 text-xs font-mono text-slate-600 whitespace-nowrap">
+                      {s.lastQuoteNumber ?? <span className="text-slate-300">—</span>}
+                    </td>
+                    <td className="px-4 py-3 text-xs font-mono text-slate-600 whitespace-nowrap">
+                      {s.lastInvoiceNumber ?? <span className="text-slate-300">—</span>}
                     </td>
                     <td className="px-4 py-3 text-center">
                       <span
@@ -596,13 +613,35 @@ export default function CustomerSubscriptions({
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <Link
-                        href={`/dashboard/subscriptions/${s.id}`}
-                        className="inline-flex items-center justify-center p-1.5 rounded-xl border border-blue-100 bg-blue-50/50 text-blue-600 hover:bg-blue-100 transition-colors"
-                        title="View subscription"
-                      >
-                        <Eye className="w-4 h-4" />
-                      </Link>
+                      <div className="flex items-center justify-end gap-1.5">
+                        <EditSubscriptionButton
+                          iconOnly
+                          subscriptionId={s.id}
+                          itemId={s.zohoItemId}
+                          itemName={s.zohoItemName ?? ''}
+                          orgId={orgId}
+                          quantity={Number(s.quantity)}
+                          currency={s.currency || 'INR'}
+                          exchangeRate={Number(s.exchangeRate ?? 1)}
+                          billingCycle={s.billingCycle}
+                          price={Number(s.subscriptionPrice)}
+                          nextRenewalPrice={s.nextRenewalPrice ? Number(s.nextRenewalPrice) : null}
+                          startDate={s.startDate}
+                          endDate={s.endDate}
+                          autoRenew={s.autoRenew}
+                          subscriptionCategory={s.subscriptionCategory}
+                          categories={categories}
+                          lastQuoteNumber={s.lastQuoteNumber}
+                          lastInvoiceNumber={s.lastInvoiceNumber}
+                        />
+                        <Link
+                          href={`/dashboard/subscriptions/${s.id}`}
+                          className="inline-flex items-center justify-center p-1.5 rounded-xl border border-blue-100 bg-blue-50/50 text-blue-600 hover:bg-blue-100 transition-colors"
+                          title="View subscription"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </Link>
+                      </div>
                     </td>
                   </tr>
                 );

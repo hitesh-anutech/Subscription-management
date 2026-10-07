@@ -47,7 +47,7 @@ interface Subscription {
 export default async function SubscriptionsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; expiring?: string; expiring_on?: string; billing?: string; search?: string; page?: string; ids?: string; limit?: string; renewal_status?: string; category?: string }>;
+  searchParams: Promise<{ status?: string; expiring?: string; expiring_on?: string; billing?: string; search?: string; page?: string; ids?: string; limit?: string; renewal_status?: string; category?: string; org_id?: string }>;
 }) {
   const sp = await searchParams;
   const user = await getCurrentUser();
@@ -59,6 +59,7 @@ export default async function SubscriptionsPage({
   let subscriptions: Subscription[] = [];
   let total = 0;
   let categories: { itemValue: string; itemLabel: string }[] = [];
+  let orgs: { id: string; name: string }[] = [];
   const page = Number(sp.page ?? 1);
   const limit = [25, 50, 100, 200, 500].includes(Number(sp.limit)) ? Number(sp.limit) : 25;
 
@@ -71,17 +72,20 @@ export default async function SubscriptionsPage({
     if (sp.search)          params.set('search', sp.search);
     if (sp.renewal_status)  params.set('renewal_status', sp.renewal_status);
     if (sp.category)        params.set('category', sp.category);
-    if (sp.ids)      params.set('ids', sp.ids);
+    if (sp.org_id)          params.set('org_id', sp.org_id);
+    if (sp.ids)             params.set('ids', sp.ids);
     params.set('page', String(page));
     params.set('limit', String(limit));
 
-    const [data, catData] = await Promise.all([
+    const [data, catData, orgsData] = await Promise.all([
       api.get<{ subscriptions: Subscription[]; total: number }>(`/subscriptions?${params.toString()}`),
       api.get<{ itemValue: string; itemLabel: string }[]>('/master-data/subscription_category').catch(() => []),
+      api.get<{ organizations: { id: string; name: string }[] }>('/organizations').catch(() => ({ organizations: [] })),
     ]);
     subscriptions = data.subscriptions ?? [];
     total = data.total ?? 0;
     categories = catData ?? [];
+    orgs = orgsData.organizations ?? [];
   } catch {
     // empty state
   }
@@ -107,7 +111,7 @@ export default async function SubscriptionsPage({
         </div>
 
         {/* Filter popup panel — self-contained client component, uses router.push */}
-        <FilterPanel categories={categories} />
+        <FilterPanel categories={categories} orgs={orgs} />
         <input type="hidden" name="limit" value={String(limit)} />
         {/* Preserve active filters when search form is submitted (Enter key) */}
         {sp.status         && <input type="hidden" name="status"         value={sp.status} />}
@@ -116,7 +120,8 @@ export default async function SubscriptionsPage({
         {sp.expiring_on    && <input type="hidden" name="expiring_on"    value={sp.expiring_on} />}
         {sp.renewal_status && <input type="hidden" name="renewal_status" value={sp.renewal_status} />}
         {sp.category       && <input type="hidden" name="category"       value={sp.category} />}
-        {(sp.status || sp.expiring || sp.expiring_on || sp.billing || sp.search || sp.renewal_status || sp.category) && (
+        {sp.org_id         && <input type="hidden" name="org_id"         value={sp.org_id} />}
+        {(sp.status || sp.expiring || sp.expiring_on || sp.billing || sp.search || sp.renewal_status || sp.category || sp.org_id) && (
           <Link href="/dashboard/subscriptions"
             className="px-2.5 py-1.5 border border-slate-200 text-slate-500 text-xs font-semibold rounded-lg hover:bg-slate-50 transition-all shrink-0">
             Clear
