@@ -1755,6 +1755,238 @@ export class ZohoService {
   }
 
   /**
+   * Bulk auto-map all cached Renewal documents for an org to subscriptions.
+   *
+   * Algorithm:
+   *  1. Load all cached Renewal docs with lines, all existing RenewalHistory, all subs — 3 DB queries.
+   *  2. Exclude docs already mapped (quoteNumber or invoiceNumber in RenewalHistory).
+   *  3. Run 3-level greedy match per doc (domain → end-date proximity ≤90d → qty closest).
+   *  4. Score confidence: HIGH (all lines matched, every delta ≤30d) → auto-apply unless dryRun.
+   *     MEDIUM (all matched, at least one delta >30d ≤90d) → review queue.
+   *     LOW (any line unmatched) → skip.
+   *  5. Return { summary, reviewQueue, errors, dryRun }.
+   */
+  async bulkAutoMap(
+    orgId: string,
+    opts: { dryRun?: boolean; businessType?: string; chunkSize?: number },
+  ) {
+    const { dryRun = false, businessType = 'Renewal', chunkSize = 20 } = opts;
+
+    // ── 1. Batch load ────────────────────────────────────────────────
+    const btPattern = businessType.toLowerCase();
+    const [allDocs, existingHistory, allSubs] = await Promise.all([
+      this.prisma.zohoCustomerDoc.findMany({
+        where: {
+          organizationId: orgId,
+          businessType: { contains: btPattern, mode: 'insensitive' },
+          lines: { some: {} },
+        },
+        include: { lines: { orderBy: { lineOrder: 'asc' } } },
+      }),
+      this.prisma.renewalHistory.findMany({
+        where: { organizationId: orgId },
+        select: { quoteNumber: true, invoiceNumber: true },
+      }),
+      this.prisma.subscription.findMany({
+        where: { organizationId: orgId, domain: { isNot: null } },
+        select: {
+          id: true, subscriptionNumber: true, quantity: true, endDate: true,
+          domain: { select: { domainName: true } },
+        },
+      }),
+    ]);
+
+    // ── 2. Build lookup structures ───────────────────────────────────
+    const mappedQuotes   = new Set(existingHistory.map(h => h.quoteNumber).filter(Boolean));
+    const mappedInvoices = new Set(existingHistory.map(h => h.invoiceNumber).filter(Boolean));
+
+    // domainName → sub[] (all subs sharing that domain across this org)
+    const subsByDomain = new Map<string, typeof allSubs>();
+    for (const s of allSubs) {
+      if (!s.domain?.domainName) continue;
+      const key = s.domain.domainName.toLowerCase();
+      if (!subsByDomain.has(key)) subsByDomain.set(key, []);
+      subsByDomain.get(key)!.push(s);
+    }
+
+    // ── 3. Filter out already-mapped docs ───────────────────────────
+    const unmapped = allDocs.filter(doc => {
+      if (doc.quoteNumber   && mappedQuotes.has(doc.quoteNumber))   return false;
+      if (doc.invoiceNumber && mappedInvoices.has(doc.invoiceNumber)) return false;
+      return true;
+    });
+
+    const alreadyMapped = allDocs.length - unmapped.length;
+
+    // ── 4. Match each doc ────────────────────────────────────────────
+    type MatchedLine = {
+      lineOrder: number; name: string; domain: string;
+      startDate: string; endDate: string; qty: number; rate: number;
+      suggestedSubId: string | null; suggestedSubNumber: string | null;
+      suggestedSubDomain: string | null; endDateDeltaDays: number | null;
+    };
+    type DocResult = {
+      docKey: string; zohoCustomerId: string;
+      quoteNumber: string | null; invoiceNumber: string | null;
+      quoteDate: string | null; invoiceDate: string | null;
+      businessType: string | null; confidence: 'HIGH' | 'MEDIUM';
+      lines: MatchedLine[];
+    };
+
+    const highDocs:   Array<{ doc: typeof allDocs[0]; lines: MatchedLine[] }> = [];
+    const reviewQueue: DocResult[] = [];
+    let lowCount = 0;
+
+    for (const doc of unmapped) {
+      const usedIds = new Set<string>();
+      const matchedLines: MatchedLine[] = [];
+
+      for (const line of doc.lines) {
+        const domainKey = (line.domain ?? '').toLowerCase();
+        const candidates = (subsByDomain.get(domainKey) ?? []).filter(s => !usedIds.has(s.id));
+
+        let best: typeof allSubs[0] | null = null;
+        let deltaDays: number | null = null;
+
+        if (candidates.length > 0 && line.endDate) {
+          const liEnd = new Date(line.endDate).getTime();
+          const within90 = candidates.filter(
+            s => Math.abs(new Date(s.endDate).getTime() - liEnd) < 90 * 86_400_000,
+          );
+          const pool = within90.length > 0
+            ? within90.sort((a, b) =>
+                Math.abs(new Date(a.endDate).getTime() - liEnd) -
+                Math.abs(new Date(b.endDate).getTime() - liEnd))
+            : candidates;
+          const sorted = pool.length > 1
+            ? [...pool].sort((a, b) =>
+                Math.abs(Number(a.quantity) - line.qty) -
+                Math.abs(Number(b.quantity) - line.qty))
+            : pool;
+          best = sorted[0] ?? null;
+          if (best) {
+            deltaDays = Math.round(
+              Math.abs(new Date(best.endDate).getTime() - liEnd) / 86_400_000,
+            );
+          }
+        } else if (candidates.length > 0) {
+          best = candidates[0];
+        }
+
+        if (best) usedIds.add(best.id);
+        matchedLines.push({
+          lineOrder:          line.lineOrder,
+          name:               line.name,
+          domain:             line.domain ?? '',
+          startDate:          line.startDate ?? '',
+          endDate:            line.endDate   ?? '',
+          qty:                line.qty,
+          rate:               line.rate,
+          suggestedSubId:     best?.id ?? null,
+          suggestedSubNumber: best?.subscriptionNumber ?? null,
+          suggestedSubDomain: best?.domain?.domainName ?? null,
+          endDateDeltaDays:   deltaDays,
+        });
+      }
+
+      // ── Confidence scoring ─────────────────────────────────────────
+      const allMatched = matchedLines.every(l => l.suggestedSubId !== null);
+      if (!allMatched) { lowCount++; continue; }
+
+      const maxDelta = Math.max(...matchedLines.map(l => l.endDateDeltaDays ?? 9999));
+      if (maxDelta > 90) { lowCount++; continue; }
+
+      const confidence: 'HIGH' | 'MEDIUM' = maxDelta <= 30 ? 'HIGH' : 'MEDIUM';
+
+      if (confidence === 'HIGH') {
+        highDocs.push({ doc, lines: matchedLines });
+      } else {
+        reviewQueue.push({
+          docKey:        doc.docKey,
+          zohoCustomerId: doc.zohoCustomerId,
+          quoteNumber:   doc.quoteNumber,
+          invoiceNumber: doc.invoiceNumber,
+          quoteDate:     doc.quoteDate   ? doc.quoteDate.toISOString()   : null,
+          invoiceDate:   doc.invoiceDate ? doc.invoiceDate.toISOString() : null,
+          businessType:  doc.businessType,
+          confidence:    'MEDIUM',
+          lines:         matchedLines,
+        });
+      }
+    }
+
+    // ── 5. Auto-apply HIGH docs (chunked) ────────────────────────────
+    const errors: Array<{ docKey: string; error: string }> = [];
+    let appliedCount = 0;
+
+    if (!dryRun && highDocs.length > 0) {
+      for (let i = 0; i < highDocs.length; i += chunkSize) {
+        const chunk = highDocs.slice(i, i + chunkSize);
+        const results = await Promise.allSettled(
+          chunk.map(({ doc, lines }) =>
+            this.createDocHistory(orgId, {
+              quoteId:       doc.quoteId   ?? undefined,
+              quoteNumber:   doc.quoteNumber   ?? undefined,
+              quoteDate:     doc.quoteDate   ? doc.quoteDate.toISOString()   : undefined,
+              invoiceId:     doc.invoiceId   ?? undefined,
+              invoiceNumber: doc.invoiceNumber ?? undefined,
+              invoiceDate:   doc.invoiceDate ? doc.invoiceDate.toISOString() : undefined,
+              businessType:  doc.businessType ?? businessType,
+              mappings: lines.map(l => ({
+                subId:          l.suggestedSubId!,
+                startDate:      l.startDate,
+                endDate:        l.endDate,
+                qty:            l.qty,
+                rate:           l.rate,
+                lineItemDomain: l.domain,
+              })),
+            }).then(() => { appliedCount++; }),
+          ),
+        );
+        results.forEach((r, idx) => {
+          if (r.status === 'rejected') {
+            errors.push({
+              docKey: chunk[idx].doc.docKey,
+              error:  r.reason instanceof Error ? r.reason.message : String(r.reason),
+            });
+          }
+        });
+      }
+    }
+
+    // In dry-run mode, include HIGH docs in the review queue so the user can preview them
+    const dryRunHighQueue: DocResult[] = dryRun
+      ? highDocs.map(({ doc, lines }) => ({
+          docKey:         doc.docKey,
+          zohoCustomerId: doc.zohoCustomerId,
+          quoteNumber:    doc.quoteNumber,
+          invoiceNumber:  doc.invoiceNumber,
+          quoteDate:      doc.quoteDate   ? doc.quoteDate.toISOString()   : null,
+          invoiceDate:    doc.invoiceDate ? doc.invoiceDate.toISOString() : null,
+          businessType:   doc.businessType,
+          confidence:     'HIGH' as const,
+          lines,
+        }))
+      : [];
+
+    return {
+      summary: {
+        totalDocsScanned: unmapped.length,
+        alreadyMapped,
+        high:    highDocs.length,
+        medium:  reviewQueue.length,
+        low:     lowCount,
+        appliedCount,
+        skippedByValidation: errors.length,
+      },
+      reviewQueue: [...dryRunHighQueue, ...reviewQueue],
+      errors,
+      dryRun,
+      processedAt: new Date().toISOString(),
+    };
+  }
+
+  /**
    * Fetch line items for a single Zoho document (invoice or estimate).
    *
    * DB-first: if the document's line items are already in zoho_customer_doc_lines,

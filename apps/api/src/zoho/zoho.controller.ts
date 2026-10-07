@@ -227,6 +227,24 @@ export class ZohoController {
     return this.zoho.createDocHistory(id, body);
   }
 
+  /**
+   * POST /api/organizations/:id/ai-bulk-map
+   * Bulk auto-map cached Renewal documents to subscriptions using 3-level confidence algorithm.
+   * HIGH confidence → auto-applied; MEDIUM → review queue; dryRun:true → preview only.
+   */
+  @Post('organizations/:id/ai-bulk-map')
+  @HttpCode(HttpStatus.OK)
+  aiBulkMap(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: { dryRun?: boolean; businessType?: string; chunkSize?: number },
+  ) {
+    return this.zoho.bulkAutoMap(id, {
+      dryRun:       body.dryRun       ?? false,
+      businessType: body.businessType ?? 'Renewal',
+      chunkSize:    body.chunkSize    ?? 20,
+    });
+  }
+
   /** POST /api/organizations/:id/customers/:zohoId/zoho-documents/:docKey/resync — re-fetch single doc from Zoho, update DB cache + wipe line items */
   @Post('organizations/:id/customers/:zohoId/zoho-documents/:docKey/resync')
   @HttpCode(HttpStatus.OK)
