@@ -10,7 +10,7 @@ import {
   RenewalQuoteDto, ProrataQuoteDto, StartSubscriptionDto,
   ImportSubscriptionsBatchDto, BulkUpdatePriceDto, BulkRenewalQuoteDto,
   CombinedRenewalQuoteDto, BulkCreateFromQuoteDto, BulkTransferCustomerDto,
-  InlineImportZohoDocDto, CreateCommentDto,
+  InlineImportZohoDocDto, CreateCommentDto, BatchCheckDto,
 } from './dto/subscriptions.dto';
 import { CurrentUser, AuthUser } from '../auth/decorators/current-user.decorator';
 
@@ -161,6 +161,12 @@ export class SubscriptionsController {
   @Post('renewal-batches/:batchId/refresh')
   refreshBatch(@Param('batchId') batchId: string) {
     return this.service.refreshBatch(batchId);
+  }
+
+  /** POST /api/subscriptions/batch-check — check which import candidates already have a subscription */
+  @Post('batch-check')
+  batchCheck(@Body() dto: BatchCheckDto) {
+    return this.service.batchCheck(dto.items);
   }
 
   /** GET /api/subscriptions/prefill-renewal-quote — prefill a quote from existing subscriptions */

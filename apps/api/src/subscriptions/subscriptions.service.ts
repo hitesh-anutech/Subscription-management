@@ -1619,6 +1619,83 @@ export class SubscriptionsService {
   }
 
   // ------------------------------------------------------------------
+  // Batch check — does a subscription already exist for each candidate?
+  // Called by the import page after grouping to populate the Status column.
+  // ------------------------------------------------------------------
+  async batchCheck(items: Array<{ key: string; organizationId: string; zohoCustomerId: string; zohoItemId: string; domainName: string }>) {
+    if (!items.length) return {};
+
+    // Phase 1: resolve matching domain records (org + customer + domain name)
+    const domains = await this.prisma.domain.findMany({
+      where: {
+        OR: items.map((i) => ({
+          organizationId: i.organizationId,
+          zohoCustomerId: i.zohoCustomerId,
+          domainName: { equals: i.domainName, mode: 'insensitive' as const },
+        })),
+      },
+      select: { id: true, domainName: true, organizationId: true, zohoCustomerId: true },
+    });
+
+    if (!domains.length) return Object.fromEntries(items.map((i) => [i.key, null]));
+
+    // Build lookup: "orgId:customerId:domainName" → domainId
+    const domainIdMap = new Map(
+      domains.map((d) => [`${d.organizationId}:${d.zohoCustomerId}:${d.domainName.toLowerCase()}`, d.id]),
+    );
+
+    // Phase 2: find subscriptions by domainId + itemId
+    const domainIds = domains.map((d) => d.id);
+    const itemIds   = [...new Set(items.map((i) => i.zohoItemId))];
+    const subs = await this.prisma.subscription.findMany({
+      where: { domainId: { in: domainIds }, zohoItemId: { in: itemIds } },
+      select: {
+        id: true, subscriptionNumber: true,
+        lifecycleStatus: true, processStatus: true,
+        startDate: true, endDate: true,
+        quantity: true, subscriptionPrice: true,
+        billingCycle: true, autoRenew: true,
+        currency: true, exchangeRate: true,
+        zohoItemId: true, zohoItemName: true,
+        zohoCustomerId: true,
+        lastQuoteNumber: true, lastInvoiceNumber: true,
+        subscriptionCategory: true,
+        domainId: true,
+      },
+    });
+
+    // Phase 3: match each input item to a subscription
+    const result: Record<string, object | null> = {};
+    for (const item of items) {
+      const domainId = domainIdMap.get(`${item.organizationId}:${item.zohoCustomerId}:${item.domainName.toLowerCase()}`);
+      if (!domainId) { result[item.key] = null; continue; }
+      const match = subs.find(
+        (s) => s.domainId === domainId && s.zohoItemId === item.zohoItemId && s.zohoCustomerId === item.zohoCustomerId,
+      );
+      result[item.key] = match ? {
+        id:                   match.id,
+        subscriptionNumber:   match.subscriptionNumber,
+        lifecycleStatus:      match.lifecycleStatus,
+        processStatus:        match.processStatus,
+        startDate:            match.startDate.toISOString().split('T')[0],
+        endDate:              match.endDate.toISOString().split('T')[0],
+        quantity:             Number(match.quantity),
+        subscriptionPrice:    Number(match.subscriptionPrice),
+        billingCycle:         match.billingCycle,
+        autoRenew:            match.autoRenew,
+        currency:             match.currency ?? 'INR',
+        exchangeRate:         Number(match.exchangeRate ?? 1),
+        zohoItemId:           match.zohoItemId,
+        zohoItemName:         match.zohoItemName ?? '',
+        lastQuoteNumber:      match.lastQuoteNumber,
+        lastInvoiceNumber:    match.lastInvoiceNumber,
+        subscriptionCategory: match.subscriptionCategory,
+      } : null;
+    }
+    return result;
+  }
+
+  // ------------------------------------------------------------------
   // Import from Zoho invoices — grouped, idempotent, with history backfill
   // ------------------------------------------------------------------
   async importGrouped(items: ImportSubscriptionDto[]) {
@@ -2472,7 +2549,6 @@ export class SubscriptionsService {
           ...(lineItemCf.length ? { item_custom_fields: lineItemCf } : {}),
         }],
         custom_fields: estimateCf,
-        notes: dto.notes ?? `Pro-rata for ${dto.additionalLicenses} additional licenses from ${effectiveDateStr} to ${endDateStr}`,
       };
 
       const resp = await zohoClient.post<{ estimate: { estimate_id: string; estimate_number: string } }>(
@@ -2615,7 +2691,6 @@ export class SubscriptionsService {
               `Subscription Period: ${CYCLE_LABEL[sub.billingCycle] ?? sub.billingCycle} (${this.formatDateDMY(new Date(dto.startDate))} to ${this.formatDateDMY(new Date(dto.endDate))})`,
             ].join('\n'),
           }],
-          notes: dto.notes ?? `Invoice for ${sub.domain.domainName}`,
         };
         const resp = await zohoClient.post<{ invoice: { invoice_id: string; invoice_number: string } }>(
           '/invoices', payload,
@@ -2762,7 +2837,6 @@ export class SubscriptionsService {
         ...(lineItemCf.length ? { item_custom_fields: lineItemCf } : {}),
       }],
       custom_fields: customFields,
-      notes: `${businessConcept} for ${sub.domain.domainName}`,
     };
   }
 

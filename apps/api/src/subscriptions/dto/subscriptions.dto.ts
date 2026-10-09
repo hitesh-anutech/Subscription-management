@@ -92,7 +92,6 @@ export class AddonItemDto {
 export class RenewalQuoteDto {
   @IsOptional() @IsNumber() @Min(0) overridePrice?: number;
   @IsOptional() @IsNumber() @Min(1) overrideQuantity?: number;
-  @IsOptional() @IsString() @MaxLength(2000) notes?: string;
   @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => AddonItemDto)
   addonItems?: AddonItemDto[];
 }
@@ -100,14 +99,12 @@ export class RenewalQuoteDto {
 export class ProrataQuoteDto {
   @IsNumber() @Min(1) additionalLicenses!: number;
   @IsDateString() effectiveDate!: string;
-  @IsOptional() @IsString() @MaxLength(2000) notes?: string;
 }
 
 export class StartSubscriptionDto {
   @IsDateString() startDate!: string;
   @IsDateString() endDate!: string;
   @IsEnum(['estimate', 'invoice']) zohoDocumentType!: 'estimate' | 'invoice';
-  @IsOptional() @IsString() @MaxLength(2000) notes?: string;
 }
 
 // ── Import from Zoho invoices (grouped) ──────────────────────────────
@@ -207,6 +204,19 @@ export class CombinedRenewalQuoteDto {
   @IsOptional()
   @IsObject()
   priceOverrides?: Record<string, number>;
+}
+
+export class BatchCheckItemDto {
+  @IsString() key!: string;
+  @IsString() organizationId!: string;
+  @IsString() zohoCustomerId!: string;
+  @IsString() zohoItemId!: string;
+  @IsString() domainName!: string;
+}
+
+export class BatchCheckDto {
+  @IsArray() @ValidateNested({ each: true }) @Type(() => BatchCheckItemDto)
+  items!: BatchCheckItemDto[];
 }
 
 export class InlineImportZohoDocDto {

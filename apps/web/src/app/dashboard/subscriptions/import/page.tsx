@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect, useRef, Suspense } from 'react';
+import { useState, useEffect, useRef, Suspense, useCallback } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { importSubscriptionsAction, type ImportSubscription, type ImportResult } from './actions';
+import { SubscriptionStatusCell, type SubscriptionCheckResult } from './_components/subscription-status-cell';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3001/api';
 
@@ -152,6 +153,11 @@ function ImportSubscriptionsInner() {
   const [result,      setResult]      = useState<ImportResult | null>(null);
   const [fetchMsg,    setFetchMsg]    = useState<string | null>(null);
 
+  // Subscription DB check state
+  const [subChecks,     setSubChecks]     = useState<Record<string, SubscriptionCheckResult | null>>({});
+  const [checksLoading, setChecksLoading] = useState(false);
+  const [overrideKeys,  setOverrideKeys]  = useState<Set<string>>(new Set());
+
   // Client-side "refine" filters over already-fetched candidates.
   const [fCycle,    setFCycle]    = useState('');
   const [fDomain,   setFDomain]   = useState('');
@@ -199,14 +205,49 @@ function ImportSubscriptionsInner() {
   const handleOrgChange = (orgId: string) => {
     setSelectedOrg(orgId);
     setCandidates([]);
+    setSubChecks({});
+    setOverrideKeys(new Set());
     void loadMappings(orgId);
   };
+
+  // Batch check — runs after grouping (and after import to re-confirm)
+  const runBatchCheck = useCallback(async (cands: Candidate[], orgId: string) => {
+    if (!cands.length || !orgId) return;
+    setChecksLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/subscriptions/batch-check`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items: cands.map((c) => ({
+            key:            c.key,
+            organizationId: orgId,
+            zohoCustomerId: c.customerId,
+            zohoItemId:     c.itemId,
+            domainName:     c.domain,
+          })),
+        }),
+      });
+      if (!res.ok) return;
+      const checks = await res.json() as Record<string, SubscriptionCheckResult | null>;
+      setSubChecks(checks);
+      // Auto-deselect rows that already have a subscription (user can re-check to override)
+      setCandidates((prev) =>
+        prev.map((c) => checks[c.key] ? { ...c, selected: false } : c),
+      );
+    } finally {
+      setChecksLoading(false);
+    }
+  }, []);
 
   const fetchInvoices = async () => {
     if (!selectedOrg) return;
     setLoading(true);
     setFetchMsg('⏳ Zoho से invoices fetch हो रही हैं…');
     setCandidates([]);
+    setSubChecks({});
+    setOverrideKeys(new Set());
     setResult(null);
 
     const params = new URLSearchParams();
@@ -313,6 +354,9 @@ function ImportSubscriptionsInner() {
       setCandidates(cands);
       const docLabel = docSource === 'estimates' ? 'quotes' : 'invoices';
       setFetchMsg(`✅ ${invoices.length} ${docLabel} · ${events.length} line items → ${cands.length} subscriptions`);
+
+      // 5. Batch check against DB (non-blocking — status column shows spinner until done)
+      void runBatchCheck(cands, selectedOrg);
     } catch {
       setFetchMsg('❌ Server error');
     } finally {
@@ -320,8 +364,21 @@ function ImportSubscriptionsInner() {
     }
   };
 
-  const toggle = (key: string) =>
-    setCandidates((prev) => prev.map((c) => c.key === key ? { ...c, selected: !c.selected } : c));
+  const toggle = (key: string) => {
+    setCandidates((prev) => prev.map((c) => {
+      if (c.key !== key) return c;
+      const newSelected = !c.selected;
+      // Track override: user is selecting a row that already has a subscription
+      if (subChecks[key] != null) {
+        setOverrideKeys((prevKeys) => {
+          const next = new Set(prevKeys);
+          newSelected ? next.add(key) : next.delete(key);
+          return next;
+        });
+      }
+      return { ...c, selected: newSelected };
+    }));
+  };
 
   const update = (key: string, field: keyof Candidate, value: unknown) =>
     setCandidates((prev) => prev.map((c) => c.key === key ? { ...c, [field]: value } : c));
@@ -342,6 +399,20 @@ function ImportSubscriptionsInner() {
   const visibleKeys = new Set(visible.map((c) => c.key));
   const allVisibleSelected = visible.length > 0 && visible.every((c) => c.selected);
   const clearRefine = () => { setFCycle(''); setFDomain(''); setFItem(''); setFMin(''); setFMax(''); };
+
+  // Smart select helpers (post batch-check)
+  const checksReady = !checksLoading && Object.keys(subChecks).length > 0;
+  const newCount      = checksReady ? candidates.filter((c) => !subChecks[c.key]).length : null;
+  const existingCount = checksReady ? candidates.filter((c) =>  subChecks[c.key]).length : null;
+
+  const selectAllNew = () => {
+    setOverrideKeys(new Set()); // clear overrides when bulk-selecting new only
+    setCandidates((prev) => prev.map((c) => ({ ...c, selected: !subChecks[c.key] && !!(c.domain && c.start && c.end) })));
+  };
+  const deselectAllExisting = () => {
+    setOverrideKeys(new Set());
+    setCandidates((prev) => prev.map((c) => subChecks[c.key] ? { ...c, selected: false } : c));
+  };
 
   const handleImport = async () => {
     if (!selected.length) return;
@@ -388,8 +459,12 @@ function ImportSubscriptionsInner() {
     const res = await importSubscriptionsAction(payload);
     setResult(res);
     setImporting(false);
-    if (res.created > 0) {
+
+    if (res.created > 0 || res.enriched > 0) {
+      // Deselect imported rows
       setCandidates((prev) => prev.map((c) => c.selected ? { ...c, selected: false } : c));
+      // Re-run batch check to confirm newly created subscriptions
+      void runBatchCheck(candidates, selectedOrg);
     }
   };
 
@@ -432,7 +507,7 @@ function ImportSubscriptionsInner() {
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">Source</label>
-            <select value={docSource} onChange={(e) => { setDocSource(e.target.value as 'invoices' | 'estimates'); setStatus(e.target.value === 'estimates' ? 'accepted' : 'paid'); setCandidates([]); }}
+            <select value={docSource} onChange={(e) => { setDocSource(e.target.value as 'invoices' | 'estimates'); setStatus(e.target.value === 'estimates' ? 'accepted' : 'paid'); setCandidates([]); setSubChecks({}); }}
               className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
               <option value="invoices">Invoices</option>
               <option value="estimates">Quotes (Estimates)</option>
@@ -521,7 +596,19 @@ function ImportSubscriptionsInner() {
             <div className="flex items-center gap-3">
               <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
                 <input type="checkbox" checked={allVisibleSelected}
-                  onChange={(e) => setCandidates((prev) => prev.map((c) => visibleKeys.has(c.key) ? { ...c, selected: e.target.checked } : c))}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setCandidates((prev) => prev.map((c) => {
+                      if (!visibleKeys.has(c.key)) return c;
+                      if (checked && subChecks[c.key]) {
+                        setOverrideKeys((pk) => { const n = new Set(pk); n.add(c.key); return n; });
+                      }
+                      if (!checked) {
+                        setOverrideKeys((pk) => { const n = new Set(pk); n.delete(c.key); return n; });
+                      }
+                      return { ...c, selected: checked };
+                    }));
+                  }}
                   className="rounded" />
                 Select {visible.length < candidates.length ? 'Shown' : 'All'}
               </label>
@@ -531,6 +618,36 @@ function ImportSubscriptionsInner() {
               </button>
             </div>
           </div>
+
+          {/* Summary strip — shown after batch check */}
+          {checksReady && (
+            <div className="flex items-center gap-3 px-5 py-2.5 border-b border-slate-100 bg-slate-50/60 text-xs">
+              <span className="text-slate-500 font-medium">DB Status:</span>
+              {newCount !== null && (
+                <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-700 font-semibold">
+                  ✗ {newCount} new {newCount === 1 ? 'subscription' : 'subscriptions'} ready to import
+                </span>
+              )}
+              {existingCount !== null && existingCount > 0 && (
+                <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 font-semibold">
+                  ✓ {existingCount} already tracked
+                </span>
+              )}
+              {/* Smart select buttons */}
+              {newCount !== null && newCount > 0 && (
+                <button type="button" onClick={selectAllNew}
+                  className="ml-auto px-2.5 py-1 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 transition-colors">
+                  ✗ Select All New ({newCount})
+                </button>
+              )}
+              {existingCount !== null && existingCount > 0 && (
+                <button type="button" onClick={deselectAllExisting}
+                  className="px-2.5 py-1 rounded-lg border border-slate-300 text-slate-600 font-medium hover:bg-white transition-colors">
+                  Deselect Existing ({existingCount})
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Refine filters — instant, over the fetched candidates */}
           <div className="flex flex-wrap items-end gap-2 px-5 py-3 border-b border-slate-100 bg-slate-50/50">
@@ -570,8 +687,12 @@ function ImportSubscriptionsInner() {
 
           {result && (
             <div className={`px-5 py-3 text-sm border-b ${result.errors.length ? 'bg-amber-50 border-amber-200' : 'bg-green-50 border-green-200'}`}>
-              <p className="font-medium">
-                {result.created} created · {result.enriched} enriched (history linked) · {result.skipped} skipped ✅
+              <p className="font-semibold text-slate-800">
+                {result.created > 0 && <span className="text-emerald-700">✓ {result.created} created</span>}
+                {result.created > 0 && result.enriched > 0 && <span className="text-slate-400 mx-2">·</span>}
+                {result.enriched > 0 && <span className="text-blue-700">↻ {result.enriched} enriched (history linked)</span>}
+                {(result.created > 0 || result.enriched > 0) && result.skipped > 0 && <span className="text-slate-400 mx-2">·</span>}
+                {result.skipped > 0 && <span className="text-slate-500">{result.skipped} skipped</span>}
               </p>
               {result.errors.map((e, i) => <p key={i} className="text-xs text-red-600 mt-1">❌ {e}</p>)}
             </div>
@@ -587,13 +708,17 @@ function ImportSubscriptionsInner() {
                   <th className="text-center px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wide">Invoices</th>
                   <th className="text-center px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wide">Qty</th>
                   <th className="text-right px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wide">Rate</th>
+                  <th className="text-right px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wide">Cost</th>
                   <th className="text-left px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wide">Current Term</th>
                   <th className="text-left px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wide">Cycle</th>
+                  <th className="text-left px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">
+                    {checksLoading ? '⏳ DB Status' : 'DB Status'}
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {visible.map((c) => (
-                  <tr key={c.key} className={`hover:bg-slate-50 ${c.selected ? 'bg-blue-50/30' : ''} ${c.isDuplicate ? 'border-l-2 border-l-amber-400' : ''}`}>
+                  <tr key={c.key} className={`hover:bg-slate-50 transition-colors ${c.selected ? 'bg-blue-50/30' : ''} ${c.isDuplicate ? 'border-l-2 border-l-amber-400' : ''}`}>
                     <td className="px-3 py-2 text-center">
                       <input type="checkbox" checked={c.selected} onChange={() => toggle(c.key)}
                         className="rounded border-slate-300 text-blue-600" />
@@ -638,6 +763,17 @@ function ImportSubscriptionsInner() {
                           className="w-20 px-1 py-0.5 border border-slate-200 rounded text-xs text-right" />
                       </div>
                     </td>
+                    <td className="px-3 py-2 text-right">
+                      <input
+                        type="number"
+                        min={0}
+                        value={c.cost}
+                        onChange={(e) => update(c.key, 'cost', Number(e.target.value))}
+                        placeholder="0"
+                        title="Cost price (for margin tracking)"
+                        className="w-20 px-1 py-0.5 border border-slate-200 rounded text-xs text-right"
+                      />
+                    </td>
                     <td className="px-3 py-2">
                       <div className="flex flex-col gap-0.5">
                         <input type="date" value={c.start} onChange={(e) => update(c.key, 'start', e.target.value)}
@@ -654,6 +790,12 @@ function ImportSubscriptionsInner() {
                         ))}
                       </select>
                     </td>
+                    <SubscriptionStatusCell
+                      match={subChecks[c.key] ?? null}
+                      isLoading={checksLoading}
+                      isOverride={overrideKeys.has(c.key)}
+                      onEditSaved={() => void runBatchCheck(candidates, selectedOrg)}
+                    />
                   </tr>
                 ))}
               </tbody>
@@ -662,6 +804,11 @@ function ImportSubscriptionsInner() {
 
           <div className="px-5 py-3 border-t border-slate-100 text-xs text-slate-400 space-y-1">
             <p>🟡 Yellow = value नहीं मिली (manually fill करो)। ⚠️ Amber border = same customer+domain के कई products (duplicate — सिर्फ सही वाला select रखो)।</p>
+            <p>
+              DB Status: <span className="px-1 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">✓ Exists</span> = subscription already tracked (deselected by default — re-check to override).{' '}
+              <span className="px-1 rounded bg-amber-50 text-amber-700 border border-amber-200">✗ No Sub</span> = import करो।{' '}
+              <span className="px-1 rounded bg-orange-50 text-orange-700 border border-orange-200">⚠ Override</span> = existing subscription — history backfill होगी।
+            </p>
             <p>Invoice badges: <span className="px-1 rounded bg-blue-100 text-blue-700">Fresh</span> <span className="px-1 rounded bg-green-100 text-green-700">Renewal</span> <span className="px-1 rounded bg-purple-100 text-purple-700">Pro-rata</span> — current term latest Fresh/Renewal से लिया जाता है।</p>
           </div>
         </div>

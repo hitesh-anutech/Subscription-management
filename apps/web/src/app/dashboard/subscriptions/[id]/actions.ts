@@ -13,7 +13,6 @@ export async function startSubscriptionAction(
   const start_date         = formData.get('start_date') as string;
   const end_date           = formData.get('end_date') as string;
   const zoho_document_type = formData.get('zoho_document_type') as string;
-  const notes              = (formData.get('notes') as string | null) ?? undefined;
 
   if (!start_date || !end_date) return { error: 'Start date और end date required हैं' };
   if (!['estimate', 'invoice'].includes(zoho_document_type)) {
@@ -26,7 +25,7 @@ export async function startSubscriptionAction(
     const res = await fetch(`${API_BASE}/subscriptions/${subscriptionId}/start`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Cookie: `${SESSION_COOKIE}=${token}` },
-      body: JSON.stringify({ startDate: start_date, endDate: end_date, zohoDocumentType: zoho_document_type, notes }),
+      body: JSON.stringify({ startDate: start_date, endDate: end_date, zohoDocumentType: zoho_document_type }),
       cache: 'no-store',
     });
 
@@ -170,12 +169,10 @@ export async function generateRenewalQuoteAction(
 ): Promise<{ success?: boolean; error?: string; zohoEstimateNumber?: string; zohoWarning?: string }> {
   const overridePrice    = formData.get('override_price') as string | null;
   const overrideQuantity = formData.get('override_quantity') as string | null;
-  const notes            = formData.get('notes') as string | null;
 
   const body: Record<string, unknown> = {};
   if (overridePrice    && Number(overridePrice)    > 0) body.overridePrice    = Number(overridePrice);
   if (overrideQuantity && Number(overrideQuantity) > 0) body.overrideQuantity = Number(overrideQuantity);
-  if (notes) body.notes = notes;
 
   try {
     const res = await fetch(`${API_BASE}/subscriptions/${subscriptionId}/renewal-quote`, {
@@ -301,7 +298,6 @@ export async function generateProrataQuoteAction(
 ): Promise<{ success?: boolean; error?: string; calculation?: Record<string, unknown>; zohoEstimateNumber?: string }> {
   const additionalLicenses = Number(formData.get('additional_licenses'));
   const effectiveDate      = formData.get('effective_date') as string | null;
-  const notes              = formData.get('notes') as string | null;
 
   if (!additionalLicenses || additionalLicenses < 1) return { error: 'Additional licenses ≥ 1 होना चाहिए' };
   if (!effectiveDate) return { error: 'Effective date required है' };
@@ -310,7 +306,7 @@ export async function generateProrataQuoteAction(
     const res = await fetch(`${API_BASE}/subscriptions/${subscriptionId}/prorata-quote`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...(await getAuthHeader()) },
-      body: JSON.stringify({ additionalLicenses, effectiveDate, notes }),
+      body: JSON.stringify({ additionalLicenses, effectiveDate }),
       cache: 'no-store',
     });
 
