@@ -3,6 +3,17 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
+interface SubscriptionDetails {
+  domain?: string;
+  itemName?: string;
+  orgName?: string;
+  startDate?: string;
+  endDate?: string;
+  quantity?: number;
+  rate?: number;
+  billingCycle?: string;
+}
+
 interface SearchResult {
   type: string;
   id: string;
@@ -11,9 +22,9 @@ interface SearchResult {
   status?: string;
   extra?: string;
   href: string;
+  details?: SubscriptionDetails;
 }
 
-// Left accent colour by entity type
 const TYPE_COLOR: Record<string, string> = {
   subscription: '#286FAD',
   lead:         '#F59E0B',
@@ -23,11 +34,30 @@ const TYPE_COLOR: Record<string, string> = {
 };
 
 const TYPE_LABEL: Record<string, string> = {
-  subscription: 'Sub',
+  subscription: 'SUB',
   lead:         'Lead',
   quote:        'Quote',
   domain:       'Domain',
   customer:     'Customer',
+};
+
+// Solid status badge — instantly visible
+const STATUS_CHIP: Record<string, string> = {
+  Active:    'bg-emerald-500 text-white',
+  Expired:   'bg-red-500 text-white',
+  Cancelled: 'bg-slate-400 text-white',
+  Pending:   'bg-amber-500 text-white',
+  Suspended: 'bg-orange-500 text-white',
+  Trial:     'bg-blue-500 text-white',
+};
+
+const CYCLE_LABEL: Record<string, string> = {
+  monthly:     'Monthly',
+  quarterly:   'Quarterly',
+  half_yearly: 'Half-Yearly',
+  annual:      'Yearly',
+  biennial:    '2-Yearly',
+  triennial:   '3-Yearly',
 };
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3001/api';
@@ -38,17 +68,15 @@ export function GlobalSearch() {
   const [open, setOpen]         = useState(false);
   const [loading, setLoading]   = useState(false);
   const [selected, setSelected] = useState(-1);
-  const inputRef  = useRef<HTMLInputElement>(null);
-  const boxRef    = useRef<HTMLDivElement>(null);
-  const router    = useRouter();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const boxRef   = useRef<HTMLDivElement>(null);
+  const router   = useRouter();
 
   const search = useCallback(async (q: string) => {
     if (q.length < 2) { setResults([]); return; }
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/search?q=${encodeURIComponent(q)}&limit=15`, {
-        credentials: 'include',
-      });
+      const res = await fetch(`${API_BASE}/search?q=${encodeURIComponent(q)}&limit=15`, { credentials: 'include' });
       if (res.ok) setResults(await res.json() as SearchResult[]);
     } catch { /* ignore */ }
     finally { setLoading(false); }
@@ -91,15 +119,12 @@ export function GlobalSearch() {
   };
 
   return (
-    <div ref={boxRef} className="relative w-[420px]">
+    <div ref={boxRef} className="relative w-[480px]">
+      {/* Input */}
       <div className="relative">
-        {/* Search icon */}
-        <svg
-          className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
-          width="15" height="15" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"
-        >
-          <circle cx="11" cy="11" r="8" />
-          <path d="m21 21-4.35-4.35" />
+        <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+          width="15" height="15" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+          <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
         </svg>
         <input
           ref={inputRef}
@@ -108,7 +133,7 @@ export function GlobalSearch() {
           onChange={(e) => { setQuery(e.target.value); setOpen(true); setSelected(-1); }}
           onFocus={() => setOpen(true)}
           onKeyDown={handleKey}
-          placeholder="Search… (Ctrl+K)"
+          placeholder="Search subscriptions, customers, domains… (Ctrl+K)"
           className="w-full pl-9 pr-4 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-slate-700 placeholder-slate-400 text-sm focus:outline-none focus:ring-2 focus:ring-[#286FAD]/30 focus:border-[#286FAD]/60 focus:bg-white transition-colors"
         />
         {loading && (
@@ -118,51 +143,111 @@ export function GlobalSearch() {
         )}
       </div>
 
+      {/* Dropdown */}
       {open && query.length >= 2 && (
-        <div className="absolute top-full left-0 right-0 mt-1.5 bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-hidden max-h-[420px] overflow-y-auto">
+        <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1.5 w-[780px] bg-white border border-slate-200 rounded-xl shadow-2xl z-50 overflow-hidden max-h-[580px] overflow-y-auto">
           {results.length === 0 && !loading && (
-            <p className="px-4 py-4 text-sm text-slate-400 text-center">No results for &ldquo;{query}&rdquo;</p>
+            <p className="px-4 py-6 text-sm text-slate-400 text-center">No results for &ldquo;{query}&rdquo;</p>
           )}
+
           {results.map((r, i) => {
             const accentColor = TYPE_COLOR[r.type] ?? '#64748b';
             const typeLabel   = TYPE_LABEL[r.type] ?? r.type;
+            const isSub       = r.type === 'subscription' && !!r.details;
+
             return (
               <button
                 key={r.id + r.type}
                 type="button"
                 onClick={() => { router.push(r.href as never); setOpen(false); setQuery(''); }}
-                className={`w-full text-left flex items-stretch gap-0 hover:bg-slate-50 transition-colors border-b border-slate-100 last:border-0 ${
-                  i === selected ? 'bg-blue-50/70' : ''
+                className={`w-full text-left flex items-stretch transition-colors border-b border-slate-100 last:border-0 ${
+                  i === selected ? 'bg-blue-50/60' : 'hover:bg-slate-50'
                 }`}
               >
                 {/* Left accent strip */}
                 <div className="w-1 shrink-0 rounded-l" style={{ backgroundColor: accentColor }} />
 
-                <div className="flex items-start gap-2.5 px-3 py-2.5 flex-1 min-w-0">
-                  {/* Type label chip */}
+                <div className="flex items-start gap-3 px-4 py-3 flex-1 min-w-0">
+                  {/* Type chip */}
                   <span
-                    className="shrink-0 mt-0.5 text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded"
+                    className="shrink-0 mt-0.5 text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded"
                     style={{ backgroundColor: accentColor + '18', color: accentColor }}
                   >
                     {typeLabel}
                   </span>
 
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[13px] font-semibold text-slate-800 truncate leading-tight">{r.title}</p>
-                    {r.subtitle && (
-                      <p className="text-[11px] text-slate-400 truncate mt-0.5 leading-tight">{r.subtitle}</p>
-                    )}
-                    {r.extra && (
-                      <span className="inline-block mt-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200/80">
-                        {r.extra}
-                      </span>
-                    )}
-                  </div>
+                  {isSub ? (
+                    /* ── Subscription rich card ── */
+                    <div className="flex-1 min-w-0 space-y-1.5">
 
-                  {r.status && (
-                    <span className="shrink-0 text-[9px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-semibold uppercase tracking-wide mt-0.5 self-start">
-                      {r.status.replace(/_/g, ' ')}
-                    </span>
+                      {/* Row 1 — Customer name + org + status */}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[13px] font-bold text-slate-800 leading-tight">{r.title}</span>
+                        <span className="font-mono text-[10px] text-slate-400">{r.subtitle}</span>
+                        {r.details?.orgName && (
+                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+                            {r.details.orgName}
+                          </span>
+                        )}
+                        {r.status && (
+                          <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full ${STATUS_CHIP[r.status] ?? 'bg-slate-200 text-slate-600'}`}>
+                            {r.status.replace(/_/g, ' ')}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Row 2 — Domain + Product (colored pills) */}
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {r.details?.domain && (
+                          <Chip color="cyan">{r.details.domain}</Chip>
+                        )}
+                        {r.details?.itemName && (
+                          <Chip color="blue">{r.details.itemName}</Chip>
+                        )}
+                      </div>
+
+                      {/* Row 3 — Dates + Qty + Rate + Cycle (colored pills) */}
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {r.details?.startDate && (
+                          <Chip color="violet" label="Starts">{r.details.startDate}</Chip>
+                        )}
+                        {r.details?.endDate && (
+                          <Chip color="rose" label="Ends">{r.details.endDate}</Chip>
+                        )}
+                        {r.details?.quantity != null && (
+                          <Chip color="emerald" label="Qty">{String(r.details.quantity)}</Chip>
+                        )}
+                        {r.details?.rate != null && (
+                          <Chip color="amber" label="Price">
+                            {`₹${Number(r.details.rate).toLocaleString('en-IN')}`}
+                          </Chip>
+                        )}
+                        {r.details?.billingCycle && (
+                          <Chip color="slate">{CYCLE_LABEL[r.details.billingCycle] ?? r.details.billingCycle}</Chip>
+                        )}
+                      </div>
+                    </div>
+
+                  ) : (
+                    /* ── Compact card for leads, quotes, domains, customers ── */
+                    <>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[13px] font-semibold text-slate-800 truncate leading-tight">{r.title}</p>
+                        {r.subtitle && (
+                          <p className="text-[11px] text-slate-400 truncate mt-0.5 leading-tight">{r.subtitle}</p>
+                        )}
+                        {r.extra && (
+                          <span className="inline-block mt-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200/80">
+                            {r.extra}
+                          </span>
+                        )}
+                      </div>
+                      {r.status && (
+                        <span className="shrink-0 self-start text-[9px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-semibold uppercase tracking-wide mt-0.5">
+                          {r.status.replace(/_/g, ' ')}
+                        </span>
+                      )}
+                    </>
                   )}
                 </div>
               </button>
@@ -171,5 +256,28 @@ export function GlobalSearch() {
         </div>
       )}
     </div>
+  );
+}
+
+// ── Colored pill chip component ──────────────────────────────────────
+
+type ChipColor = 'cyan' | 'blue' | 'violet' | 'rose' | 'emerald' | 'amber' | 'slate';
+
+const CHIP_STYLES: Record<ChipColor, string> = {
+  cyan:    'bg-cyan-50   text-cyan-700   border-cyan-200',
+  blue:    'bg-blue-50   text-blue-700   border-blue-200',
+  violet:  'bg-violet-50 text-violet-700 border-violet-200',
+  rose:    'bg-rose-50   text-rose-700   border-rose-200',
+  emerald: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  amber:   'bg-amber-50  text-amber-700  border-amber-200',
+  slate:   'bg-slate-100 text-slate-600  border-slate-200',
+};
+
+function Chip({ color, label, children }: { color: ChipColor; label?: string; children: React.ReactNode }) {
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${CHIP_STYLES[color]}`}>
+      {label && <span className="opacity-60">{label}:</span>}
+      {children}
+    </span>
   );
 }

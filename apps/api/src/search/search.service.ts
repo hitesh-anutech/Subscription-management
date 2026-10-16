@@ -1,6 +1,17 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
+export interface SubscriptionDetails {
+  domain?: string;
+  itemName?: string;
+  orgName?: string;
+  startDate?: string;
+  endDate?: string;
+  quantity?: number;
+  rate?: number;
+  billingCycle?: string;
+}
+
 export interface SearchResult {
   type: 'lead' | 'quote' | 'subscription' | 'domain' | 'customer';
   id: string;
@@ -9,6 +20,7 @@ export interface SearchResult {
   status?: string;
   extra?: string;
   href: string;
+  details?: SubscriptionDetails;
 }
 
 @Injectable()
@@ -62,10 +74,14 @@ export class SearchService {
             { domain: { domainName: { contains: term, mode: 'insensitive' } } },
           ],
         },
-        select: { id: true, subscriptionNumber: true, zohoCustomerName: true,
-                  zohoItemName: true, lifecycleStatus: true, endDate: true,
-                  domain: { select: { domainName: true } },
-                  organization: { select: { name: true } } },
+        select: {
+          id: true, subscriptionNumber: true, zohoCustomerName: true,
+          zohoItemName: true, lifecycleStatus: true,
+          startDate: true, endDate: true, quantity: true,
+          subscriptionPrice: true, billingCycle: true,
+          domain: { select: { domainName: true } },
+          organization: { select: { name: true } },
+        },
         take: perType,
       }),
 
@@ -118,18 +134,26 @@ export class SearchService {
         href: `/dashboard/quick-quotes/${q.id}`,
       })),
       ...subscriptions.map((s) => {
-        const endFmt = s.endDate
-          ? new Date(s.endDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
-          : null;
-        const parts = [s.subscriptionNumber, s.domain.domainName, s.zohoItemName, endFmt ? `ends ${endFmt}` : null].filter(Boolean);
+        const fmtDate = (d: Date | string | null | undefined) =>
+          d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : undefined;
         return {
           type: 'subscription' as const,
           id: s.id,
           title: s.zohoCustomerName ?? s.zohoItemName ?? 'Subscription',
-          subtitle: parts.join(' · '),
+          subtitle: s.subscriptionNumber,
           extra: s.organization.name,
           status: s.lifecycleStatus,
           href: `/dashboard/subscriptions/${s.id}`,
+          details: {
+            domain:       s.domain.domainName,
+            itemName:     s.zohoItemName ?? undefined,
+            orgName:      s.organization.name,
+            startDate:    fmtDate(s.startDate),
+            endDate:      fmtDate(s.endDate),
+            quantity:     s.quantity,
+            rate:         s.subscriptionPrice != null ? Number(s.subscriptionPrice) : undefined,
+            billingCycle: s.billingCycle,
+          },
         };
       }),
       ...domains.map((d) => ({
