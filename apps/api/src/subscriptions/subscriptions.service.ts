@@ -381,6 +381,13 @@ export class SubscriptionsService {
         const endIso = this.formatDate(adjustedEndDate);
         const costStr = firstSub.costPrice != null ? String(Number(firstSub.costPrice)) : '';
 
+        const bulkTodayMidnight = new Date(); bulkTodayMidnight.setHours(0, 0, 0, 0);
+        const bulkFallbackExpiry = new Date(bulkTodayMidnight);
+        bulkFallbackExpiry.setDate(bulkTodayMidnight.getDate() + 3);
+        const bulkQuoteExpiry = newStartDate >= bulkTodayMidnight
+          ? this.formatDate(newStartDate)
+          : this.formatDate(bulkFallbackExpiry);
+
         const estimateCf = await this.zoho.buildCustomFields(firstSub.organizationId, 'estimates', {
           business_type:  businessTypeLabel,   // → cf_new_business
           billing_period: subsPeriodLabel,     // → cf_billing_period
@@ -399,7 +406,7 @@ export class SubscriptionsService {
         const estimatePayload = {
           customer_id:      firstSub.zohoCustomerId,
           date:             this.formatDate(new Date()),
-          expiry_date:      endIso,
+          expiry_date:      bulkQuoteExpiry,
           reference_number: `${domainSummary} (Renewal)`,
           line_items: [
             {
@@ -702,6 +709,13 @@ export class SubscriptionsService {
     const headerAdjEnd = this.addBillingCycle(headerStart, headerSub.billingCycle as BillingCycle);
     const headerEndIso = this.formatDate(headerAdjEnd);
 
+    const combinedTodayMidnight = new Date(); combinedTodayMidnight.setHours(0, 0, 0, 0);
+    const combinedFallbackExpiry = new Date(combinedTodayMidnight);
+    combinedFallbackExpiry.setDate(combinedTodayMidnight.getDate() + 3);
+    const combinedQuoteExpiry = headerStart >= combinedTodayMidnight
+      ? this.formatDate(headerStart)
+      : this.formatDate(combinedFallbackExpiry);
+
     const businessTypeLabel = await this.zoho.getBusinessTypeLabel(orgId, 'Renewal');
     const { options: billingOpts } = await this.zoho.getBillingOptions(orgId);
     const headerPeriodLabel =
@@ -721,7 +735,7 @@ export class SubscriptionsService {
     const estimatePayload = {
       customer_id:      custId,
       date:             this.formatDate(new Date()),
-      expiry_date:      headerEndIso,
+      expiry_date:      combinedQuoteExpiry,
       reference_number: `${domainSummary} (Renewal)`,
       line_items: lineItems,
       ...(estimateCf.length ? { custom_fields: estimateCf } : {}),
