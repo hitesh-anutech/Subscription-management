@@ -104,6 +104,8 @@ export class SubscriptionsController {
     @Query('quoteStatus') quoteStatus?: string,
     @Query('invoiceStatus') invoiceStatus?: string,
     @Query('excludePaid') excludePaid?: string,
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
   ) {
     return this.service.getBillingHistory({
       page:  page  ? Number(page)  : 1,
@@ -114,6 +116,8 @@ export class SubscriptionsController {
       quoteStatus,
       invoiceStatus,
       excludePaid: excludePaid === 'true',
+      dateFrom,
+      dateTo,
     });
   }
 

@@ -9,7 +9,7 @@ export const metadata = { title: 'Billing History' };
 export default async function BillingHistoryPage({
   searchParams,
 }: {
-  searchParams: Promise<{ search?: string; page?: string; type?: string; cycle?: string; quoteStatus?: string; invoiceStatus?: string }>;
+  searchParams: Promise<{ search?: string; page?: string; type?: string; cycle?: string; quoteStatus?: string; invoiceStatus?: string; dateFrom?: string; dateTo?: string }>;
 }) {
   const sp = await searchParams;
   const cookieStore = await cookies();
@@ -26,6 +26,8 @@ export default async function BillingHistoryPage({
     if (sp.cycle) params.set('cycle', sp.cycle);
     if (sp.quoteStatus) params.set('quoteStatus', sp.quoteStatus);
     if (sp.invoiceStatus) params.set('invoiceStatus', sp.invoiceStatus);
+    if (sp.dateFrom) params.set('dateFrom', sp.dateFrom);
+    if (sp.dateTo) params.set('dateTo', sp.dateTo);
     // Hide paid invoices by default; only show when user explicitly filters by 'paid'
     if (!sp.invoiceStatus) params.set('excludePaid', 'true');
     params.set('page', String(page));
@@ -102,13 +104,32 @@ export default async function BillingHistoryPage({
           <option value="overdue">Overdue</option>
         </select>
 
+        <div className="flex items-center gap-1.5">
+          <label className="text-xs text-slate-500 font-medium whitespace-nowrap">From</label>
+          <input
+            type="date"
+            name="dateFrom"
+            defaultValue={sp.dateFrom}
+            className="px-2.5 py-2 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          />
+        </div>
+        <div className="flex items-center gap-1.5">
+          <label className="text-xs text-slate-500 font-medium whitespace-nowrap">To</label>
+          <input
+            type="date"
+            name="dateTo"
+            defaultValue={sp.dateTo}
+            className="px-2.5 py-2 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          />
+        </div>
+
         <button
           type="submit"
           className="px-4 py-2 bg-slate-700 hover:bg-slate-800 text-white text-sm font-semibold rounded-lg transition-colors"
         >
           Filter
         </button>
-        {(sp.search || sp.type || sp.cycle || sp.quoteStatus || sp.invoiceStatus) && (
+        {(sp.search || sp.type || sp.cycle || sp.quoteStatus || sp.invoiceStatus || sp.dateFrom || sp.dateTo) && (
           <Link
             href="/dashboard/subscriptions/billing-history"
             className="px-4 py-2 border border-slate-200 text-slate-600 text-sm rounded-lg hover:bg-slate-50 transition-colors"

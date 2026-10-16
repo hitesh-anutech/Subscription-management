@@ -3430,8 +3430,10 @@ export class SubscriptionsService {
     quoteStatus?: string;
     invoiceStatus?: string;
     excludePaid?: boolean;
+    dateFrom?: string;
+    dateTo?: string;
   }) {
-    const { page = 1, limit = 20, search, type, cycle, quoteStatus, invoiceStatus, excludePaid = false } = params;
+    const { page = 1, limit = 20, search, type, cycle, quoteStatus, invoiceStatus, excludePaid = false, dateFrom, dateTo } = params;
     const offset = (page - 1) * limit;
     
     // We use raw SQL to deduplicate by quote_id/id and calculate total
@@ -3488,6 +3490,8 @@ export class SubscriptionsService {
           AND ($6::text IS NULL OR (COALESCE(rh.zoho_estimate_status, rh.renewal_status::text) ILIKE $6))
           AND ($7::text IS NULL OR rh.zoho_invoice_status ILIKE $7)
           AND (NOT $8::boolean OR $7::text IS NOT NULL OR rh.zoho_invoice_status IS NULL OR (rh.zoho_invoice_status NOT ILIKE 'paid' AND rh.zoho_invoice_status NOT ILIKE 'partially_paid'))
+          AND ($9::date IS NULL OR rh.created_at::date >= $9::date)
+          AND ($10::date IS NULL OR rh.created_at::date <= $10::date)
         ORDER BY COALESCE(rh.bulk_renewal_batch_id::text, rh.invoice_id, rh.quote_id, rh.id::text), rh.created_at DESC
       ) as distinct_history
       ORDER BY "createdAt" DESC
@@ -3510,11 +3514,13 @@ export class SubscriptionsService {
         AND ($4::text IS NULL OR (COALESCE(rh.zoho_estimate_status, rh.renewal_status::text) ILIKE $4))
         AND ($5::text IS NULL OR rh.zoho_invoice_status ILIKE $5)
         AND (NOT $6::boolean OR $5::text IS NOT NULL OR rh.zoho_invoice_status IS NULL OR (rh.zoho_invoice_status NOT ILIKE 'paid' AND rh.zoho_invoice_status NOT ILIKE 'partially_paid'))
+        AND ($7::date IS NULL OR rh.created_at::date >= $7::date)
+        AND ($8::date IS NULL OR rh.created_at::date <= $8::date)
     `;
 
-    const queryArgs = [searchFilter, limit, offset, type || null, cycle || null, quoteStatus || null, invoiceStatus || null, excludePaid];
+    const queryArgs = [searchFilter, limit, offset, type || null, cycle || null, quoteStatus || null, invoiceStatus || null, excludePaid, dateFrom || null, dateTo || null];
     const rows = await this.prisma.$queryRawUnsafe<any[]>(sql, ...queryArgs);
-    const countArgs = [searchFilter, type || null, cycle || null, quoteStatus || null, invoiceStatus || null, excludePaid];
+    const countArgs = [searchFilter, type || null, cycle || null, quoteStatus || null, invoiceStatus || null, excludePaid, dateFrom || null, dateTo || null];
     const countResult = await this.prisma.$queryRawUnsafe<{ total: number }[]>(countSql, ...countArgs);
     const total = countResult[0]?.total ?? 0;
 
