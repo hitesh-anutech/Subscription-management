@@ -734,8 +734,8 @@ function ImportSubscriptionsInner() {
                         </span>
                       )}
                     </td>
-                    <td className="px-3 py-2 max-w-40">
-                      <p className="text-slate-700 truncate">{c.itemName}</p>
+                    <td className="px-3 py-2">
+                      <p className="text-slate-700">{c.itemName}</p>
                     </td>
                     <td className="px-3 py-2 text-center">
                       <span className="inline-flex items-center gap-1">
@@ -794,6 +794,15 @@ function ImportSubscriptionsInner() {
                       match={subChecks[c.key] ?? null}
                       isLoading={checksLoading}
                       isOverride={overrideKeys.has(c.key)}
+                      candidateData={{
+                        start: c.start,
+                        end: c.end,
+                        qty: c.qty,
+                        rate: c.rate,
+                        billingCycle: c.billingCycle,
+                        invoiceNumber: c.events.find(e => e.start === c.start && e.end === c.end)?.invoiceNumber,
+                        quoteNumber:   c.events.find(e => e.start === c.start && e.end === c.end)?.quoteNumber,
+                      }}
                       onEditSaved={() => void runBatchCheck(candidates, selectedOrg)}
                     />
                   </tr>

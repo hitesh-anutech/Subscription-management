@@ -37,7 +37,8 @@ interface Sub {
   currency: string; exchangeRate: string | null; nextRenewalPrice: string | null;
   autoRenew: boolean; subscriptionCategory: string | null;
   billingCycle: string; startDate: string; endDate: string;
-  lastQuoteNumber: string | null; lastInvoiceNumber: string | null; lastInvoiceDate: string | null;
+  lastQuoteId: string | null; lastQuoteNumber: string | null;
+  lastInvoiceId: string | null; lastInvoiceNumber: string | null; lastInvoiceDate: string | null;
   domain: { id: string; domainName: string } | null;
 }
 interface Dom { id: string; domainName: string; createdAt: string }
@@ -361,6 +362,8 @@ export default async function CustomerDetailPage({
         subscriptions={subscriptions}
         isAdmin={isAdmin}
         categories={categories}
+        zohoOrgId={org?.zohoOrgId ?? ''}
+        dataCenter={org?.dataCenter ?? 'in'}
       />
 
       {/* ── Mapped Domains (collapsible — native <details>, no JS needed) ── */}

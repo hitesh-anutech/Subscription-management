@@ -149,7 +149,7 @@ export class ZohoService {
     orgId: string,
     invoiceNumber: string,
     expectedContactId: string,
-  ): Promise<{ invoiceId: string; invoiceNumber: string; date: string }> {
+  ): Promise<{ invoiceId: string; invoiceNumber: string; date: string; estimateId?: string }> {
     const client = await this.clientFor(orgId);
     const resp = await client.get<{
       invoices: Array<{ invoice_id: string; invoice_number: string; customer_id: string; date: string }>;
@@ -165,7 +165,35 @@ export class ZohoService {
         `Invoice "${invoiceNumber}" is subscription ke customer se match nahi karta`,
       );
     }
-    return { invoiceId: inv.invoice_id, invoiceNumber: inv.invoice_number, date: inv.date };
+
+    // Fetch invoice detail to discover a linked estimate (created-from-estimate flow)
+    let estimateId: string | undefined;
+    try {
+      const detail = await client.get<{ invoice: { estimate_id?: string } }>(`/invoices/${inv.invoice_id}`);
+      if (detail?.invoice?.estimate_id) estimateId = detail.invoice.estimate_id;
+    } catch {
+      // Non-critical — proceed without estimate link
+    }
+
+    return { invoiceId: inv.invoice_id, invoiceNumber: inv.invoice_number, date: inv.date, estimateId };
+  }
+
+  /** Fetch an estimate by its Zoho ID (e.g. to resolve estimate linked from an invoice). */
+  async getEstimateById(
+    orgId: string,
+    estimateId: string,
+  ): Promise<{ estimateId: string; estimateNumber: string; date: string } | null> {
+    try {
+      const client = await this.clientFor(orgId);
+      const resp = await client.get<{ estimate: { estimate_id: string; estimate_number: string; date: string } }>(
+        `/estimates/${estimateId}`,
+      );
+      const est = resp?.estimate;
+      if (!est?.estimate_id) return null;
+      return { estimateId: est.estimate_id, estimateNumber: est.estimate_number, date: est.date };
+    } catch {
+      return null;
+    }
   }
 
   /** Drop a cached estimate/invoice detail (called from the webhook path — PERF_PLAN #3). */
@@ -1196,7 +1224,7 @@ export class ZohoService {
       }
     }
 
-    const [subscriptions, quotes] = await Promise.all([
+    const [rawSubscriptions, quotes] = await Promise.all([
       this.prisma.subscription.findMany({
         where: { organizationId: orgId, zohoCustomerId: zohoId },
         orderBy: { endDate: 'asc' },
@@ -1205,10 +1233,16 @@ export class ZohoService {
           subscriptionNumber: true,
           lifecycleStatus: true,
           processStatus: true,
+          zohoItemId: true,
           zohoItemName: true,
           quantity: true,
           subscriptionPrice: true,
+          nextRenewalPrice: true,
           billingCycle: true,
+          currency: true,
+          exchangeRate: true,
+          autoRenew: true,
+          subscriptionCategory: true,
           startDate: true,
           endDate: true,
           lastInvoiceId: true,
@@ -1218,6 +1252,13 @@ export class ZohoService {
           lastQuoteNumber: true,
           lastQuoteDate: true,
           domain: { select: { id: true, domainName: true, createdAt: true } },
+          // Fallback: if lastQuoteNumber is null, take it from the latest renewal_history row
+          renewalHistory: {
+            select: { quoteId: true, quoteNumber: true },
+            where: { quoteNumber: { not: null } },
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+          },
         },
       }),
       this.prisma.quickQuote.findMany({
@@ -1233,6 +1274,15 @@ export class ZohoService {
         },
       }),
     ]);
+
+    // If lastQuoteNumber/lastQuoteId is missing on the subscription but exists in
+    // renewal_history (e.g. subscription was linked to invoice before the quote-auto-link
+    // feature was added), fall back to the most recent history row's quote info.
+    const subscriptions = rawSubscriptions.map(({ renewalHistory: rh, ...sub }) => ({
+      ...sub,
+      lastQuoteId:     (sub.lastQuoteId     as string | null) ?? rh[0]?.quoteId     ?? null,
+      lastQuoteNumber: (sub.lastQuoteNumber as string | null) ?? rh[0]?.quoteNumber ?? null,
+    }));
 
     // Derive unique domains from subscriptions rather than querying the domains table
     // by zohoCustomerId — this correctly handles transferred subscriptions whose

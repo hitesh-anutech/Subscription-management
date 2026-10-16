@@ -180,10 +180,14 @@ interface Sub {
   billingCycle: string;
   startDate: string;
   endDate: string;
+  lastQuoteId: string | null;
   lastQuoteNumber: string | null;
+  lastInvoiceId: string | null;
   lastInvoiceNumber: string | null;
   domain: { id: string; domainName: string } | null;
 }
+
+const DC_TLD: Record<string, string> = { in: 'in', com: 'com', eu: 'eu', com_au: 'com.au', jp: 'jp', sa: 'sa' };
 
 const STATUS_STYLES: Record<string, string> = {
   Active: 'bg-emerald-100 text-emerald-700',
@@ -208,6 +212,8 @@ export default function CustomerSubscriptions({
   subscriptions,
   isAdmin,
   categories = [],
+  zohoOrgId = '',
+  dataCenter = 'in',
 }: {
   orgId: string;
   customerId: string;
@@ -215,7 +221,11 @@ export default function CustomerSubscriptions({
   subscriptions: Sub[];
   isAdmin: boolean;
   categories?: { itemValue: string; itemLabel: string }[];
+  zohoOrgId?: string;
+  dataCenter?: string;
 }) {
+  const tld = DC_TLD[dataCenter] ?? 'com';
+  const zohoBase = zohoOrgId ? `https://books.zoho.${tld}/app/${zohoOrgId}#` : '';
   const router = useRouter();
   const renewable = subscriptions.filter((s) => RENEWABLE.includes(s.lifecycleStatus));
   // Checkboxes are always visible but start EMPTY — user picks which
@@ -552,10 +562,8 @@ export default function CustomerSubscriptions({
                 <th className="px-4 py-2.5 text-xs font-semibold text-slate-500 whitespace-nowrap">Sub #</th>
                 <th className="px-4 py-2.5 text-xs font-semibold text-slate-500">Item</th>
                 <th className="px-4 py-2.5 text-xs font-semibold text-slate-500">Domain</th>
-                <th className="px-4 py-2.5 text-xs font-semibold text-slate-500 text-right">Qty</th>
-                <th className="px-4 py-2.5 text-xs font-semibold text-slate-500 whitespace-nowrap">Last Quote</th>
-                <th className="px-4 py-2.5 text-xs font-semibold text-slate-500 whitespace-nowrap">Last Invoice</th>
-                <th className="px-4 py-2.5 text-xs font-semibold text-slate-500 text-center">Status</th>
+                <th className="px-4 py-2.5 text-xs font-semibold text-slate-500 text-right whitespace-nowrap">Qty / Price</th>
+                <th className="px-4 py-2.5 text-xs font-semibold text-slate-500 whitespace-nowrap">Last Quote / Invoice</th>
                 <th className="px-4 py-2.5 text-xs font-semibold text-slate-500 text-right">Actions</th>
               </tr>
             </thead>
@@ -583,6 +591,11 @@ export default function CustomerSubscriptions({
                       >
                         {s.subscriptionNumber}
                       </Link>
+                      <div className="mt-1">
+                        <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium ${STATUS_STYLES[s.lifecycleStatus] ?? 'bg-slate-100 text-slate-500'}`}>
+                          {s.lifecycleStatus.replace('_', ' ')}
+                        </span>
+                      </div>
                     </td>
                     <td className="px-4 py-3 min-w-[200px]">
                       <p className="text-slate-800 text-xs font-medium leading-snug">{s.zohoItemName ?? '—'}</p>
@@ -595,22 +608,80 @@ export default function CustomerSubscriptions({
                         )}
                       </p>
                     </td>
-                    <td className="px-4 py-3 text-blue-600 text-xs whitespace-nowrap">{s.domain?.domainName || '—'}</td>
-                    <td className="px-4 py-3 text-right text-slate-700">{Number(s.quantity)}</td>
-                    <td className="px-4 py-3 text-xs font-mono text-slate-600 whitespace-nowrap">
-                      {s.lastQuoteNumber ?? <span className="text-slate-300">—</span>}
+                    {/* Domain + Copy */}
+                    <td className="px-4 py-3 text-xs whitespace-nowrap">
+                      {s.domain?.domainName
+                        ? (
+                          <span className="inline-flex items-center gap-1 group">
+                            <span className="text-blue-600 group-hover:text-blue-700 transition-colors">{s.domain.domainName}</span>
+                            <button
+                              type="button"
+                              title="Copy domain name"
+                              onClick={() => void navigator.clipboard.writeText(s.domain!.domainName)}
+                              className="opacity-0 group-hover:opacity-100 transition-all text-slate-400 group-hover:text-blue-500 hover:text-blue-700 p-0.5 group-hover:p-1 rounded hover:bg-blue-50"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 group-hover:w-3.5 group-hover:h-3.5 transition-all">
+                                <path d="M5.5 3.5A1.5 1.5 0 0 1 7 2h4.5A1.5 1.5 0 0 1 13 3.5v7a1.5 1.5 0 0 1-1.5 1.5H11v-1h.5a.5.5 0 0 0 .5-.5v-7a.5.5 0 0 0-.5-.5H7a.5.5 0 0 0-.5.5V4H5.5v-.5Z" />
+                                <path d="M3 5.5A1.5 1.5 0 0 1 4.5 4h4A1.5 1.5 0 0 1 10 5.5v7A1.5 1.5 0 0 1 8.5 14h-4A1.5 1.5 0 0 1 3 12.5v-7Zm1.5-.5a.5.5 0 0 0-.5.5v7a.5.5 0 0 0 .5.5h4a.5.5 0 0 0 .5-.5v-7a.5.5 0 0 0-.5-.5h-4Z" />
+                              </svg>
+                            </button>
+                          </span>
+                        )
+                        : <span className="text-slate-300">—</span>
+                      }
                     </td>
-                    <td className="px-4 py-3 text-xs font-mono text-slate-600 whitespace-nowrap">
-                      {s.lastInvoiceNumber ?? <span className="text-slate-300">—</span>}
+                    {/* Qty + Price */}
+                    <td className="px-4 py-3 text-right">
+                      <span className="text-slate-700 text-sm font-medium">{Number(s.quantity)}</span>
+                      <p className="text-[10px] text-slate-400 mt-0.5 whitespace-nowrap">
+                        {s.currency && s.currency !== 'INR' ? s.currency : '₹'}
+                        {Number(s.subscriptionPrice).toLocaleString('en-IN')}
+                      </p>
                     </td>
-                    <td className="px-4 py-3 text-center">
-                      <span
-                        className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${
-                          STATUS_STYLES[s.lifecycleStatus] ?? 'bg-slate-100 text-slate-500'
-                        }`}
-                      >
-                        {s.lifecycleStatus.replace('_', ' ')}
-                      </span>
+                    {/* Last Quote / Invoice — merged column */}
+                    <td className="px-4 py-3 text-xs font-mono whitespace-nowrap">
+                      <div className="flex flex-col gap-0.5">
+                        {/* Quote row */}
+                        {s.lastQuoteNumber
+                          ? (
+                            <span className="inline-flex items-center gap-1">
+                              <span className="text-slate-600">{s.lastQuoteNumber}</span>
+                              {zohoBase && s.lastQuoteId && (
+                                <a
+                                  href={`${zohoBase}/quotes/${s.lastQuoteId}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-slate-400 hover:text-blue-600 transition-colors"
+                                  title="Zoho Books में खोलें"
+                                >
+                                  ↗
+                                </a>
+                              )}
+                            </span>
+                          )
+                          : <span className="text-slate-300">—</span>
+                        }
+                        {/* Invoice row */}
+                        {s.lastInvoiceNumber
+                          ? (
+                            <span className="inline-flex items-center gap-1">
+                              <span className="text-slate-600">{s.lastInvoiceNumber}</span>
+                              {zohoBase && s.lastInvoiceId && (
+                                <a
+                                  href={`${zohoBase}/invoices/${s.lastInvoiceId}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-slate-400 hover:text-blue-600 transition-colors"
+                                  title="Zoho Books में खोलें"
+                                >
+                                  ↗
+                                </a>
+                              )}
+                            </span>
+                          )
+                          : <span className="text-slate-300">—</span>
+                        }
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-1.5">

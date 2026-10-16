@@ -1227,8 +1227,21 @@ export function SubscriptionsTable({
                               <p className="text-[11px] text-slate-400">{sub.organization.name}</p>
                             </td>
                             {has('domain') && (
-                              <td className="px-4 py-2.5">
-                                <p className="text-[13px] font-mono text-slate-500">{sub.domain.domainName}</p>
+                              <td className="px-4 py-2.5" onClick={e => e.stopPropagation()}>
+                                <span className="inline-flex items-center gap-1 group">
+                                  <span className="text-[13px] font-mono text-slate-500 group-hover:text-blue-600 transition-colors">{sub.domain.domainName}</span>
+                                  <button
+                                    type="button"
+                                    title="Copy domain name"
+                                    onClick={() => void navigator.clipboard.writeText(sub.domain.domainName)}
+                                    className="opacity-0 group-hover:opacity-100 transition-all text-slate-400 group-hover:text-blue-500 hover:text-blue-700 p-0.5 group-hover:p-1 rounded hover:bg-blue-50"
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 group-hover:w-3.5 group-hover:h-3.5 transition-all">
+                                      <path d="M5.5 3.5A1.5 1.5 0 0 1 7 2h4.5A1.5 1.5 0 0 1 13 3.5v7a1.5 1.5 0 0 1-1.5 1.5H11v-1h.5a.5.5 0 0 0 .5-.5v-7a.5.5 0 0 0-.5-.5H7a.5.5 0 0 0-.5.5V4H5.5v-.5Z" />
+                                      <path d="M3 5.5A1.5 1.5 0 0 1 4.5 4h4A1.5 1.5 0 0 1 10 5.5v7A1.5 1.5 0 0 1 8.5 14h-4A1.5 1.5 0 0 1 3 12.5v-7Zm1.5-.5a.5.5 0 0 0-.5.5v7a.5.5 0 0 0 .5.5h4a.5.5 0 0 0 .5-.5v-7a.5.5 0 0 0-.5-.5h-4Z" />
+                                    </svg>
+                                  </button>
+                                </span>
                               </td>
                             )}
                             {has('item') && (
@@ -1334,8 +1347,21 @@ export function SubscriptionsTable({
                       </td>
                       {/* Domain column (optional) */}
                       {has('domain') && (
-                        <td className="px-4 py-2.5">
-                          <p className="text-[13px] font-mono text-slate-500">{sub.domain.domainName}</p>
+                        <td className="px-4 py-2.5" onClick={e => e.stopPropagation()}>
+                          <span className="inline-flex items-center gap-1 group">
+                            <span className="text-[13px] font-mono text-slate-500 group-hover:text-blue-600 transition-colors">{sub.domain.domainName}</span>
+                            <button
+                              type="button"
+                              title="Copy domain name"
+                              onClick={() => void navigator.clipboard.writeText(sub.domain.domainName)}
+                              className="opacity-0 group-hover:opacity-100 transition-all text-slate-400 group-hover:text-blue-500 hover:text-blue-700 p-0.5 group-hover:p-1 rounded hover:bg-blue-50"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 group-hover:w-3.5 group-hover:h-3.5 transition-all">
+                                <path d="M5.5 3.5A1.5 1.5 0 0 1 7 2h4.5A1.5 1.5 0 0 1 13 3.5v7a1.5 1.5 0 0 1-1.5 1.5H11v-1h.5a.5.5 0 0 0 .5-.5v-7a.5.5 0 0 0-.5-.5H7a.5.5 0 0 0-.5.5V4H5.5v-.5Z" />
+                                <path d="M3 5.5A1.5 1.5 0 0 1 4.5 4h4A1.5 1.5 0 0 1 10 5.5v7A1.5 1.5 0 0 1 8.5 14h-4A1.5 1.5 0 0 1 3 12.5v-7Zm1.5-.5a.5.5 0 0 0-.5.5v7a.5.5 0 0 0 .5.5h4a.5.5 0 0 0 .5-.5v-7a.5.5 0 0 0-.5-.5h-4Z" />
+                              </svg>
+                            </button>
+                          </span>
                         </td>
                       )}
                       {has('item') && (

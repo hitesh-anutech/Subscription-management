@@ -2062,7 +2062,7 @@ export class SubscriptionsService {
 
     // --- Zoho document lookup (if lastQuoteNumber or lastInvoiceNumber provided) ---
     let quoteData: { estimateId: string; estimateNumber: string; date: string } | null = null;
-    let invoiceData: { invoiceId: string; invoiceNumber: string; date: string } | null = null;
+    let invoiceData: { invoiceId: string; invoiceNumber: string; date: string; estimateId?: string } | null = null;
 
     // Only lookup + create history when the document number has actually changed.
     // This prevents duplicate renewal_history rows if the user saves the form twice
@@ -2082,7 +2082,27 @@ export class SubscriptionsService {
       }
       if (invoiceChanged) {
         invoiceData = await this.zoho.lookupInvoiceByNumber(internalOrgId, dto.lastInvoiceNumber!.trim(), contactId);
+        // If the invoice was created from an estimate and no explicit quote was provided, auto-link it
+        if (!quoteChanged && invoiceData.estimateId) {
+          try {
+            const estDetail = await this.zoho.getEstimateById(internalOrgId, invoiceData.estimateId);
+            if (estDetail) quoteData = estDetail;
+          } catch {
+            // Non-critical — continue without auto-linking the estimate
+          }
+        }
       }
+    }
+
+    // Auto-compute lifecycle when endDate is updated without an explicit lifecycleStatus override
+    let computedLifecycle: SubscriptionLifecycleStatus | undefined;
+    if (dto.endDate && dto.lifecycleStatus === undefined) {
+      const end   = new Date(dto.endDate);
+      const now   = new Date();
+      const in30  = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+      if (end < now)       computedLifecycle = 'Expired';
+      else if (end < in30) computedLifecycle = 'Expiring_Soon';
+      else                 computedLifecycle = 'Active';
     }
 
     // --- Core fields + snapshot update ---
@@ -2100,7 +2120,11 @@ export class SubscriptionsService {
         ...(dto.autoRenew             !== undefined && { autoRenew: dto.autoRenew }),
         ...(dto.subscriptionCategory  !== undefined && { subscriptionCategory: dto.subscriptionCategory || null }),
         ...(dto.notes             !== undefined && { notes: dto.notes }),
-        ...(dto.lifecycleStatus   !== undefined && { lifecycleStatus: dto.lifecycleStatus }),
+        ...(dto.lifecycleStatus !== undefined
+          ? { lifecycleStatus: dto.lifecycleStatus }
+          : computedLifecycle !== undefined
+            ? { lifecycleStatus: computedLifecycle }
+            : {}),
         ...(dto.currency          !== undefined && { currency: dto.currency.toUpperCase() }),
         ...(dto.exchangeRate      !== undefined && { exchangeRate: dto.exchangeRate }),
         ...(dto.zohoItemId        !== undefined && { zohoItemId: dto.zohoItemId }),
