@@ -150,7 +150,7 @@ export class SearchService {
             orgName:      s.organization.name,
             startDate:    fmtDate(s.startDate),
             endDate:      fmtDate(s.endDate),
-            quantity:     s.quantity,
+            quantity:     s.quantity != null ? Number(s.quantity) : undefined,
             rate:         s.subscriptionPrice != null ? Number(s.subscriptionPrice) : undefined,
             billingCycle: s.billingCycle,
           },
