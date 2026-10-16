@@ -2327,6 +2327,16 @@ export class SubscriptionsService {
     const in30Days = new Date();
     in30Days.setDate(in30Days.getDate() + 30);
 
+    // Re-activate Expiring_Soon subscriptions whose endDate is now beyond the 30-day window
+    // (happens when a renewal updates endDate but the status was left stale as Expiring_Soon)
+    const reactivatedFromExpiringSoon = await this.prisma.subscription.updateMany({
+      where: {
+        lifecycleStatus: 'Expiring_Soon',
+        endDate: { gt: in30Days },
+      },
+      data: { lifecycleStatus: 'Active' },
+    });
+
     // Mark Expiring_Soon (active, expires within 30 days)
     const expiringSoon = await this.prisma.subscription.updateMany({
       where: {
@@ -2362,8 +2372,8 @@ export class SubscriptionsService {
         })
       : { count: 0 };
 
-    this.logger.log(`Expiry sync: ${expiringSoon.count} → ExpiringSoon, ${expired.count} → Expired, ${reactivated.count} re-activated`);
-    return { expiringSoon: expiringSoon.count, expired: expired.count, reactivated: reactivated.count };
+    this.logger.log(`Expiry sync: ${expiringSoon.count} → ExpiringSoon, ${expired.count} → Expired, ${reactivated.count} re-activated (paid), ${reactivatedFromExpiringSoon.count} Expiring_Soon → Active`);
+    return { expiringSoon: expiringSoon.count, expired: expired.count, reactivated: reactivated.count, reactivatedFromExpiringSoon: reactivatedFromExpiringSoon.count };
   }
 
   /**
