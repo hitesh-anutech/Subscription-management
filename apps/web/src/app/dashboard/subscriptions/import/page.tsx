@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, Suspense, useCallback } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { importSubscriptionsAction, type ImportSubscription, type ImportResult } from './actions';
-import { SubscriptionStatusCell, type SubscriptionCheckResult } from './_components/subscription-status-cell';
+import { SubscriptionStatusCell, type SubscriptionCheckResult, type ProrataEvent } from './_components/subscription-status-cell';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3001/api';
 
@@ -144,7 +144,9 @@ function ImportSubscriptionsInner() {
   const [status,      setStatus]      = useState(preDocSrc === 'estimates' ? 'accepted' : 'paid');
   const [refNumber,   setRefNumber]   = useState(preRefNum);
   const [docSource,   setDocSource]   = useState<'invoices' | 'estimates'>(preDocSrc);
-  const [businessType, setBusinessType] = useState('');
+  const [businessTypes, setBusinessTypes] = useState<string[]>([]);
+  const [btOpen,        setBtOpen]        = useState(false);
+  const btRef = useRef<HTMLDivElement>(null);
   const [expiryFrom,  setExpiryFrom]  = useState('');
   const [expiryTo,    setExpiryTo]    = useState('');
   const [loading,     setLoading]     = useState(false);
@@ -164,6 +166,15 @@ function ImportSubscriptionsInner() {
   const [fItem,     setFItem]     = useState('');
   const [fMin,      setFMin]      = useState('');
   const [fMax,      setFMax]      = useState('');
+
+  // Close Business Type dropdown when clicking outside.
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (btRef.current && !btRef.current.contains(e.target as Node)) setBtOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
 
   // Auto-fetch when opened with pre-filled params (org + ref_number).
   const autoFetched = useRef(false);
@@ -185,9 +196,9 @@ function ImportSubscriptionsInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Once orgs are loaded + org is set, auto-fetch if ref_number was pre-filled.
+  // Once orgs are loaded + org is set, auto-fetch if ref_number was pre-filled (dates required).
   useEffect(() => {
-    if (autoFetched.current || !selectedOrg || !preRefNum || orgs.length === 0) return;
+    if (autoFetched.current || !selectedOrg || !preRefNum || orgs.length === 0 || !dateStart || !dateEnd) return;
     autoFetched.current = true;
     void fetchInvoices();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -225,16 +236,38 @@ function ImportSubscriptionsInner() {
             organizationId: orgId,
             zohoCustomerId: c.customerId,
             zohoItemId:     c.itemId,
+            zohoItemName:   c.itemName,
             domainName:     c.domain,
           })),
         }),
       });
       if (!res.ok) return;
       const checks = await res.json() as Record<string, SubscriptionCheckResult | null>;
-      setSubChecks(checks);
+
+      // Cross-reference: if candidate A has no match but a sibling candidate
+      // (same customer + domain + item name, different Zoho item ID) DOES have a
+      // match, reuse that match. This handles the case where the same Zoho product
+      // exists under two different item IDs (recreated/duplicated item in Zoho).
+      const enriched = { ...checks };
+      for (const c of cands) {
+        if (enriched[c.key] !== null) continue;
+        const sibling = cands.find(
+          (other) =>
+            other.key !== c.key &&
+            other.customerId === c.customerId &&
+            other.domain.trim().toLowerCase() === c.domain.trim().toLowerCase() &&
+            other.itemName.trim().toLowerCase() === c.itemName.trim().toLowerCase() &&
+            enriched[other.key] !== null,
+        );
+        if (sibling) {
+          enriched[c.key] = { ...enriched[sibling.key]!, matchType: 'sibling' };
+        }
+      }
+
+      setSubChecks(enriched);
       // Auto-deselect rows that already have a subscription (user can re-check to override)
       setCandidates((prev) =>
-        prev.map((c) => checks[c.key] ? { ...c, selected: false } : c),
+        prev.map((c) => enriched[c.key] ? { ...c, selected: false } : c),
       );
     } finally {
       setChecksLoading(false);
@@ -255,7 +288,7 @@ function ImportSubscriptionsInner() {
     if (dateStart) params.set('date_start', dateStart);
     if (dateEnd)   params.set('date_end', dateEnd);
     if (refNumber.trim()) params.set('reference_number', refNumber.trim());
-    if (businessType) params.set('business_type', businessType);
+    if (businessTypes.length) params.set('business_type', businessTypes.join(','));
     if (expiryFrom)   params.set('service_expiry_from', expiryFrom);
     if (expiryTo)     params.set('service_expiry_to', expiryTo);
 
@@ -537,30 +570,62 @@ function ImportSubscriptionsInner() {
             </select>
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">Date From</label>
+            <label className="block text-xs font-medium text-slate-600 mb-1">
+              Date From <span className="text-red-500">*</span>
+            </label>
             <input type="date" value={dateStart} onChange={(e) => setDateStart(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              className={`w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${!dateStart ? 'border-red-300 bg-red-50' : 'border-slate-300'}`} />
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">Date To</label>
+            <label className="block text-xs font-medium text-slate-600 mb-1">
+              Date To <span className="text-red-500">*</span>
+            </label>
             <input type="date" value={dateEnd} onChange={(e) => setDateEnd(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              className={`w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${!dateEnd ? 'border-red-300 bg-red-50' : 'border-slate-300'}`} />
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">Invoice / Quote No.</label>
             <input type="text" value={refNumber} onChange={(e) => setRefNumber(e.target.value)} placeholder="INV/25-26/1401…"
               className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
           </div>
-          <div>
+          <div ref={btRef} className="relative">
             <label className="block text-xs font-medium text-slate-600 mb-1">Business Type</label>
-            <select value={businessType} onChange={(e) => setBusinessType(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-              <option value="">All</option>
-              <option value="Renewal">Renewal</option>
-              <option value="Fresh">Fresh</option>
-              <option value="Pro-rata">Pro-rata</option>
-              <option value="Transfer">Transfer</option>
-            </select>
+            <button
+              type="button"
+              onClick={() => setBtOpen((o) => !o)}
+              className="w-full flex items-center justify-between px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-left"
+            >
+              <span className={businessTypes.length === 0 ? 'text-slate-400' : 'text-slate-800'}>
+                {businessTypes.length === 0 ? 'All' : businessTypes.join(', ')}
+              </span>
+              <span className="text-slate-400 text-xs ml-1">▾</span>
+            </button>
+            {btOpen && (
+              <div className="absolute z-50 top-full left-0 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg py-1 min-w-[140px]">
+                <button
+                  type="button"
+                  onClick={() => { setBusinessTypes([]); setBtOpen(false); }}
+                  className={`w-full text-left px-3 py-1.5 text-sm hover:bg-slate-50 ${businessTypes.length === 0 ? 'font-semibold text-blue-600' : 'text-slate-600'}`}
+                >
+                  All
+                </button>
+                {(['Renewal', 'Fresh', 'Pro-rata', 'Transfer'] as const).map((type) => (
+                  <label key={type} className="flex items-center gap-2 px-3 py-1.5 hover:bg-slate-50 cursor-pointer text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={businessTypes.includes(type)}
+                      onChange={(e) =>
+                        setBusinessTypes((prev) =>
+                          e.target.checked ? [...prev, type] : prev.filter((t) => t !== type),
+                        )
+                      }
+                      className="rounded"
+                    />
+                    {type}
+                  </label>
+                ))}
+              </div>
+            )}
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">Service Expiry From</label>
@@ -575,11 +640,14 @@ function ImportSubscriptionsInner() {
         </div>
 
         <div className="flex items-center gap-3">
-          <button type="button" onClick={() => void fetchInvoices()} disabled={loading || !selectedOrg}
-            className="px-5 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white text-sm font-semibold rounded-lg transition-colors">
+          <button type="button" onClick={() => void fetchInvoices()} disabled={loading || !selectedOrg || !dateStart || !dateEnd}
+            className="px-5 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-lg transition-colors">
             {loading ? '⏳ Fetching…' : `↓ Fetch & Group ${docSource === 'estimates' ? 'Quotes' : 'Invoices'}`}
           </button>
-          {fetchMsg && <span className="text-sm text-slate-600">{fetchMsg}</span>}
+          {(!dateStart || !dateEnd) && !loading && (
+            <span className="text-xs text-red-500">Date From और Date To दोनों select करो</span>
+          )}
+          {fetchMsg && (dateStart && dateEnd) && <span className="text-sm text-slate-600">{fetchMsg}</span>}
         </div>
       </div>
 
@@ -803,6 +871,18 @@ function ImportSubscriptionsInner() {
                         invoiceNumber: c.events.find(e => e.start === c.start && e.end === c.end)?.invoiceNumber,
                         quoteNumber:   c.events.find(e => e.start === c.start && e.end === c.end)?.quoteNumber,
                       }}
+                      prorataEvents={(() => {
+                        if (!subChecks[c.key]) return undefined;
+                        const evts = c.events
+                          .filter((e) => /pro.?rata/i.test(e.businessType))
+                          .map((e): ProrataEvent => ({
+                            invoiceId: e.invoiceId, invoiceNumber: e.invoiceNumber,
+                            invoiceDate: e.invoiceDate, businessType: e.businessType,
+                            start: e.start, end: e.end, qty: e.qty, rate: e.rate,
+                            currency: e.currency, exchangeRate: e.exchangeRate,
+                          }));
+                        return evts.length ? evts : undefined;
+                      })()}
                       onEditSaved={() => void runBatchCheck(candidates, selectedOrg)}
                     />
                   </tr>

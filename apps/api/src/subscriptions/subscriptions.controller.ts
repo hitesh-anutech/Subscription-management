@@ -10,7 +10,7 @@ import {
   RenewalQuoteDto, ProrataQuoteDto, StartSubscriptionDto,
   ImportSubscriptionsBatchDto, BulkUpdatePriceDto, BulkRenewalQuoteDto,
   CombinedRenewalQuoteDto, BulkCreateFromQuoteDto, BulkTransferCustomerDto,
-  InlineImportZohoDocDto, CreateCommentDto, BatchCheckDto,
+  InlineImportZohoDocDto, CreateCommentDto, BatchCheckDto, AddHistoryDto,
 } from './dto/subscriptions.dto';
 import { CurrentUser, AuthUser } from '../auth/decorators/current-user.decorator';
 
@@ -177,6 +177,12 @@ export class SubscriptionsController {
     }
     const idList = ids.split(',').filter(Boolean);
     return this.service.prefillRenewalQuote(idList);
+  }
+
+  /** POST /api/subscriptions/:id/add-history — backfill history entries (e.g. Pro-rata invoices) without creating a new subscription */
+  @Post(':id/add-history')
+  addHistory(@Param('id') id: string, @Body() dto: AddHistoryDto) {
+    return this.service.addImportHistory(id, dto.history);
   }
 
   /** GET /api/subscriptions/:id */

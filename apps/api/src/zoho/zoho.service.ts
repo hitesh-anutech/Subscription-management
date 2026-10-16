@@ -843,8 +843,10 @@ export class ZohoService {
     const from = expiryFrom ? toDate(expiryFrom) : null;
     const to   = expiryTo   ? toDate(expiryTo)   : null;
 
+    const types = businessType ? businessType.split(',').map((s) => s.trim()).filter(Boolean) : [];
+
     return docs.filter((doc) => {
-      if (businessType && this.cfHeaderVal(doc, 'cf_new_business') !== businessType) return false;
+      if (types.length > 0 && !types.includes(this.cfHeaderVal(doc, 'cf_new_business'))) return false;
       if (from !== null || to !== null) {
         const exp = toDate(this.cfHeaderVal(doc, 'cf_next_invoice_date'));
         if (exp === null) return false;

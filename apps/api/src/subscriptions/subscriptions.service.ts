@@ -1622,7 +1622,7 @@ export class SubscriptionsService {
   // Batch check — does a subscription already exist for each candidate?
   // Called by the import page after grouping to populate the Status column.
   // ------------------------------------------------------------------
-  async batchCheck(items: Array<{ key: string; organizationId: string; zohoCustomerId: string; zohoItemId: string; domainName: string }>) {
+  async batchCheck(items: Array<{ key: string; organizationId: string; zohoCustomerId: string; zohoItemId: string; domainName: string; zohoItemName?: string }>) {
     if (!items.length) return {};
 
     // Phase 1: resolve matching domain records (org + customer + domain name)
@@ -1644,11 +1644,12 @@ export class SubscriptionsService {
       domains.map((d) => [`${d.organizationId}:${d.zohoCustomerId}:${d.domainName.toLowerCase()}`, d.id]),
     );
 
-    // Phase 2: find subscriptions by domainId + itemId
+    // Phase 2: fetch ALL subscriptions for matched domains (not filtered by itemId).
+    // This lets Phase 3 fall back to item-name matching when the same product was
+    // re-created in Zoho under a different item ID.
     const domainIds = domains.map((d) => d.id);
-    const itemIds   = [...new Set(items.map((i) => i.zohoItemId))];
     const subs = await this.prisma.subscription.findMany({
-      where: { domainId: { in: domainIds }, zohoItemId: { in: itemIds } },
+      where: { domainId: { in: domainIds } },
       select: {
         id: true, subscriptionNumber: true,
         lifecycleStatus: true, processStatus: true,
@@ -1664,14 +1665,23 @@ export class SubscriptionsService {
       },
     });
 
-    // Phase 3: match each input item to a subscription
+    // Phase 3: exact match (itemId) first; fall back to item-name when itemId differs.
     const result: Record<string, object | null> = {};
     for (const item of items) {
       const domainId = domainIdMap.get(`${item.organizationId}:${item.zohoCustomerId}:${item.domainName.toLowerCase()}`);
       if (!domainId) { result[item.key] = null; continue; }
-      const match = subs.find(
-        (s) => s.domainId === domainId && s.zohoItemId === item.zohoItemId && s.zohoCustomerId === item.zohoCustomerId,
-      );
+
+      const domainSubs = subs.filter((s) => s.domainId === domainId && s.zohoCustomerId === item.zohoCustomerId);
+
+      let match = domainSubs.find((s) => s.zohoItemId === item.zohoItemId);
+      let matchType: 'exact' | 'name' = 'exact';
+
+      if (!match && item.zohoItemName) {
+        const needle = item.zohoItemName.trim().toLowerCase();
+        match = domainSubs.find((s) => s.zohoItemName?.trim().toLowerCase() === needle);
+        if (match) matchType = 'name';
+      }
+
       result[item.key] = match ? {
         id:                   match.id,
         subscriptionNumber:   match.subscriptionNumber,
@@ -1690,9 +1700,35 @@ export class SubscriptionsService {
         lastQuoteNumber:      match.lastQuoteNumber,
         lastInvoiceNumber:    match.lastInvoiceNumber,
         subscriptionCategory: match.subscriptionCategory,
+        matchType,
       } : null;
     }
     return result;
+  }
+
+  // ------------------------------------------------------------------
+  // Add history entries to an existing subscription without creating a new one.
+  // Designed for Pro-rata invoices: the subscription already exists, but the
+  // billing event wasn't recorded in renewalHistory.
+  // ------------------------------------------------------------------
+  async addImportHistory(
+    subscriptionId: string,
+    history: ImportInvoiceRefDto[],
+  ): Promise<{ added: number }> {
+    const sub = await this.prisma.subscription.findUnique({
+      where: { id: subscriptionId },
+      select: { id: true, organizationId: true, domainId: true, billingCycle: true },
+    });
+    if (!sub) throw new NotFoundException(`Subscription ${subscriptionId} not found`);
+
+    const added = await this.backfillHistory(
+      sub.id,
+      sub.organizationId,
+      sub.domainId,
+      sub.billingCycle,
+      history,
+    );
+    return { added };
   }
 
   // ------------------------------------------------------------------
@@ -2001,7 +2037,7 @@ export class SubscriptionsService {
    * invoiceId already exists on the subscription (idempotent — safe to re-run).
    * Returns the number of rows actually added.
    */
-  private async backfillHistory(
+  async backfillHistory(
     subscriptionId: string,
     organizationId: string,
     domainId: string,

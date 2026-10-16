@@ -212,11 +212,17 @@ export class BatchCheckItemDto {
   @IsString() zohoCustomerId!: string;
   @IsString() zohoItemId!: string;
   @IsString() domainName!: string;
+  @IsOptional() @IsString() zohoItemName?: string;
 }
 
 export class BatchCheckDto {
   @IsArray() @ValidateNested({ each: true }) @Type(() => BatchCheckItemDto)
   items!: BatchCheckItemDto[];
+}
+
+export class AddHistoryDto {
+  @IsArray() @ValidateNested({ each: true }) @Type(() => ImportInvoiceRefDto)
+  history!: ImportInvoiceRefDto[];
 }
 
 export class InlineImportZohoDocDto {
