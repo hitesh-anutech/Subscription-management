@@ -3295,6 +3295,8 @@ export class SubscriptionsService {
             const nextRenewal = new Date(r.serviceEndDate);
             nextRenewal.setDate(nextRenewal.getDate() + 1);
             updateData.nextRenewalDate = nextRenewal;
+            if (r.sellingPrice != null) updateData.subscriptionPrice = r.sellingPrice;
+            if (r.quantity      != null) updateData.quantity           = r.quantity;
           } else if (r.businessType === 'ProRata' && r.quantity) {
             updateData.quantity = Number(sub.quantity) + Number(r.quantity);
           }

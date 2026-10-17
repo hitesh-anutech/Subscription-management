@@ -234,6 +234,8 @@ export class WebhookService {
           const nextRenewal = new Date(historyRow.serviceEndDate);
           nextRenewal.setDate(nextRenewal.getDate() + 1);
           updateData.nextRenewalDate = nextRenewal;
+          if (historyRow.sellingPrice != null) updateData.subscriptionPrice = historyRow.sellingPrice;
+          if (historyRow.quantity      != null) updateData.quantity           = historyRow.quantity;
         } else if (historyRow.businessType === 'ProRata' && historyRow.quantity) {
           // Dates UNCHANGED — only quantity increases (PRD §8A.2)
           updateData.quantity = Number(sub.quantity) + Number(historyRow.quantity);

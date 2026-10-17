@@ -1821,6 +1821,7 @@ export class ZohoService {
     type LineItemOut = {
       name: string; qty: number; rate: number; itemId: string;
       domain: string; startDate: string; endDate: string;
+      costPrice: number | null;
       suggestedSub: { id: string; subscriptionNumber: string; zohoItemName: string | null; domain: { domainName: string } | null } | null;
     };
 
@@ -1833,7 +1834,7 @@ export class ZohoService {
       include: { lines: { orderBy: { lineOrder: 'asc' } } },
     });
 
-    let rawLines: Array<{ name: string; qty: number; rate: number; itemId: string; domain: string; startDate: string; endDate: string }>;
+    let rawLines: Array<{ name: string; qty: number; rate: number; itemId: string; domain: string; startDate: string; endDate: string; costPrice: number | null }>;
 
     let docStatus: string | null = null;
     let balance: number | null = null;
@@ -1871,6 +1872,7 @@ export class ZohoService {
         domain:    l.domain    ?? '',
         startDate: l.startDate ?? '',
         endDate:   l.endDate   ?? '',
+        costPrice: null,     // not stored in DB cache; available on Zoho fetch only
       }));
     } else {
       // ── 2. Cache miss → fetch from Zoho ──────────────────────────
@@ -1898,6 +1900,7 @@ export class ZohoService {
       const domainCf    = fm.domain_name ?? 'cf_domain_name';
       const startDateCf = fm.start_date  ?? 'cf_subscription_start_date';
       const endDateCf   = fm.end_date    ?? 'cf_subscription_end_date';
+      const costPriceCf = fm.cost_price  ?? '';
 
       const cfVal = (cfs: Array<{ api_name: string; value: string | number }> | undefined, key: string) => {
         const f = cfs?.find(c => c.api_name === key);
@@ -1910,7 +1913,9 @@ export class ZohoService {
       };
 
       rawLines = doc.line_items.map(li => {
-        const cfs       = li.item_custom_fields ?? li.custom_fields ?? [];
+        const cfs      = li.item_custom_fields ?? li.custom_fields ?? [];
+        const cpRaw    = costPriceCf ? cfVal(cfs, costPriceCf) : '';
+        const costPrice = cpRaw ? (parseFloat(cpRaw) || null) : null;
         return {
           name:      li.name,
           qty:       li.quantity,
@@ -1919,6 +1924,7 @@ export class ZohoService {
           domain:    cfVal(cfs, domainCf),
           startDate: parseDate(cfVal(cfs, startDateCf)),
           endDate:   parseDate(cfVal(cfs, endDateCf)),
+          costPrice,
         };
       });
 

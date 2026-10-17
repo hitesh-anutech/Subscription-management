@@ -10,7 +10,8 @@ import {
   sendProformaAction, getEmailPreviewAction, refreshProformaAction,
   sendInvoiceAction, getInvoiceEmailPreviewAction, convertProformaToInvoiceAction,
 } from '../../[id]/actions';
-import { Mail, RefreshCw, Zap, ArrowRight, FileText, Activity, X } from 'lucide-react';
+import { Mail, RefreshCw, Zap, ArrowRight, FileText, Activity, X, GitCompareArrows } from 'lucide-react';
+import { CompareModal } from './compare-modal';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3001/api';
 
@@ -278,6 +279,7 @@ function BillingHistoryRow({ item, idx }: { item: BillingHistoryItem; idx: numbe
   const [modal, setModal] = useState<Mode | 'activity' | null>(null);
   const [activityData, setActivityData] = useState<{ quoteComments: any[], invoiceComments: any[] } | null>(null);
   const [loadingActivity, setLoadingActivity] = useState(false);
+  const [compareOpen, setCompareOpen] = useState(false);
 
   const handleRefresh = () => {
     setMsg(null);
@@ -324,7 +326,7 @@ function BillingHistoryRow({ item, idx }: { item: BillingHistoryItem; idx: numbe
         <td className="py-3 px-4">
           {item.zohoCustomerId ? (
             <Link
-              href={`/dashboard/customers/${item.zohoCustomerId}?org_id=${item.organization.zohoOrgId}`}
+              href={`/dashboard/customers/${item.zohoCustomerId}?org_id=${item.organization.id}`}
               className="text-blue-600 hover:underline font-medium block truncate max-w-48"
             >
               {item.zohoCustomerName ?? 'Customer'}
@@ -466,6 +468,16 @@ function BillingHistoryRow({ item, idx }: { item: BillingHistoryItem; idx: numbe
               >
                 <Activity size={14} />
               </button>
+              {hasInvoice && invoicePaid && (
+                <button
+                  type="button"
+                  onClick={() => setCompareOpen(true)}
+                  title="Compare with Subscriptions"
+                  className="p-1.5 rounded-md border border-slate-200 text-slate-500 hover:text-emerald-600 hover:border-emerald-200 hover:bg-emerald-50 transition-colors"
+                >
+                  <GitCompareArrows size={14} />
+                </button>
+              )}
             </div>
 
             {msg && <span className="text-[10px] text-red-600 max-w-[120px] leading-tight block">{msg}</span>}
@@ -498,6 +510,14 @@ function BillingHistoryRow({ item, idx }: { item: BillingHistoryItem; idx: numbe
           sendFn={(override?: { toMailIds?: string[]; ccMailIds?: string[]; bccMailIds?: string[]; subject?: string; body?: string }) => (isInvoice ? sendInvoiceAction : sendProformaAction)(item.id, override)}
           onClose={() => setModal(null)}
           onSent={() => { setModal(null); router.refresh(); }}
+        />
+      )}
+
+      {compareOpen && (
+        <CompareModal
+          open={compareOpen}
+          onClose={() => setCompareOpen(false)}
+          item={item}
         />
       )}
 
