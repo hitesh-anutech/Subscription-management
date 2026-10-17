@@ -367,6 +367,13 @@ export class SubscriptionsController {
     return this.service.syncExpiryStatuses();
   }
 
+  /** POST /api/subscriptions/:id/sync-invoice-from-estimate — backfill lastInvoiceNumber when quote was invoiced in Zoho but webhook was missed */
+  @Post(':id/sync-invoice-from-estimate')
+  @HttpCode(HttpStatus.OK)
+  syncInvoiceFromEstimate(@Param('id') id: string) {
+    return this.service.syncInvoiceFromEstimate(id);
+  }
+
   /** DELETE /api/subscriptions/renewal-history/:historyId — remove a single order history entry */
   @Delete('renewal-history/:historyId')
   @HttpCode(HttpStatus.OK)

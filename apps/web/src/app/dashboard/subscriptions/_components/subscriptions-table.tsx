@@ -57,7 +57,8 @@ interface Subscription {
   lastQuoteDate: string | null;
   nextRenewalPrice: string | null;
   lastInvoiceNumber: string | null;
-  organization: { id: string; name: string };
+  lastInvoiceDate: string | null;
+  organization: { id: string; name: string; zohoOrgId: string; dataCenter: string };
   domain: { id: string; domainName: string };
   _count: { renewalHistory: number; comments: number };
   renewalHistory: RenewalHistoryLine[];
@@ -160,50 +161,56 @@ function daysSince(dateStr: string | null): number {
   return Math.floor((Date.now() - new Date(dateStr).getTime()) / 86_400_000);
 }
 
+const DC_TLD: Record<string, string> = { in: 'in', com: 'com', eu: 'eu', com_au: 'com.au', jp: 'jp', sa: 'sa' };
+
+function zohoUrl(org: Subscription['organization'], entity: 'estimates' | 'invoices', id: string) {
+  const tld = DC_TLD[org.dataCenter] ?? 'com';
+  const path = entity === 'estimates' ? 'quotes' : entity;
+  return `https://books.zoho.${tld}/app/${org.zohoOrgId}#/${path}/${id}`;
+}
+
 const STATUS_BADGE: Record<string, string> = {
   draft: 'bg-slate-100 text-slate-600', sent: 'bg-blue-100 text-blue-700',
   accepted: 'bg-green-100 text-green-700', declined: 'bg-red-100 text-red-700',
   invoiced: 'bg-purple-100 text-purple-700', expired: 'bg-orange-100 text-orange-700',
   paid: 'bg-emerald-100 text-emerald-700', overdue: 'bg-red-100 text-red-700',
   partially_paid: 'bg-teal-100 text-teal-700',
-  Quoted: 'bg-blue-100 text-blue-700', Invoiced: 'bg-purple-100 text-purple-700',
-  Paid: 'bg-emerald-100 text-emerald-700',
+  quoted: 'bg-blue-100 text-blue-700',
 };
 
 interface LiveLineItem { name: string; qty: number; rate: number; domain: string; startDate: string; endDate: string; }
+interface DocFetchState { loading: boolean; items: LiveLineItem[]; docStatus: string | null; balance: number | null; error: string | null; }
 
-// Tooltip on the Last Quote cell — fetches live from zoho-doc-line-items API for accurate balance
-function QuoteLineItemsTooltip({ sub }: { sub: Subscription }) {
-  const h = sub.renewalHistory.find(r => r.quoteNumber === sub.lastQuoteNumber);
-  const orgId   = sub.organization.id;
-  const docId   = h?.invoiceId ?? h?.quoteId ?? null;
-  const kind: 'invoice' | 'estimate' = h?.invoiceId ? 'invoice' : 'estimate';
-  const fallbackStatus = h?.zohoInvoiceStatus ?? h?.zohoEstimateStatus ?? h?.renewalStatus ?? '';
+const EMPTY_FETCH: DocFetchState = { loading: false, items: [], docStatus: null, balance: null, error: null };
 
-  const [state, setState] = useState<{ loading: boolean; items: LiveLineItem[]; docStatus: string | null; balance: number | null; error: string | null }>({
-    loading: false, items: [], docStatus: null, balance: null, error: null,
-  });
-  const fetched = useRef(false);
+function fetchDoc(orgId: string, docId: string, kind: 'invoice' | 'estimate', set: (s: DocFetchState) => void) {
+  set({ loading: true, items: [], docStatus: null, balance: null, error: null });
+  fetch(`${API_BASE}/organizations/${orgId}/zoho-doc-line-items?kind=${kind}&doc_id=${encodeURIComponent(docId)}`, { credentials: 'include' })
+    .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
+    .then((data: { lineItems: LiveLineItem[]; docStatus: string | null; balance: number | null }) =>
+      set({ loading: false, items: data.lineItems ?? [], docStatus: data.docStatus ?? null, balance: data.balance ?? null, error: null })
+    )
+    .catch((err: Error) => set({ loading: false, items: [], docStatus: null, balance: null, error: err.message }));
+}
 
-  useEffect(() => {
-    if (!docId || !orgId || fetched.current) return;
-    fetched.current = true;
-    setState(s => ({ ...s, loading: true }));
-    fetch(`${API_BASE}/organizations/${orgId}/zoho-doc-line-items?kind=${kind}&doc_id=${encodeURIComponent(docId)}`, { credentials: 'include' })
-      .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
-      .then((data: { lineItems: LiveLineItem[]; docStatus: string | null; balance: number | null }) =>
-        setState({ loading: false, items: data.lineItems ?? [], docStatus: data.docStatus ?? null, balance: data.balance ?? null, error: null }),
-      )
-      .catch((err: Error) => setState(s => ({ ...s, loading: false, error: err.message })));
-  }, [docId, orgId, kind]);
+// Pure display component — no fetching; receives fetchState from parent cell
+function QuoteLineItemsTooltip({ sub, mode = 'quote', fetchState }: { sub: Subscription; mode?: 'quote' | 'invoice'; fetchState: DocFetchState }) {
+  const h = mode === 'invoice'
+    ? sub.renewalHistory.find(r => r.invoiceNumber === sub.lastInvoiceNumber)
+    : sub.renewalHistory.find(r => r.quoteNumber === sub.lastQuoteNumber);
+  const fallbackStatus = mode === 'invoice'
+    ? (h?.zohoInvoiceStatus ?? h?.renewalStatus ?? '')
+    : (h?.zohoInvoiceStatus ?? h?.zohoEstimateStatus ?? h?.renewalStatus ?? '');
 
-  const statusKey = (state.docStatus ?? fallbackStatus).toLowerCase();
+  const { loading, items, docStatus, balance, error } = fetchState;
+  const statusKey = (docStatus ?? fallbackStatus).toLowerCase();
   const badgeCls = STATUS_BADGE[statusKey] ?? 'bg-slate-100 text-slate-600';
-  const total = state.items.reduce((s, li) => s + li.qty * li.rate, 0);
+  const total = items.reduce((s, li) => s + li.qty * li.rate, 0);
   const fmt = (d: string) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '?';
 
-  // Fallback to local data when no doc ID or while loading
-  const localLines = sub.renewalHistory.filter(r => r.quoteNumber === sub.lastQuoteNumber);
+  const localLines = mode === 'invoice'
+    ? sub.renewalHistory.filter(r => r.invoiceNumber === sub.lastInvoiceNumber)
+    : sub.renewalHistory.filter(r => r.quoteNumber === sub.lastQuoteNumber);
   const localTotal = localLines.reduce((s, r) => s + Number(r.subtotalAmount ?? 0), 0);
   const cur = localLines[0]?.currency ?? sub.currency ?? 'INR';
 
@@ -211,26 +218,25 @@ function QuoteLineItemsTooltip({ sub }: { sub: Subscription }) {
     <div className="bg-white border border-slate-200 rounded-xl shadow-xl text-xs overflow-hidden">
       <div className="bg-slate-800 text-white px-3 py-2 flex items-center justify-between">
         <span className="font-bold uppercase tracking-wider text-[10px] text-slate-300">LINE ITEMS</span>
-        {(state.docStatus ?? fallbackStatus) && (
+        {(docStatus ?? fallbackStatus) && (
           <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${badgeCls}`}>
             {statusKey || fallbackStatus}
           </span>
         )}
       </div>
 
-      {state.loading && (
+      {loading && (
         <div className="px-4 py-3 text-slate-400 flex items-center gap-2">
           <span className="animate-spin inline-block w-3 h-3 border-2 border-slate-300 border-t-blue-500 rounded-full" />
           Loading…
         </div>
       )}
-      {state.error && <div className="px-4 py-3 text-red-500">❌ {state.error}</div>}
+      {error && <div className="px-4 py-3 text-red-500">❌ {error}</div>}
 
-      {/* Live items from Zoho */}
-      {!state.loading && !state.error && state.items.length > 0 && (
+      {!loading && !error && items.length > 0 && (
         <>
           <div className="divide-y divide-slate-50">
-            {state.items.map((li, idx) => (
+            {items.map((li, idx) => (
               <div key={idx} className="px-3 py-2">
                 <div className="flex items-start justify-between gap-3">
                   <p className="font-medium text-slate-700 leading-tight flex-1 min-w-0 truncate">{li.name}</p>
@@ -250,14 +256,14 @@ function QuoteLineItemsTooltip({ sub }: { sub: Subscription }) {
           </div>
           <div className="px-3 py-2 border-t border-slate-100 bg-slate-50 rounded-b-xl">
             <div className="flex justify-between items-center">
-              <span className="text-slate-400 text-[10px]">{h?.businessType} · {state.items.length} item{state.items.length !== 1 ? 's' : ''}</span>
+              <span className="text-slate-400 text-[10px]">{h?.businessType} · {items.length} item{items.length !== 1 ? 's' : ''}</span>
               <span className="font-bold text-slate-800 tabular-nums">Total ₹{total.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
             </div>
-            {state.balance !== null && state.balance > 0 && (
+            {balance !== null && balance > 0 && (
               <div className="flex justify-between items-center mt-1">
                 <span className="text-[10px] text-red-500 font-medium">Balance Due</span>
                 <span className="text-[11px] font-bold text-red-600 tabular-nums">
-                  ₹{state.balance.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                  ₹{balance.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                 </span>
               </div>
             )}
@@ -265,8 +271,7 @@ function QuoteLineItemsTooltip({ sub }: { sub: Subscription }) {
         </>
       )}
 
-      {/* Fallback: local renewal_history data (no doc ID or before Zoho fetch) */}
-      {!state.loading && !state.error && state.items.length === 0 && localLines.length > 0 && (
+      {!loading && !error && items.length === 0 && localLines.length > 0 && (
         <>
           <div className="divide-y divide-slate-50">
             {localLines.map((r) => (
@@ -291,7 +296,7 @@ function QuoteLineItemsTooltip({ sub }: { sub: Subscription }) {
         </>
       )}
 
-      {!state.loading && !state.error && state.items.length === 0 && localLines.length === 0 && (
+      {!loading && !error && items.length === 0 && localLines.length === 0 && (
         <div className="px-4 py-3 text-slate-400 italic">No line item data available</div>
       )}
     </div>
@@ -300,21 +305,58 @@ function QuoteLineItemsTooltip({ sub }: { sub: Subscription }) {
 
 const TOOLTIP_W = 420;
 
-function LastQuoteCell({ sub }: { sub: Subscription }) {
+function DocCell({ sub, mode }: { sub: Subscription; mode: 'quote' | 'invoice' }) {
+  const router = useRouter();
   const triggerRef = useRef<HTMLDivElement>(null);
+  const zohoRef = useRef<HTMLAnchorElement>(null);
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
+  const [zohoTipPos, setZohoTipPos] = useState<{ x: number; y: number } | null>(null);
+  const [fetchState, setFetchState] = useState<DocFetchState>(EMPTY_FETCH);
   const [mounted, setMounted] = useState(false);
+
+  const docNumber = mode === 'invoice' ? sub.lastInvoiceNumber : sub.lastQuoteNumber;
+  const docDate   = mode === 'invoice' ? sub.lastInvoiceDate   : sub.lastQuoteDate;
+  const h = mode === 'invoice'
+    ? sub.renewalHistory.find(r => r.invoiceNumber === sub.lastInvoiceNumber)
+    : sub.renewalHistory.find(r => r.quoteNumber === sub.lastQuoteNumber);
+  const docId = mode === 'invoice' ? (h?.invoiceId ?? null) : (h?.invoiceId ?? h?.quoteId ?? null);
+  const kind: 'invoice' | 'estimate' = (mode === 'invoice' || !!h?.invoiceId) ? 'invoice' : 'estimate';
+  const zohoEntity: 'invoices' | 'estimates' = mode === 'invoice' ? 'invoices' : 'estimates';
+  const zohoDocId = mode === 'invoice' ? h?.invoiceId : h?.quoteId;
+  const zohoHref = zohoDocId ? zohoUrl(sub.organization, zohoEntity, zohoDocId) : null;
+
   useEffect(() => { setMounted(true); }, []);
 
-  if (!sub.lastQuoteNumber) return <span className="text-slate-300">—</span>;
+  // Fetch live from Zoho on mount — no DB status used for badge
+  useEffect(() => {
+    if (!docNumber || !docId) return;
+    fetchDoc(sub.organization.id, docId, kind, setFetchState);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // intentionally once on mount
 
-  const days = daysSince(sub.lastQuoteDate);
-  const isRecent = days <= 30;
+  // When quote is invoiced in Zoho but lastInvoiceNumber is missing, silently sync
+  useEffect(() => {
+    if (mode !== 'quote') return;
+    if (fetchState.loading || fetchState.docStatus?.toLowerCase() !== 'invoiced') return;
+    if (sub.lastInvoiceNumber) return; // already linked
+    fetch(`${API_BASE}/subscriptions/${sub.id}/sync-invoice-from-estimate`, {
+      method: 'POST', credentials: 'include',
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then((data: { invoiceNumber?: string } | null) => { if (data?.invoiceNumber) router.refresh(); })
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchState.docStatus, fetchState.loading]);
+
+  if (!docNumber) return <span className="text-slate-300">—</span>;
+
+  const days = daysSince(docDate);
+  const liveStatus = fetchState.docStatus?.toLowerCase() ?? null;
+  const badgeCls = liveStatus ? (STATUS_BADGE[liveStatus] ?? '') : '';
 
   const handleMouseEnter = () => {
     if (!triggerRef.current) return;
     const rect = triggerRef.current.getBoundingClientRect();
-    // Center tooltip on the trigger, then clamp so it never goes off-screen
     const centeredX = rect.left + rect.width / 2 - TOOLTIP_W / 2;
     const clampedX = Math.max(8, Math.min(centeredX, window.innerWidth - TOOLTIP_W - 8));
     setTooltipPos({ x: clampedX, y: rect.top });
@@ -322,42 +364,67 @@ function LastQuoteCell({ sub }: { sub: Subscription }) {
 
   return (
     <>
-      <div
-        ref={triggerRef}
-        onMouseEnter={handleMouseEnter}
-        onMouseLeave={() => setTooltipPos(null)}
-        className="inline-block cursor-default"
-      >
-        <div className={`text-[11px] font-mono ${isRecent ? 'text-amber-600 font-semibold' : 'text-slate-500'}`}>
-          {sub.lastQuoteNumber}
+      <div className="inline-flex items-start gap-1">
+        <div
+          ref={triggerRef}
+          onMouseEnter={handleMouseEnter}
+          onMouseLeave={() => setTooltipPos(null)}
+          className="inline-block cursor-default"
+        >
+          <div className="text-[11px] font-mono text-slate-500">{docNumber}</div>
+          <div className="text-[10px] mt-0.5 text-slate-400 flex items-center gap-1">
+            {days === 0 ? 'Today' : days === 1 ? '1d ago' : `${days}d ago`}
+            {fetchState.loading && (
+              <span className="inline-block w-2 h-2 rounded-full border border-slate-300 border-t-blue-400 animate-spin" />
+            )}
+            {!fetchState.loading && liveStatus && badgeCls && (
+              <span className={`px-1 py-0.5 rounded text-[9px] font-bold ${badgeCls}`}>{liveStatus}</span>
+            )}
+          </div>
         </div>
-        <div className={`text-[10px] mt-0.5 ${isRecent ? 'text-amber-500' : 'text-slate-400'}`}>
-          {days === 0 ? 'Today' : days === 1 ? '1d ago' : `${days}d ago`}
-          {isRecent && <span className="ml-1 bg-amber-100 text-amber-700 px-1 py-0.5 rounded text-[9px] font-bold">RECENT</span>}
-        </div>
+        {zohoHref && (
+          <a
+            ref={zohoRef}
+            href={zohoHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            onMouseEnter={() => {
+              if (!zohoRef.current) return;
+              const r = zohoRef.current.getBoundingClientRect();
+              setZohoTipPos({ x: r.left + r.width / 2, y: r.top });
+            }}
+            onMouseLeave={() => setZohoTipPos(null)}
+            className="text-slate-300 hover:text-blue-500 transition-colors text-xs leading-none mt-0.5"
+          >
+            ↗
+          </a>
+        )}
       </div>
 
-      {/* Portal: renders outside overflow container so it's never clipped */}
       {tooltipPos && mounted && createPortal(
         <div
-          style={{
-            position: 'fixed',
-            left: tooltipPos.x,
-            top: tooltipPos.y,
-            transform: 'translateY(calc(-100% - 8px))',
-            width: TOOLTIP_W,
-            zIndex: 9999,
-          }}
+          style={{ position: 'fixed', left: tooltipPos.x, top: tooltipPos.y, transform: 'translateY(calc(-100% - 8px))', width: TOOLTIP_W, zIndex: 9999 }}
           onMouseEnter={() => setTooltipPos(tooltipPos)}
           onMouseLeave={() => setTooltipPos(null)}
         >
-          <QuoteLineItemsTooltip sub={sub} />
+          <QuoteLineItemsTooltip sub={sub} mode={mode} fetchState={fetchState} />
+        </div>,
+        document.body
+      )}
+      {zohoTipPos && mounted && createPortal(
+        <div style={{ position: 'fixed', left: zohoTipPos.x, top: zohoTipPos.y, transform: 'translate(-50%, calc(-100% - 4px))', zIndex: 9999 }}>
+          <div className="bg-slate-800 text-white text-[10px] px-2.5 py-1.5 rounded-lg whitespace-nowrap shadow-lg">
+            Open in Zoho Books
+          </div>
         </div>,
         document.body
       )}
     </>
   );
 }
+
+function LastQuoteCell({ sub }: { sub: Subscription }) { return <DocCell sub={sub} mode="quote" />; }
+function LastInvoiceCell({ sub }: { sub: Subscription }) { return <DocCell sub={sub} mode="invoice" />; }
 
 const COMMENTS_POPUP_W = 340;
 
@@ -560,7 +627,7 @@ const COLUMN_DEFS = [
   { id: 'qty_price',    label: 'Qty / Price',  defaultOn: true  },
   { id: 'status',       label: 'Status',       defaultOn: true  },
   { id: 'last_quote',   label: 'Last Quote',   defaultOn: true  },
-  { id: 'last_invoice', label: 'Last Invoice', defaultOn: false },
+  { id: 'last_invoice', label: 'Last Invoice', defaultOn: true },
 ] as const;
 
 type ColId = (typeof COLUMN_DEFS)[number]['id'];
@@ -1277,9 +1344,7 @@ export function SubscriptionsTable({
                             )}
                             {has('last_invoice') && (
                               <td className="px-4 py-2.5 text-center">
-                                {sub.lastInvoiceNumber
-                                  ? <p className="text-[11px] font-mono text-slate-600">{sub.lastInvoiceNumber}</p>
-                                  : <p className="text-[11px] text-slate-300">—</p>}
+                                <LastInvoiceCell sub={sub} />
                               </td>
                             )}
                             <td className="px-4 py-2.5" onClick={e => e.stopPropagation()}>

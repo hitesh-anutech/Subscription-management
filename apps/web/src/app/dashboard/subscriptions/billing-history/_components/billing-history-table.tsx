@@ -38,6 +38,7 @@ interface BillingHistoryItem {
   serviceEndDate: string | null;
   quantity: string | null;
   sellingPrice: string | null;
+  syncStatus?: 'synced' | 'mismatch' | 'unknown';
   organization: {
     id: string;
     name: string;
@@ -472,8 +473,18 @@ function BillingHistoryRow({ item, idx }: { item: BillingHistoryItem; idx: numbe
                 <button
                   type="button"
                   onClick={() => setCompareOpen(true)}
-                  title="Compare with Subscriptions"
-                  className="p-1.5 rounded-md border border-slate-200 text-slate-500 hover:text-emerald-600 hover:border-emerald-200 hover:bg-emerald-50 transition-colors"
+                  title={
+                    item.syncStatus === 'mismatch' ? 'Sync needed — click to compare' :
+                    item.syncStatus === 'synced'   ? 'In sync — click to verify' :
+                    'Compare with Subscriptions'
+                  }
+                  className={`p-1.5 rounded-md border transition-colors ${
+                    item.syncStatus === 'mismatch'
+                      ? 'text-orange-500 border-orange-200 bg-orange-50 hover:bg-orange-100 hover:border-orange-300'
+                      : item.syncStatus === 'synced'
+                        ? 'text-emerald-500 border-emerald-200 bg-emerald-50 hover:bg-emerald-100 hover:border-emerald-300'
+                        : 'text-slate-500 border-slate-200 hover:text-emerald-600 hover:border-emerald-200 hover:bg-emerald-50'
+                  }`}
                 >
                   <GitCompareArrows size={14} />
                 </button>

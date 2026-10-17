@@ -95,7 +95,7 @@ export class SubscriptionsService {
         skip,
         take: limit,
         include: {
-          organization: { select: { id: true, name: true } },
+          organization: { select: { id: true, name: true, zohoOrgId: true, dataCenter: true } },
           domain:       { select: { id: true, domainName: true } },
           _count:       { select: { renewalHistory: true, comments: true } },
           renewalHistory: {
@@ -2320,6 +2320,33 @@ export class SubscriptionsService {
   }
 
   // ------------------------------------------------------------------
+  // Sync invoice from estimate (quote invoiced in Zoho but webhook missed)
+  // ------------------------------------------------------------------
+  async syncInvoiceFromEstimate(subscriptionId: string): Promise<{ invoiceNumber: string; invoiceId: string } | null> {
+    const sub = await this.prisma.subscription.findUnique({
+      where: { id: subscriptionId },
+      select: { lastQuoteId: true, lastInvoiceNumber: true, organizationId: true },
+    });
+    if (!sub?.lastQuoteId) return null;
+    if (sub.lastInvoiceNumber) return null; // Already synced
+
+    const inv = await this.zoho.findInvoiceByEstimateId(sub.organizationId, sub.lastQuoteId);
+    if (!inv) return null;
+
+    // Mirror the webhook handler: update renewalHistory + subscription
+    await this.prisma.renewalHistory.updateMany({
+      where: { subscriptionId, quoteId: sub.lastQuoteId, renewalStatus: 'Quoted' },
+      data: { invoiceId: inv.invoiceId, invoiceNumber: inv.invoiceNumber, invoiceDate: new Date(inv.date), renewalStatus: 'Invoiced' },
+    });
+    await this.prisma.subscription.update({
+      where: { id: subscriptionId },
+      data: { lastInvoiceId: inv.invoiceId, lastInvoiceNumber: inv.invoiceNumber, lastInvoiceDate: new Date(inv.date) },
+    });
+
+    return { invoiceNumber: inv.invoiceNumber, invoiceId: inv.invoiceId };
+  }
+
+  // ------------------------------------------------------------------
   // Expiry status sync (called by cron or on-demand)
   // ------------------------------------------------------------------
   async syncExpiryStatuses() {
@@ -3484,7 +3511,11 @@ export class SubscriptionsService {
           rh.service_start_date as "serviceStartDate",
           rh.service_end_date as "serviceEndDate",
           rh.quantity,
-          rh.selling_price as "sellingPrice"
+          rh.selling_price as "sellingPrice",
+          sub.start_date as "subStartDate",
+          sub.end_date as "subEndDate",
+          sub.subscription_price as "subPrice",
+          sub.quantity as "subQty"
         FROM renewal_history rh
         INNER JOIN subscriptions sub ON rh.subscription_id = sub.id
         INNER JOIN organizations org ON rh.organization_id = org.id
@@ -3536,37 +3567,57 @@ export class SubscriptionsService {
     const countResult = await this.prisma.$queryRawUnsafe<{ total: number }[]>(countSql, ...countArgs);
     const total = countResult[0]?.total ?? 0;
 
+    const toDateStr = (d: unknown): string =>
+      d ? new Date(d as string).toISOString().slice(0, 10) : '';
+
+    const computeSyncStatus = (r: any, domainCount: number): 'synced' | 'mismatch' | 'unknown' => {
+      if (domainCount > 1) return 'unknown';          // bulk: modal is authoritative
+      if (r.businessType === 'ProRata') return 'unknown'; // additive qty can't be simply compared
+      if (!r.serviceStartDate || !r.subStartDate) return 'unknown';
+
+      const dateOk  = toDateStr(r.serviceStartDate) === toDateStr(r.subStartDate)
+                   && toDateStr(r.serviceEndDate)   === toDateStr(r.subEndDate);
+      const priceOk = Math.abs(Number(r.sellingPrice) - Number(r.subPrice)) < 0.01;
+      const qtyOk   = Math.abs(Number(r.quantity)     - Number(r.subQty))   < 0.01;
+
+      return (dateOk && priceOk && qtyOk) ? 'synced' : 'mismatch';
+    };
+
     return {
-      items: rows.map(r => ({
-        id: r.historyId,
-        createdAt: r.createdAt,
-        businessType: r.businessType,
-        billingCycle: r.billingCycle,
-        renewalStatus: r.renewalStatus,
-        zohoEstimateStatus: r.zohoEstimateStatus,
-        zohoInvoiceStatus: r.zohoInvoiceStatus,
-        quoteId: r.quoteId,
-        quoteNumber: r.quoteNumber,
-        invoiceId: r.invoiceId,
-        invoiceNumber: r.invoiceNumber,
-        amount: r.batchId ? Number(r.batchTotalAmount) : Number(r.groupedTotalAmount),
-        currency: r.currency,
-        zohoCustomerName: r.zohoCustomerName,
-        zohoCustomerId: r.zohoCustomerId,
-        zohoItemName: r.zohoItemName,
-        domainCount: r.batchId ? Number(r.batchDomainCount) : Number(r.groupedDomainCount),
-        domainName: r.batchId ? null : r.domainName,
-        serviceStartDate: r.serviceStartDate ? new Date(r.serviceStartDate).toISOString() : null,
-        serviceEndDate: r.serviceEndDate ? new Date(r.serviceEndDate).toISOString() : null,
-        quantity: r.quantity != null ? String(r.quantity) : null,
-        sellingPrice: r.sellingPrice != null ? String(r.sellingPrice) : null,
-        organization: {
-          id: r.organizationId,
-          name: r.orgName,
-          zohoOrgId: r.zohoOrgId,
-          dataCenter: r.dataCenter,
-        },
-      })),
+      items: rows.map(r => {
+        const domainCount = r.batchId ? Number(r.batchDomainCount) : Number(r.groupedDomainCount);
+        return {
+          id: r.historyId,
+          createdAt: r.createdAt,
+          businessType: r.businessType,
+          billingCycle: r.billingCycle,
+          renewalStatus: r.renewalStatus,
+          zohoEstimateStatus: r.zohoEstimateStatus,
+          zohoInvoiceStatus: r.zohoInvoiceStatus,
+          quoteId: r.quoteId,
+          quoteNumber: r.quoteNumber,
+          invoiceId: r.invoiceId,
+          invoiceNumber: r.invoiceNumber,
+          amount: r.batchId ? Number(r.batchTotalAmount) : Number(r.groupedTotalAmount),
+          currency: r.currency,
+          zohoCustomerName: r.zohoCustomerName,
+          zohoCustomerId: r.zohoCustomerId,
+          zohoItemName: r.zohoItemName,
+          domainCount,
+          domainName: r.batchId ? null : r.domainName,
+          serviceStartDate: r.serviceStartDate ? new Date(r.serviceStartDate).toISOString() : null,
+          serviceEndDate: r.serviceEndDate ? new Date(r.serviceEndDate).toISOString() : null,
+          quantity: r.quantity != null ? String(r.quantity) : null,
+          sellingPrice: r.sellingPrice != null ? String(r.sellingPrice) : null,
+          syncStatus: computeSyncStatus(r, domainCount),
+          organization: {
+            id: r.organizationId,
+            name: r.orgName,
+            zohoOrgId: r.zohoOrgId,
+            dataCenter: r.dataCenter,
+          },
+        };
+      }),
       total,
       page,
       limit,

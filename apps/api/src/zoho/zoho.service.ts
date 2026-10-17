@@ -196,6 +196,24 @@ export class ZohoService {
     }
   }
 
+  /** Find the invoice created from a given estimate (estimate→invoice direction). */
+  async findInvoiceByEstimateId(
+    orgId: string,
+    estimateId: string,
+  ): Promise<{ invoiceId: string; invoiceNumber: string; date: string } | null> {
+    try {
+      const client = await this.clientFor(orgId);
+      const resp = await client.get<{
+        invoices: Array<{ invoice_id: string; invoice_number: string; date: string }>;
+      }>('/invoices', { estimate_id: estimateId });
+      const invoices = resp?.invoices ?? [];
+      if (!invoices.length) return null;
+      return { invoiceId: invoices[0].invoice_id, invoiceNumber: invoices[0].invoice_number, date: invoices[0].date };
+    } catch {
+      return null;
+    }
+  }
+
   /** Drop a cached estimate/invoice detail (called from the webhook path — PERF_PLAN #3). */
   invalidateDocCache(orgId: string | null | undefined, kind: 'estimate' | 'invoice', id: string) {
     if (!id) return;

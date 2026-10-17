@@ -31,7 +31,8 @@ interface Subscription {
   lastQuoteDate: string | null;
   nextRenewalPrice: string | null;
   lastInvoiceNumber: string | null;
-  organization: { id: string; name: string };
+  lastInvoiceDate: string | null;
+  organization: { id: string; name: string; zohoOrgId: string; dataCenter: string };
   domain: { id: string; domainName: string };
   _count: { renewalHistory: number; comments: number };
   renewalHistory: {
