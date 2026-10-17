@@ -317,7 +317,8 @@ function BillingHistoryRow({ item, idx }: { item: BillingHistoryItem; idx: numbe
   const liveInvStatus = (invoiceState.docStatus ?? item.zohoInvoiceStatus ?? 'draft').toLowerCase();
   const quoteSent = ['sent', 'accepted', 'invoiced'].includes(liveEstStatus);
   const hasInvoice = Boolean(item.invoiceId);
-  const invoicePaid = liveInvStatus === 'paid';
+  const invoicePaid   = liveInvStatus === 'paid';
+  const showCompare   = hasInvoice && ['paid', 'overdue'].includes(liveInvStatus);
   const isInvoice = modal === 'invoice';
 
   return (
@@ -478,7 +479,7 @@ function BillingHistoryRow({ item, idx }: { item: BillingHistoryItem; idx: numbe
               >
                 <Activity size={14} />
               </button>
-              {hasInvoice && invoicePaid && (
+              {showCompare && (
                 <button
                   type="button"
                   onClick={() => setCompareOpen(true)}
