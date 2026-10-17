@@ -83,31 +83,21 @@ const STATUS_COLOR: Record<string, string> = {
 
 interface ZohoLineItem { name: string; qty: number; rate: number; domain: string; startDate: string; endDate: string; }
 
-function BillingLineItemTooltip({ item, type }: { item: BillingHistoryItem; type: 'quote' | 'invoice' }) {
-  const orgId = item.organization.id;
-  const docId = type === 'invoice' ? item.invoiceId : item.quoteId;
-  const kind: 'invoice' | 'estimate' = type === 'invoice' ? 'invoice' : 'estimate';
-  const fallbackStatus = type === 'invoice'
-    ? (item.zohoInvoiceStatus ?? item.renewalStatus ?? 'draft')
-    : (item.zohoEstimateStatus ?? item.renewalStatus ?? 'draft');
+interface DocFetchState { loading: boolean; items: ZohoLineItem[]; docStatus: string | null; balance: number | null; error: string | null; }
+const EMPTY_FETCH: DocFetchState = { loading: false, items: [], docStatus: null, balance: null, error: null };
 
-  const [state, setState] = useState<{ loading: boolean; items: ZohoLineItem[]; docStatus: string | null; balance: number | null; error: string | null }>({
-    loading: false, items: [], docStatus: null, balance: null, error: null,
-  });
-  const fetched = useRef(false);
+function fetchDoc(orgId: string, docId: string, kind: 'invoice' | 'estimate', set: (s: DocFetchState) => void) {
+  set({ loading: true, items: [], docStatus: null, balance: null, error: null });
+  fetch(`${API_BASE}/organizations/${orgId}/zoho-doc-line-items?kind=${kind}&doc_id=${encodeURIComponent(docId)}`, { credentials: 'include' })
+    .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
+    .then((data: { lineItems: ZohoLineItem[]; docStatus: string | null; balance: number | null }) =>
+      set({ loading: false, items: data.lineItems ?? [], docStatus: data.docStatus ?? null, balance: data.balance ?? null, error: null }),
+    )
+    .catch((err: Error) => set({ loading: false, items: [], docStatus: null, balance: null, error: err.message }));
+}
 
-  useEffect(() => {
-    if (!docId || !orgId || fetched.current) return;
-    fetched.current = true;
-    setState(s => ({ ...s, loading: true }));
-    fetch(`${API_BASE}/organizations/${orgId}/zoho-doc-line-items?kind=${kind}&doc_id=${encodeURIComponent(docId)}`, { credentials: 'include' })
-      .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
-      .then((data: { lineItems: ZohoLineItem[]; docStatus: string | null; balance: number | null }) =>
-        setState({ loading: false, items: data.lineItems ?? [], docStatus: data.docStatus ?? null, balance: data.balance ?? null, error: null }),
-      )
-      .catch((err: Error) => setState(s => ({ ...s, loading: false, error: err.message })));
-  }, [docId, orgId, kind]);
-
+function BillingLineItemTooltip({ item, fetchState, fallbackStatus }: { item: BillingHistoryItem; fetchState: DocFetchState; fallbackStatus: string }) {
+  const state = fetchState;
   const statusKey = (state.docStatus ?? fallbackStatus).toLowerCase();
   const colorCls = STATUS_COLOR[statusKey] ?? 'bg-slate-100 text-slate-600';
   const liveTotal = state.items.reduce((s, li) => s + li.qty * li.rate, 0);
@@ -282,6 +272,19 @@ function BillingHistoryRow({ item, idx }: { item: BillingHistoryItem; idx: numbe
   const [loadingActivity, setLoadingActivity] = useState(false);
   const [compareOpen, setCompareOpen] = useState(false);
 
+  const [quoteState, setQuoteState] = useState<DocFetchState>(EMPTY_FETCH);
+  const [invoiceState, setInvoiceState] = useState<DocFetchState>(EMPTY_FETCH);
+
+  useEffect(() => {
+    if (item.quoteId) fetchDoc(item.organization.id, item.quoteId, 'estimate', setQuoteState);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (item.invoiceId) fetchDoc(item.organization.id, item.invoiceId, 'invoice', setInvoiceState);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleRefresh = () => {
     setMsg(null);
     startRefresh(async () => {
@@ -310,10 +313,11 @@ function BillingHistoryRow({ item, idx }: { item: BillingHistoryItem; idx: numbe
       .catch(() => setLoadingActivity(false));
   };
 
-  const estStatus = (item.zohoEstimateStatus ?? 'draft').toLowerCase();
-  const quoteSent = ['sent', 'accepted', 'invoiced'].includes(estStatus);
+  const liveEstStatus = (quoteState.docStatus ?? item.zohoEstimateStatus ?? 'draft').toLowerCase();
+  const liveInvStatus = (invoiceState.docStatus ?? item.zohoInvoiceStatus ?? 'draft').toLowerCase();
+  const quoteSent = ['sent', 'accepted', 'invoiced'].includes(liveEstStatus);
   const hasInvoice = Boolean(item.invoiceId);
-  const invoicePaid = (item.zohoInvoiceStatus ?? '').toLowerCase() === 'paid';
+  const invoicePaid = liveInvStatus === 'paid';
   const isInvoice = modal === 'invoice';
 
   return (
@@ -360,12 +364,17 @@ function BillingHistoryRow({ item, idx }: { item: BillingHistoryItem; idx: numbe
               <DocNumberCell
                 number={item.quoteNumber}
                 zohoHref={item.quoteId ? zohoUrl(item.organization, 'estimates', item.quoteId) : undefined}
-                tooltipNode={<BillingLineItemTooltip item={item} type="quote" />}
+                tooltipNode={<BillingLineItemTooltip item={item} fetchState={quoteState} fallbackStatus={item.zohoEstimateStatus ?? item.renewalStatus ?? 'draft'} />}
               />
               <div className="flex items-center gap-1.5">
-                <span className="text-[10px] uppercase tracking-wider font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
-                  {item.zohoEstimateStatus || item.renewalStatus}
-                </span>
+                {quoteState.loading && (
+                  <span className="inline-block w-3 h-3 border-2 border-slate-200 border-t-blue-500 rounded-full animate-spin" />
+                )}
+                {!quoteState.loading && (
+                  <span className={`text-[10px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded ${STATUS_COLOR[liveEstStatus] ?? 'bg-slate-100 text-slate-600'}`}>
+                    {liveEstStatus}
+                  </span>
+                )}
                 {item.quoteId && (
                   <>
                     <ViewPdfButton
@@ -404,17 +413,17 @@ function BillingHistoryRow({ item, idx }: { item: BillingHistoryItem; idx: numbe
               <DocNumberCell
                 number={item.invoiceNumber ?? ''}
                 zohoHref={zohoUrl(item.organization, 'invoices', item.invoiceId)}
-                tooltipNode={<BillingLineItemTooltip item={item} type="invoice" />}
+                tooltipNode={<BillingLineItemTooltip item={item} fetchState={invoiceState} fallbackStatus={item.zohoInvoiceStatus ?? item.renewalStatus ?? 'draft'} />}
               />
               <div className="flex items-center gap-1.5">
-                <span className={`text-[10px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded ${
-                  item.zohoInvoiceStatus === 'paid' ? 'bg-emerald-100 text-emerald-800' :
-                  item.zohoInvoiceStatus === 'sent' ? 'bg-amber-100 text-amber-800' :
-                  item.zohoInvoiceStatus === 'overdue' ? 'bg-red-100 text-red-800' :
-                  'bg-slate-100 text-slate-600'
-                }`}>
-                  {item.zohoInvoiceStatus === 'sent' ? 'SENT' : (item.zohoInvoiceStatus || 'draft')}
-                </span>
+                {invoiceState.loading && (
+                  <span className="inline-block w-3 h-3 border-2 border-slate-200 border-t-blue-500 rounded-full animate-spin" />
+                )}
+                {!invoiceState.loading && (
+                  <span className={`text-[10px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded ${STATUS_COLOR[liveInvStatus] ?? 'bg-slate-100 text-slate-600'}`}>
+                    {liveInvStatus}
+                  </span>
+                )}
                 <ViewPdfButton
                   orgId={item.organization.zohoOrgId}
                   kind="invoice"
