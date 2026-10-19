@@ -8,7 +8,9 @@ import { SubscriptionStatusCell, type SubscriptionCheckResult, type ProrataEvent
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3001/api';
 
-interface Org { id: string; name: string }
+const DC_TLD: Record<string, string> = { in: 'in', com: 'com', eu: 'eu', com_au: 'com.au', jp: 'jp', sa: 'sa' };
+
+interface Org { id: string; name: string; zohoOrgId?: string; dataCenter?: string }
 
 interface CustomField { api_name: string; label: string; value: string | number }
 
@@ -773,7 +775,7 @@ function ImportSubscriptionsInner() {
                   <th className="px-3 py-2.5 w-8"></th>
                   <th className="text-left px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wide">Customer / Domain</th>
                   <th className="text-left px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wide">Product</th>
-                  <th className="text-center px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wide">Invoices</th>
+                  <th className="text-left px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wide">Invoices</th>
                   <th className="text-center px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wide">Qty</th>
                   <th className="text-right px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wide">Rate</th>
                   <th className="text-right px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wide">Cost</th>
@@ -805,13 +807,37 @@ function ImportSubscriptionsInner() {
                     <td className="px-3 py-2">
                       <p className="text-slate-700">{c.itemName}</p>
                     </td>
-                    <td className="px-3 py-2 text-center">
-                      <span className="inline-flex items-center gap-1">
-                        <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-medium">{c.events.length}</span>
-                      </span>
-                      <div className="flex flex-wrap gap-0.5 mt-1 justify-center max-w-32">
+                    <td className="px-3 py-2">
+                      <div className="flex flex-col gap-0.5 mb-1">
+                        {c.events.map((e, i) => {
+                          const isEst = e.docType === 'estimate';
+                          const docId = isEst ? (e.quoteId ?? '') : e.invoiceId;
+                          const docNum = isEst ? (e.quoteNumber ?? '') : e.invoiceNumber;
+                          const entity = isEst ? 'quotes' : 'invoices';
+                          const zo = orgs.find(o => o.id === selectedOrg);
+                          const zohoUrl = (docId && zo?.zohoOrgId)
+                            ? `https://books.zoho.${DC_TLD[zo.dataCenter ?? ''] ?? 'com'}/app/${zo.zohoOrgId}#/${entity}/${docId}`
+                            : null;
+                          return (
+                            <div key={i} className="flex items-center gap-1">
+                              <span className="font-mono text-[10px] text-slate-600">{docNum || '—'}</span>
+                              {zohoUrl && (
+                                <a href={zohoUrl} target="_blank" rel="noopener noreferrer"
+                                  className="text-blue-500 hover:text-blue-700 flex-shrink-0" title="Zoho Books में खोलें">
+                                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                                    <polyline points="15 3 21 3 21 9"/>
+                                    <line x1="10" y1="14" x2="21" y2="3"/>
+                                  </svg>
+                                </a>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div className="flex items-center gap-1 flex-wrap">
                         {c.events.map((e, i) => (
-                          <span key={i} title={`${e.invoiceNumber} (${e.businessType})`}
+                          <span key={i} title={`${e.invoiceNumber || e.quoteNumber} (${e.businessType})`}
                             className={`text-[9px] px-1 py-0.5 rounded ${BUSINESS_BADGE[e.businessType] ?? 'bg-slate-100 text-slate-500'}`}>
                             {e.businessType || '—'}
                           </span>

@@ -345,6 +345,13 @@ export function SubscriptionStatusCell({ match, isLoading, isOverride, candidate
   }
 
   const hasProrataEvents = !!(prorataEvents?.length);
+  const hasMismatch = !hasProrataEvents && (
+    differs(match.startDate, candidateData.start) ||
+    differs(match.endDate, candidateData.end) ||
+    differs(match.subscriptionPrice, candidateData.rate) ||
+    differs(match.quantity, candidateData.qty) ||
+    differs(match.billingCycle, candidateData.billingCycle)
+  );
 
   return (
     <td className="px-3 py-2">
@@ -369,12 +376,16 @@ export function SubscriptionStatusCell({ match, isLoading, isOverride, candidate
             {isOverride ? '⚠ Override' : (match.matchType === 'name' || match.matchType === 'sibling') ? '✓ Exists~' : '✓ Exists'}
           </span>
 
-          {/* "i" button */}
+          {/* "i" button — orange when DB data mismatches invoice, blue when in sync */}
           <button
             type="button"
             onClick={() => setCardOpen((o) => !o)}
             className={`w-4 h-4 rounded-full text-[9px] font-bold flex items-center justify-center leading-none transition-colors ${
-              cardOpen ? 'bg-blue-500 text-white' : 'bg-blue-100 text-blue-600 hover:bg-blue-200'
+              cardOpen
+                ? hasMismatch ? 'bg-orange-500 text-white' : 'bg-blue-500 text-white'
+                : hasMismatch
+                  ? 'bg-orange-100 text-orange-600 hover:bg-orange-200'
+                  : 'bg-blue-100 text-blue-600 hover:bg-blue-200'
             }`}
             aria-label="Show subscription details"
           >
