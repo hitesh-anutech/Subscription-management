@@ -131,10 +131,15 @@ export class GoogleWorkspaceService {
   }
 
   private getRedirectUri(): string {
-    return (
-      this.config.get<string>('GOOGLE_REDIRECT_URI') ??
-      'http://localhost:3001/api/google-workspace/auth/callback'
-    );
+    if (this.config.get('GOOGLE_REDIRECT_URI')) {
+      return this.config.get<string>('GOOGLE_REDIRECT_URI')!;
+    }
+    // Derive from web base URL when running on production (same domain, nginx proxies /api)
+    const webBase = this.config.get<string>('NEXT_PUBLIC_WEB_BASE_URL', '');
+    if (webBase && !webBase.includes('localhost')) {
+      return `${webBase}/api/google-workspace/auth/callback`;
+    }
+    return 'http://localhost:3001/api/google-workspace/auth/callback';
   }
 
   // ------------------------------------------------------------------
