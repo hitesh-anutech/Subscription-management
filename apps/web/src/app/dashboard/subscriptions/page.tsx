@@ -33,7 +33,7 @@ interface Subscription {
   lastInvoiceNumber: string | null;
   lastInvoiceDate: string | null;
   organization: { id: string; name: string; zohoOrgId: string; dataCenter: string };
-  domain: { id: string; domainName: string };
+  domain: { id: string; domainName: string; googleCustomerId: string | null; googleResellerEmail: string | null };
   _count: { renewalHistory: number; comments: number };
   renewalHistory: {
     id: string; quoteNumber: string | null; quoteDate: string | null;
@@ -180,6 +180,7 @@ export default async function SubscriptionsPage({
         subscriptions={subscriptions}
         initialSelectedIds={sp.ids ? sp.ids.split(',').filter(Boolean) : undefined}
         isAdmin={isAdmin}
+        categories={categories}
       />
 
       {/* Pagination */}

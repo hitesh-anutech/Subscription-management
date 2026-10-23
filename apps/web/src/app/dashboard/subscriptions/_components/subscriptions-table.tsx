@@ -59,7 +59,7 @@ interface Subscription {
   lastInvoiceNumber: string | null;
   lastInvoiceDate: string | null;
   organization: { id: string; name: string; zohoOrgId: string; dataCenter: string };
-  domain: { id: string; domainName: string };
+  domain: { id: string; domainName: string; googleCustomerId: string | null; googleResellerEmail: string | null };
   _count: { renewalHistory: number; comments: number };
   renewalHistory: RenewalHistoryLine[];
 }
@@ -428,6 +428,346 @@ function LastInvoiceCell({ sub }: { sub: Subscription }) { return <DocCell sub={
 
 const COMMENTS_POPUP_W = 340;
 
+// ─── Google Reseller Types ────────────────────────────────────────────────────
+
+interface GSubData {
+  subscriptionId: string; skuId: string; skuName: string | null; status: string;
+  plan: { planName: string; isCommitmentPlan?: boolean } | null;
+  seats: { numberOfSeats?: number; maximumNumberOfSeats?: number } | null;
+  renewalSettings: { renewalType: string } | null;
+  trialSettings: { isInTrial?: boolean } | null;
+  creationTime: string | null;
+}
+interface GData {
+  customerId: string; customerDomain: string;
+  alternateEmail: string | null; resourceUiUrl: string | null;
+  postalAddress: { organizationName?: string; countryCode?: string } | null;
+  resellerEmail: string | null;
+  subscriptions: GSubData[];
+}
+interface GApiResp {
+  googleCustomerId: string | null; consoleUrl: string | null;
+  syncedAt: string | null; googleData: GData | null;
+  resellerEmail?: string | null;
+}
+
+interface SyncJobStatus {
+  jobId: string;
+  status: 'running' | 'done' | 'not_found';
+  total: number;
+  processed: number;
+  succeeded: number;
+  failed: number;
+  results: Array<{ domainId: string; domainName?: string; success: boolean; error?: string }>;
+}
+
+const G_STATUS: Record<string, string> = {
+  ACTIVE: 'bg-green-100 text-green-800',
+  SUSPENDED: 'bg-amber-100 text-amber-800',
+  CANCELLED: 'bg-red-100 text-red-700',
+};
+const G_PLAN: Record<string, string> = {
+  FLEXIBLE: 'Flexible', ANNUAL_MONTHLY_PAY: 'Annual (mo)', ANNUAL_YEARLY_PAY: 'Annual (yr)',
+  TRIAL: 'Trial', FREE: 'Free',
+};
+
+// ─── GoogleResellerButton ────────────────────────────────────────────────────
+
+const G_POPUP_W = 320;
+
+const RESELLER_BADGE_COLORS = [
+  { bg: 'bg-blue-100',   text: 'text-blue-700',   border: 'border-blue-300'   },
+  { bg: 'bg-violet-100', text: 'text-violet-700', border: 'border-violet-300' },
+  { bg: 'bg-emerald-100',text: 'text-emerald-700',border: 'border-emerald-300'},
+  { bg: 'bg-orange-100', text: 'text-orange-700', border: 'border-orange-300' },
+  { bg: 'bg-pink-100',   text: 'text-pink-700',   border: 'border-pink-300'   },
+  { bg: 'bg-teal-100',   text: 'text-teal-700',   border: 'border-teal-300'   },
+];
+
+function resellerBadgeColor(email: string) {
+  const domain = email.includes('@') ? email.split('@')[1] : email;
+  let h = 0;
+  for (let i = 0; i < domain.length; i++) h += domain.charCodeAt(i);
+  return RESELLER_BADGE_COLORS[h % RESELLER_BADGE_COLORS.length];
+}
+
+function GoogleResellerButton({ domainId, domainName, googleCustomerId }: {
+  domainId: string; domainName: string; googleCustomerId: string | null;
+}) {
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const [open, setOpen] = useState(false);
+  const [popupPos, setPopupPos] = useState<{ x: number; y: number } | null>(null);
+  const [openAbove, setOpenAbove] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  const [data, setData] = useState<GApiResp | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => { setMounted(true); }, []);
+
+  async function openPopup() {
+    if (!btnRef.current) return;
+    const rect = btnRef.current.getBoundingClientRect();
+    const x = Math.min(rect.right + 8, window.innerWidth - G_POPUP_W - 8);
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const above = spaceBelow < 280;
+    setOpenAbove(above);
+    const y = above ? rect.top - 4 : rect.bottom + 4;
+    setPopupPos({ x, y });
+    setOpen(true);
+
+    if (!loaded) {
+      setLoading(true);
+      try {
+        const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3001/api';
+        const res = await fetch(`${apiBase}/google-workspace/customers/${domainId}`, {
+          credentials: 'include', cache: 'no-store',
+        });
+        if (res.ok) setData(await res.json() as GApiResp);
+      } catch { /* non-critical */ }
+      setLoaded(true);
+      setLoading(false);
+    }
+  }
+
+  function closePopup() { setOpen(false); }
+
+  async function handleSync() {
+    setSyncing(true);
+    setError(null);
+    try {
+      const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3001/api';
+      const res = await fetch(`${apiBase}/google-workspace/customers/fetch`, {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ domainId }),
+      });
+      const json = await res.json() as GApiResp & { error?: string };
+      if (!res.ok || (json as { error?: unknown }).error) {
+        const rawErr = (json as { error?: unknown; message?: string }).error;
+        setError(typeof rawErr === 'string' ? rawErr : (json as { message?: string }).message ?? 'Sync failed');
+      } else {
+        setData({ ...json, googleData: json.googleData ?? null });
+        setLoaded(true);
+      }
+    } catch {
+      setError('Server se connect nahi ho paya');
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!open) return;
+    function handler(e: MouseEvent) {
+      if (btnRef.current?.contains(e.target as Node)) return;
+      setOpen(false);
+    }
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const gd = data?.googleData ?? null;
+
+  const popup = open && popupPos && (
+    <div
+      style={{ position: 'fixed', ...(openAbove ? { bottom: window.innerHeight - popupPos.y, left: popupPos.x } : { top: popupPos.y, left: popupPos.x }), width: G_POPUP_W, zIndex: 9999 }}
+      className="bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden"
+      onMouseDown={e => e.stopPropagation()}
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-slate-50/60">
+        <div className="flex flex-col gap-0.5">
+          <div className="flex items-center gap-2">
+            <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden>
+              <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+              <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+              <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
+              <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+            </svg>
+            <span className="text-xs font-semibold text-slate-700">Google Reseller</span>
+          </div>
+          {data?.resellerEmail && (() => {
+            const domain = data.resellerEmail!.includes('@') ? data.resellerEmail!.split('@')[1] : data.resellerEmail!;
+            const c = resellerBadgeColor(data.resellerEmail!);
+            return (
+              <span className={`ml-[22px] mt-0.5 inline-block text-[10px] font-bold px-2 py-0.5 rounded-full border ${c.bg} ${c.text} ${c.border} leading-tight tracking-wide`}>
+                {domain}
+              </span>
+            );
+          })()}
+        </div>
+        {gd && <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">● Synced</span>}
+      </div>
+
+      <div className="px-4 py-3 space-y-3 max-h-[440px] overflow-y-auto">
+        {loading && <p className="text-xs text-slate-400 text-center py-4">Loading…</p>}
+
+        {error && (
+          <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>
+        )}
+
+        {!loading && !gd && (
+          <div className="space-y-3 py-2">
+            <p className="text-xs text-slate-500">
+              <span className="font-mono bg-slate-100 px-1.5 py-0.5 rounded">{domainName}</span> — Google data अभी sync नहीं है।
+            </p>
+            <button
+              type="button"
+              onClick={() => void handleSync()}
+              disabled={syncing}
+              className="w-full flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white text-xs font-semibold transition-colors"
+            >
+              <span className={syncing ? 'animate-spin inline-block' : ''}>🔄</span>
+              {syncing ? 'Fetching…' : 'Fetch from Google'}
+            </button>
+          </div>
+        )}
+
+        {!loading && gd && (
+          <>
+            {/* Customer details */}
+            <div className="space-y-1.5">
+              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Customer</p>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
+                <div>
+                  <p className="text-[10px] text-slate-400">Customer ID</p>
+                  <div className="flex items-center gap-1">
+                    <span className="font-mono text-slate-700 text-[10px]">{gd.customerId}</span>
+                    <button type="button" onClick={() => { navigator.clipboard.writeText(gd.customerId).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1200); }); }} className="text-slate-400 hover:text-slate-600 text-[10px]">
+                      {copied ? '✓' : '📋'}
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <p className="text-[10px] text-slate-400">Domain</p>
+                  <p className="font-mono text-slate-700 text-[10px]">{gd.customerDomain}</p>
+                </div>
+                {gd.postalAddress?.organizationName && (
+                  <div>
+                    <p className="text-[10px] text-slate-400">Organization</p>
+                    <p className="text-slate-700 text-[11px] font-medium">{gd.postalAddress.organizationName}</p>
+                  </div>
+                )}
+                {gd.postalAddress?.countryCode && (
+                  <div>
+                    <p className="text-[10px] text-slate-400">Country</p>
+                    <p className="text-slate-700 text-[11px] font-medium">{gd.postalAddress.countryCode}</p>
+                  </div>
+                )}
+                {gd.alternateEmail && (
+                  <div className="col-span-2">
+                    <p className="text-[10px] text-slate-400">Alt Email</p>
+                    <p className="text-slate-700 text-[11px]">{gd.alternateEmail}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Console links */}
+            <div className="flex flex-wrap gap-1.5">
+              <a href={`https://channelservices.cloud.google.com/customers/${gd.customerId}`} target="_blank" rel="noreferrer"
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-[10px] font-semibold border border-blue-200 transition-colors">
+                Partner Console
+                <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
+              </a>
+              {gd.resourceUiUrl && (
+                <a href={gd.resourceUiUrl} target="_blank" rel="noreferrer"
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-600 text-[10px] font-semibold border border-slate-200 transition-colors">
+                  Admin Console
+                  <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
+                </a>
+              )}
+            </div>
+
+            {/* Subscriptions */}
+            {gd.subscriptions.length > 0 && (
+              <div className="space-y-1.5">
+                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">
+                  Subscriptions ({gd.subscriptions.length})
+                </p>
+                {gd.subscriptions.map((s) => (
+                  <div key={s.subscriptionId} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 space-y-1">
+                    <div className="flex items-center justify-between gap-1">
+                      <p className="text-[11px] font-semibold text-slate-800 leading-snug">{s.skuName ?? s.skuId}</p>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {s.trialSettings?.isInTrial && (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 font-semibold">Trial</span>
+                        )}
+                        <span className={`text-[9px] px-1.5 py-0.5 rounded font-semibold ${G_STATUS[s.status] ?? 'bg-slate-100 text-slate-600'}`}>
+                          {s.status}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-slate-500">
+                      {s.seats?.numberOfSeats !== undefined && (
+                        <span>{s.seats.numberOfSeats} seats</span>
+                      )}
+                      {s.plan?.planName && (
+                        <span>{G_PLAN[s.plan.planName] ?? s.plan.planName}</span>
+                      )}
+                      {s.renewalSettings?.renewalType && (
+                        <span className="text-slate-400">{s.renewalSettings.renewalType.replace(/_/g, ' ')}</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Sync footer */}
+            <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+              {data?.syncedAt && (
+                <p className="text-[10px] text-slate-400">
+                  Synced {new Date(data.syncedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                </p>
+              )}
+              <button
+                type="button"
+                onClick={() => void handleSync()}
+                disabled={syncing}
+                className="flex items-center gap-1 text-[11px] text-slate-500 hover:text-slate-800 disabled:text-slate-300 font-medium ml-auto"
+              >
+                <span className={syncing ? 'animate-spin inline-block' : ''}>🔄</span>
+                {syncing ? 'Syncing…' : 'Sync'}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={() => (open ? closePopup() : void openPopup())}
+        title="Google Reseller"
+        className={`relative w-7 h-7 rounded-lg border flex items-center justify-center transition-all ${
+          googleCustomerId
+            ? 'bg-white border-slate-200 hover:bg-slate-50'
+            : 'bg-slate-50 border-slate-200 opacity-40 hover:opacity-70'
+        } ${open ? 'ring-1 ring-blue-400' : ''}`}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden>
+          <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill={googleCustomerId ? '#4285F4' : '#94a3b8'}/>
+          <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill={googleCustomerId ? '#34A853' : '#94a3b8'}/>
+          <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill={googleCustomerId ? '#FBBC05' : '#94a3b8'}/>
+          <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill={googleCustomerId ? '#EA4335' : '#94a3b8'}/>
+        </svg>
+      </button>
+      {mounted && popup && createPortal(popup, document.body)}
+    </>
+  );
+}
+
+// ─── Comments ────────────────────────────────────────────────────────────────
+
 function RowCommentsButton({ subscriptionId, commentCount: initialCount }: { subscriptionId: string; commentCount: number }) {
   const btnRef = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
@@ -627,7 +967,8 @@ const COLUMN_DEFS = [
   { id: 'qty_price',    label: 'Qty / Price',  defaultOn: true  },
   { id: 'status',       label: 'Status',       defaultOn: true  },
   { id: 'last_quote',   label: 'Last Quote',   defaultOn: true  },
-  { id: 'last_invoice', label: 'Last Invoice', defaultOn: true },
+  { id: 'last_invoice', label: 'Last Invoice', defaultOn: true  },
+  { id: 'reseller',     label: 'Reseller',     defaultOn: false },
 ] as const;
 
 type ColId = (typeof COLUMN_DEFS)[number]['id'];
@@ -701,14 +1042,20 @@ export function SubscriptionsTable({
   subscriptions,
   initialSelectedIds,
   isAdmin = false,
+  categories = [],
 }: {
   subscriptions: Subscription[];
   initialSelectedIds?: string[];
   isAdmin?: boolean;
+  categories?: { itemValue: string; itemLabel: string }[];
 }) {
   const [selectedIds, setSelectedIds] = useState<string[]>(initialSelectedIds ?? []);
   const [isUpdatingPrice, setIsUpdatingPrice] = useState(false);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+  const [isUpdatingCategory, setIsUpdatingCategory] = useState(false);
+  const [showBulkCategoryModal, setShowBulkCategoryModal] = useState(false);
+  const [bulkCategoryValue, setBulkCategoryValue] = useState('');
+  const [isBulkUpdateDropdownOpen, setIsBulkUpdateDropdownOpen] = useState(false);
   const [isQuoting, setIsQuoting] = useState(false);
   const [isPasteModalOpen, setIsPasteModalOpen] = useState(false);
   const [pasteText, setPasteText] = useState('');
@@ -727,8 +1074,21 @@ export function SubscriptionsTable({
     skipped?: string[];
     errors?: string[];
   } | null>(null);
+  const [gSyncJobId, setGSyncJobId] = useState<string | null>(null);
+  const [gSyncStatus, setGSyncStatus] = useState<SyncJobStatus | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const bulkUpdateDropdownRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (bulkUpdateDropdownRef.current && !bulkUpdateDropdownRef.current.contains(e.target as Node)) {
+        setIsBulkUpdateDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
   const { visible, toggle, has } = useColumns();
 
   if (subscriptions.length === 0) {
@@ -777,6 +1137,25 @@ export function SubscriptionsTable({
       alert(`Error: ${err.message}`);
     } finally {
       setIsUpdatingPrice(false);
+    }
+  };
+
+  const handleBulkUpdateCategory = async () => {
+    setIsUpdatingCategory(true);
+    try {
+      await api.post('/subscriptions/bulk-update-category', {
+        subscriptionIds: selectedIds,
+        newCategory: bulkCategoryValue || undefined,
+      });
+      alert(`Category updated for ${selectedIds.length} subscription(s)`);
+      setShowBulkCategoryModal(false);
+      setBulkCategoryValue('');
+      setSelectedIds([]);
+      router.refresh();
+    } catch (err: any) {
+      alert(`Error: ${err.message}`);
+    } finally {
+      setIsUpdatingCategory(false);
     }
   };
 
@@ -864,6 +1243,75 @@ export function SubscriptionsTable({
       doGenerateQuotes();
     }
   };
+
+  const startGoogleSync = async (body: { domainIds?: string[]; syncAll?: boolean }) => {
+    const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3001/api';
+    const res = await fetch(`${apiBase}/google-workspace/customers/fetch-bulk`, {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const err = await res.json() as { message?: string };
+      throw new Error(err.message ?? 'Sync failed to start');
+    }
+    const { jobId, total } = await res.json() as { jobId: string; total: number };
+    sessionStorage.setItem('gSyncJobId', jobId);
+    setGSyncJobId(jobId);
+    setGSyncStatus({ jobId, status: 'running', total, processed: 0, succeeded: 0, failed: 0, results: [] });
+  };
+
+  const handleBulkGoogleSync = async () => {
+    const uniqueDomainIds = [...new Set(
+      subscriptions
+        .filter(s => selectedIds.includes(s.id) && s.zohoItemName?.toLowerCase().includes('google workspace'))
+        .map(s => s.domain.id),
+    )];
+    if (!uniqueDomainIds.length) {
+      alert('Selected subscriptions mein koi Google Workspace subscription nahi hai.');
+      return;
+    }
+    try { await startGoogleSync({ domainIds: uniqueDomainIds }); }
+    catch (err: unknown) { alert(`Google Sync Error: ${err instanceof Error ? err.message : 'Unknown error'}`); }
+  };
+
+  const handleSyncAllGoogle = async () => {
+    if (!confirm('Sync ALL Google Workspace domains? This may take a while.')) return;
+    try { await startGoogleSync({ syncAll: true }); }
+    catch (err: unknown) { alert(`Sync All Error: ${err instanceof Error ? err.message : 'Unknown error'}`); }
+  };
+
+  // Restore pending sync job from sessionStorage (survives page refresh)
+  useEffect(() => {
+    const savedId = typeof window !== 'undefined' ? sessionStorage.getItem('gSyncJobId') : null;
+    if (savedId) setGSyncJobId(savedId);
+  }, []);
+
+  // Poll job status every 2s while a job is active
+  useEffect(() => {
+    if (!gSyncJobId) return;
+    const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3001/api';
+
+    const poll = async () => {
+      try {
+        const res = await fetch(`${apiBase}/google-workspace/customers/sync-job/${gSyncJobId}`, { credentials: 'include' });
+        if (!res.ok) { sessionStorage.removeItem('gSyncJobId'); setGSyncJobId(null); return; }
+        const data = await res.json() as SyncJobStatus;
+        if (data.status === 'not_found') { sessionStorage.removeItem('gSyncJobId'); setGSyncJobId(null); return; }
+        setGSyncStatus(data);
+        if (data.status === 'done') {
+          sessionStorage.removeItem('gSyncJobId');
+          setGSyncJobId(null);
+          router.refresh();
+        }
+      } catch { /* non-fatal */ }
+    };
+
+    void poll();
+    const interval = setInterval(() => void poll(), 2000);
+    return () => clearInterval(interval);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gSyncJobId]);
 
   const handleExportCsv = () => {
     window.open('/api/subscriptions/export-csv' + window.location.search);
@@ -1067,19 +1515,52 @@ export function SubscriptionsTable({
             >
               {isUpdatingStatus ? 'Updating...' : 'Activate Subscriptions'}
             </button>
-            <button
-              onClick={handleBulkUpdatePrice}
-              disabled={isUpdatingPrice || isQuoting || isUpdatingStatus}
-              className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 text-xs font-semibold rounded-lg hover:bg-slate-50 disabled:opacity-50"
-            >
-              {isUpdatingPrice ? 'Updating...' : 'Bulk Update Price'}
-            </button>
+            <div className="relative" ref={bulkUpdateDropdownRef}>
+              <button
+                onClick={() => setIsBulkUpdateDropdownOpen(o => !o)}
+                disabled={isUpdatingPrice || isUpdatingCategory || isQuoting || isUpdatingStatus}
+                className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 text-xs font-semibold rounded-lg hover:bg-slate-50 disabled:opacity-50 flex items-center gap-1"
+              >
+                {(isUpdatingPrice || isUpdatingCategory) ? 'Updating...' : 'Bulk Update'} ▾
+              </button>
+              {isBulkUpdateDropdownOpen && (
+                <div className="absolute right-0 top-full mt-1 z-30 bg-white border border-slate-200 rounded-xl shadow-lg py-1 w-44">
+                  <button
+                    onClick={() => { setIsBulkUpdateDropdownOpen(false); handleBulkUpdatePrice(); }}
+                    className="w-full text-left px-4 py-2 text-xs text-slate-700 hover:bg-slate-50 font-medium"
+                  >
+                    Update Price
+                  </button>
+                  <button
+                    onClick={() => { setIsBulkUpdateDropdownOpen(false); setShowBulkCategoryModal(true); }}
+                    className="w-full text-left px-4 py-2 text-xs text-slate-700 hover:bg-slate-50 font-medium"
+                  >
+                    Update Category
+                  </button>
+                </div>
+              )}
+            </div>
             <button
               onClick={handleBulkQuote}
               disabled={isUpdatingPrice || isQuoting || isUpdatingStatus}
               className="px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-50"
             >
               {isQuoting ? 'Generating...' : 'Generate Quotes'}
+            </button>
+            <button
+              onClick={() => void handleBulkGoogleSync()}
+              disabled={!!gSyncJobId || isQuoting || isUpdatingPrice || isUpdatingStatus}
+              className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 text-xs font-semibold rounded-lg hover:bg-slate-50 disabled:opacity-50 inline-flex items-center gap-1.5"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden>
+                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
+                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+              </svg>
+              {gSyncJobId
+                ? `Syncing ${gSyncStatus?.processed ?? 0}/${gSyncStatus?.total ?? '…'}`
+                : `G Sync (${[...new Set(subscriptions.filter(s => selectedIds.includes(s.id) && s.zohoItemName?.toLowerCase().includes('google workspace')).map(s => s.domain.id))].length} domains)`}
             </button>
           </div>
         </div>
@@ -1092,6 +1573,19 @@ export function SubscriptionsTable({
             className="px-3 py-1.5 bg-white border border-slate-200 text-slate-700 text-xs font-semibold rounded-lg hover:bg-slate-50 shadow-sm"
           >
             Bulk Select by Domains
+          </button>
+          <button
+            onClick={() => void handleSyncAllGoogle()}
+            disabled={!!gSyncJobId}
+            className="px-3 py-1.5 bg-white border border-slate-200 text-slate-600 text-xs font-semibold rounded-lg hover:bg-slate-50 shadow-sm inline-flex items-center gap-1.5 disabled:opacity-50"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden>
+              <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+              <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+              <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
+              <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+            </svg>
+            {gSyncJobId ? `Syncing ${gSyncStatus?.processed ?? 0}/${gSyncStatus?.total ?? '…'}` : 'Sync All Google'}
           </button>
           <button
             onClick={() => { setGroupByCustomer(v => !v); setCollapsedGroups(new Set()); }}
@@ -1179,6 +1673,53 @@ export function SubscriptionsTable({
         </div>
       )}
 
+      {/* Live progress while sync is running */}
+      {gSyncJobId && gSyncStatus && (
+        <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm">
+          <div className="flex items-center gap-3">
+            <svg className="animate-spin h-4 w-4 text-blue-500 shrink-0" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+            </svg>
+            <span className="font-medium text-blue-800">
+              Google Sync: {gSyncStatus.processed}/{gSyncStatus.total} domains processed
+            </span>
+            <span className="ml-auto text-blue-500 text-xs shrink-0">
+              {gSyncStatus.succeeded} ok{gSyncStatus.failed > 0 && ` • ${gSyncStatus.failed} failed`}
+            </span>
+          </div>
+          <div className="mt-2 h-1.5 bg-blue-200 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-blue-500 rounded-full transition-all duration-500"
+              style={{ width: `${gSyncStatus.total > 0 ? Math.round((gSyncStatus.processed / gSyncStatus.total) * 100) : 0}%` }}
+            />
+          </div>
+          <p className="mt-1.5 text-[11px] text-blue-500">Page se navigate karo — sync background mein continue karega.</p>
+        </div>
+      )}
+
+      {/* Result banner after sync completes */}
+      {!gSyncJobId && gSyncStatus?.status === 'done' && (
+        <div className={`rounded-xl border px-4 py-3 text-sm ${gSyncStatus.failed > 0 ? 'bg-amber-50 border-amber-200' : 'bg-green-50 border-green-200'}`}>
+          <div className="flex items-start justify-between gap-3">
+            <p className="font-semibold text-slate-800">
+              Google Sync complete: {gSyncStatus.succeeded}/{gSyncStatus.total} domain{gSyncStatus.total !== 1 ? 's' : ''} synced
+              {gSyncStatus.failed > 0 && ` • ${gSyncStatus.failed} failed`}
+            </p>
+            <button onClick={() => setGSyncStatus(null)} className="text-slate-400 hover:text-slate-600 text-xs shrink-0">
+              Dismiss
+            </button>
+          </div>
+          {gSyncStatus.failed > 0 && (
+            <div className="mt-2 max-h-32 overflow-y-auto space-y-0.5">
+              {gSyncStatus.results.filter(r => !r.success).map((r, i) => (
+                <p key={i} className="text-xs text-red-600">✗ {r.domainName ?? r.domainId}: {String(r.error ?? 'Unknown error')}</p>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Scrollable table — sticky header, both H and V scroll */}
       <div className="rounded-xl border border-slate-200 overflow-auto max-h-[calc(100vh-290px)] bg-white">
         <table className="w-full text-sm min-w-[900px]">
@@ -1202,6 +1743,7 @@ export function SubscriptionsTable({
               {has('status')       && <th className="text-center px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">Status</th>}
               {has('last_quote')   && <th className="text-center px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">Last Quote</th>}
               {has('last_invoice') && <th className="text-center px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">Last Invoice</th>}
+              {has('reseller')     && <th className="text-left px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">Reseller</th>}
               <th className="px-4 py-3 w-20"></th>
             </tr>
           </thead>
@@ -1347,8 +1889,19 @@ export function SubscriptionsTable({
                                 <LastInvoiceCell sub={sub} />
                               </td>
                             )}
+                            {has('reseller') && (
+                              <td className="px-4 py-2.5">
+                                {sub.domain.googleResellerEmail
+                                  ? <span className="text-[11px] text-slate-600 font-medium">{sub.domain.googleResellerEmail.includes('@') ? sub.domain.googleResellerEmail.split('@')[1] : sub.domain.googleResellerEmail}</span>
+                                  : <span className="text-slate-300 text-xs">—</span>
+                                }
+                              </td>
+                            )}
                             <td className="px-4 py-2.5" onClick={e => e.stopPropagation()}>
                               <div className="flex items-center justify-end gap-1.5">
+                                {sub.zohoItemName?.toLowerCase().includes('google workspace') && (
+                                  <GoogleResellerButton domainId={sub.domain.id} domainName={sub.domain.domainName} googleCustomerId={sub.domain.googleCustomerId} />
+                                )}
                                 <RowCommentsButton subscriptionId={sub.id} commentCount={sub._count.comments} />
                                 <EditSubscriptionButton
                                   iconOnly
@@ -1467,8 +2020,19 @@ export function SubscriptionsTable({
                             : <p className="text-[11px] text-slate-300">—</p>}
                         </td>
                       )}
+                      {has('reseller') && (
+                        <td className="px-4 py-2.5">
+                          {sub.domain.googleResellerEmail
+                            ? <span className="text-[11px] text-slate-600 font-medium">{sub.domain.googleResellerEmail.includes('@') ? sub.domain.googleResellerEmail.split('@')[1] : sub.domain.googleResellerEmail}</span>
+                            : <span className="text-slate-300 text-xs">—</span>
+                          }
+                        </td>
+                      )}
                       <td className="px-4 py-2.5" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-1.5">
+                          {sub.zohoItemName?.toLowerCase().includes('google workspace') && (
+                            <GoogleResellerButton domainId={sub.domain.id} domainName={sub.domain.domainName} googleCustomerId={sub.domain.googleCustomerId} />
+                          )}
                           <RowCommentsButton subscriptionId={sub.id} commentCount={sub._count.comments} />
                           <EditSubscriptionButton
                             iconOnly
@@ -1545,6 +2109,42 @@ export function SubscriptionsTable({
                 className="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold transition-colors"
               >
                 Generate Anyway ({pendingQuoteIds?.length ?? selectedIds.length})
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showBulkCategoryModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6">
+            <h2 className="text-base font-bold text-slate-900 mb-1">Bulk Update Category</h2>
+            <p className="text-xs text-slate-500 mb-4">
+              {selectedIds.length} subscription{selectedIds.length !== 1 ? 's' : ''} selected
+            </p>
+            <select
+              value={bulkCategoryValue}
+              onChange={e => setBulkCategoryValue(e.target.value)}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-300 mb-5"
+            >
+              <option value="">— Clear Category —</option>
+              {categories.map(c => (
+                <option key={c.itemValue} value={c.itemValue}>{c.itemLabel}</option>
+              ))}
+            </select>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => { setShowBulkCategoryModal(false); setBulkCategoryValue(''); }}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleBulkUpdateCategory}
+                disabled={isUpdatingCategory}
+                className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              >
+                {isUpdatingCategory ? 'Updating...' : 'Update Category'}
               </button>
             </div>
           </div>

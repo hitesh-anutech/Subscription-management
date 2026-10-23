@@ -183,6 +183,17 @@ export class BulkUpdatePriceDto {
   newPrice!: number;
 }
 
+export class BulkUpdateCategoryDto {
+  @IsArray()
+  @IsString({ each: true })
+  subscriptionIds!: string[];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  newCategory?: string;
+}
+
 export class BulkRenewalQuoteDto {
   @IsArray()
   @IsString({ each: true })

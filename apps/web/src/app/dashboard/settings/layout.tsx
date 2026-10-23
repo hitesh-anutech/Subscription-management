@@ -9,6 +9,7 @@ const sections:{
   { href: '/dashboard/settings/organizations', label: '🏢 Organizations & Zoho', mvp: true },
   { href: '/dashboard/settings/email', label: '📧 Email Configuration', mvp: true },
   { href: '/dashboard/settings/zoho', label: '🔑 Zoho App Credentials', mvp: true },
+  { href: '/dashboard/settings/google', label: '🌐 Google Workspace', mvp: true },
   { href: '/dashboard/settings/quick-quote', label: '📄 Quick Quote Settings', mvp: true },
   { href: '/dashboard/settings/pdf-branding', label: '🎨 PDF Branding', mvp: true },
   { href: '/dashboard/settings/subscription-lifecycle', label: '🔄 Subscription Lifecycle', mvp: true },

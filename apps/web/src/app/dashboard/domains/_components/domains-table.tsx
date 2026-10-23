@@ -53,6 +53,7 @@ export interface Domain {
   domainName: string;
   zohoCustomerName: string | null;
   zohoCustomerId: string;
+  googleCustomerId: string | null;
   status: string;
   notes: string | null;
   organization: { id: string; name: string; zohoOrgId: string; dataCenter: string };
@@ -259,6 +260,7 @@ export function DomainsTable({ domains }: { domains: Domain[] }) {
               </th>
               <th className="text-left px-4 py-3 font-semibold">Domain</th>
               <th className="text-left px-4 py-3 font-semibold">Customer (Zoho)</th>
+              <th className="text-left px-4 py-3 font-semibold">Google</th>
               <th className="text-left px-4 py-3 font-semibold">Org</th>
               <th className="text-center px-4 py-3 font-semibold">Active Subs</th>
               <th className="text-left px-4 py-3 font-semibold">Status</th>
@@ -350,6 +352,25 @@ export function DomainsTable({ domains }: { domains: Domain[] }) {
                         >
                           Open in Zoho Books <span aria-hidden>↗</span>
                         </a>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      {d.googleCustomerId ? (
+                        <div>
+                          <span className="font-mono text-xs text-slate-700">{d.googleCustomerId}</span>
+                          <a
+                            href={`https://admin.google.com/u/0/ac/customers/${d.googleCustomerId}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-xs text-blue-600 hover:underline mt-0.5 inline-flex items-center gap-0.5"
+                            title="Google Console mein kholein"
+                          >
+                            Console <span aria-hidden>↗</span>
+                          </a>
+                        </div>
+                      ) : (
+                        <span className="text-slate-400 text-xs">—</span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-slate-600">{d.organization.name}</td>

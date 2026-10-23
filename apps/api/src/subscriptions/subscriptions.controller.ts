@@ -8,7 +8,7 @@ import { SubscriptionsService } from './subscriptions.service';
 import {
   CreateSubscriptionDto, UpdateSubscriptionDto,
   RenewalQuoteDto, ProrataQuoteDto, StartSubscriptionDto,
-  ImportSubscriptionsBatchDto, BulkUpdatePriceDto, BulkRenewalQuoteDto,
+  ImportSubscriptionsBatchDto, BulkUpdatePriceDto, BulkUpdateCategoryDto, BulkRenewalQuoteDto,
   CombinedRenewalQuoteDto, BulkCreateFromQuoteDto, BulkTransferCustomerDto,
   InlineImportZohoDocDto, CreateCommentDto, BatchCheckDto, AddHistoryDto,
 } from './dto/subscriptions.dto';
@@ -205,6 +205,12 @@ export class SubscriptionsController {
   @Post('bulk-update-price')
   bulkUpdatePrice(@Body() dto: BulkUpdatePriceDto, @CurrentUser() user: AuthUser) {
     return this.service.bulkUpdatePrice(dto, user);
+  }
+
+  /** POST /api/subscriptions/bulk-update-category */
+  @Post('bulk-update-category')
+  bulkUpdateCategory(@Body() dto: BulkUpdateCategoryDto, @CurrentUser() user: AuthUser) {
+    return this.service.bulkUpdateCategory(dto, user);
   }
 
   /** POST /api/subscriptions/bulk-renewal-quote */

@@ -13,6 +13,7 @@ import { DeleteSubscriptionButton } from '../_components/delete-subscription-but
 import { HistoryDialog } from '@/components/history-dialog';
 import { OrderHistoryTimeline } from './_components/order-history-timeline';
 import { DomainSubscriptionsPanel } from './_components/domain-subscriptions-panel';
+import { GoogleResellerPanel } from './_components/google-reseller-panel';
 import { SubscriptionComments } from './_components/subscription-comments';
 
 export const dynamic = 'force-dynamic';
@@ -391,6 +392,14 @@ export default async function SubscriptionDetailPage({ params }: { params: Promi
               </div>
             )}
           </div>
+
+          {/* Google Reseller — only for Google Workspace subscriptions */}
+          {sub.zohoItemName?.toLowerCase().includes('google workspace') && (
+            <GoogleResellerPanel
+              domainId={sub.domain.id}
+              domainName={sub.domain.domainName}
+            />
+          )}
 
           {/* Domain sibling subscriptions — client-side fetch, hides when only 1 sub */}
           <DomainSubscriptionsPanel

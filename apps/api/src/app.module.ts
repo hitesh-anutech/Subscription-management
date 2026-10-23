@@ -24,6 +24,7 @@ import { DocumentsModule } from './documents/documents.module';
 import { CustomersModule } from './customers/customers.module';
 import { AuditLogsModule } from './audit-logs/audit-logs.module';
 import { BugReportsModule } from './bug-reports/bug-reports.module';
+import { GoogleWorkspaceModule } from './google-workspace/google-workspace.module';
 
 @Module({
   imports: [
@@ -59,6 +60,7 @@ import { BugReportsModule } from './bug-reports/bug-reports.module';
     CustomersModule,
     AuditLogsModule,
     BugReportsModule,
+    GoogleWorkspaceModule,
   ],
 })
 export class AppModule {}

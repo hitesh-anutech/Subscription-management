@@ -15,7 +15,7 @@ import * as Papa from 'papaparse';
 import type {
   CreateSubscriptionDto, UpdateSubscriptionDto,
   RenewalQuoteDto, ProrataQuoteDto, StartSubscriptionDto,
-  ImportSubscriptionDto, ImportInvoiceRefDto, BulkUpdatePriceDto, BulkRenewalQuoteDto,
+  ImportSubscriptionDto, ImportInvoiceRefDto, BulkUpdatePriceDto, BulkUpdateCategoryDto, BulkRenewalQuoteDto,
   CombinedRenewalQuoteDto, InlineImportZohoDocDto,
 } from './dto/subscriptions.dto';
 
@@ -96,7 +96,7 @@ export class SubscriptionsService {
         take: limit,
         include: {
           organization: { select: { id: true, name: true, zohoOrgId: true, dataCenter: true } },
-          domain:       { select: { id: true, domainName: true } },
+          domain:       { select: { id: true, domainName: true, googleCustomerId: true, googleResellerEmail: true } },
           _count:       { select: { renewalHistory: true, comments: true } },
           renewalHistory: {
             orderBy: { createdAt: 'desc' },
@@ -206,6 +206,34 @@ export class SubscriptionsService {
     }
 
     this.logger.log(`Bulk updated price for ${res.count} subscriptions to ${newPrice}`);
+    return { success: true, count: res.count };
+  }
+
+  async bulkUpdateCategory(dto: BulkUpdateCategoryDto, user: AuthUser) {
+    const { subscriptionIds, newCategory } = dto;
+    if (!subscriptionIds.length) {
+      throw new BadRequestException('No subscriptions selected');
+    }
+
+    const res = await this.prisma.subscription.updateMany({
+      where: { id: { in: subscriptionIds } },
+      data: { subscriptionCategory: newCategory ?? null },
+    });
+
+    for (const subId of subscriptionIds) {
+      await this.auditLogs.logAction({
+        entityType: 'subscription',
+        entityId: subId,
+        action: 'update',
+        changeSummary: newCategory
+          ? `Subscription category bulk updated to ${newCategory}`
+          : 'Subscription category bulk cleared',
+        userId: user.id,
+        userEmailSnapshot: user.email,
+      });
+    }
+
+    this.logger.log(`Bulk updated category for ${res.count} subscriptions to ${newCategory ?? 'null'}`);
     return { success: true, count: res.count };
   }
 
