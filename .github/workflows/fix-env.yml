@@ -1,0 +1,28 @@
+name: Fix Env Variable
+
+on:
+  workflow_dispatch:
+
+jobs:
+  fix-env:
+    runs-on: self-hosted
+    steps:
+      - name: Add GOOGLE_REDIRECT_URI to .env
+        run: |
+          ENV_FILE="/opt/Subscription-management/.env"
+          KEY="GOOGLE_REDIRECT_URI"
+          VALUE="https://subs.anutech.in/api/google-workspace/auth/callback"
+          # Remove existing entry if any
+          sudo sed -i "/^${KEY}=/d" "$ENV_FILE"
+          # Append new value
+          echo "${KEY}=${VALUE}" | sudo tee -a "$ENV_FILE"
+          echo "Done:"
+          sudo grep "${KEY}" "$ENV_FILE"
+
+      - name: Restart API
+        run: sudo systemctl restart subscription-api
+
+      - name: Verify API is running
+        run: |
+          sleep 4
+          sudo systemctl status subscription-api --no-pager | tail -5
