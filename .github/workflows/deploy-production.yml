@@ -24,3 +24,15 @@ jobs:
       - name: Deploy production
         run: |
           sudo -n /usr/local/sbin/deploy-subscription-management
+
+      - name: Ensure GOOGLE_REDIRECT_URI in .env
+        run: |
+          ENV_FILE="/opt/Subscription-management/.env"
+          KEY="GOOGLE_REDIRECT_URI"
+          VALUE="https://subs.anutech.in/api/google-workspace/auth/callback"
+          sudo sed -i "/^${KEY}=/d" "$ENV_FILE"
+          echo "${KEY}=${VALUE}" | sudo tee -a "$ENV_FILE"
+          sudo grep "${KEY}" "$ENV_FILE"
+          sudo systemctl restart subscription-api
+          sleep 3
+          sudo systemctl is-active subscription-api
