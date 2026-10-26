@@ -83,7 +83,7 @@ export default async function SubscriptionsPage({
       api.get<{ subscriptions: Subscription[]; total: number }>(`/subscriptions?${params.toString()}`),
       api.get<{ itemValue: string; itemLabel: string }[]>('/master-data/subscription_category').catch(() => []),
       api.get<{ organizations: { id: string; name: string }[] }>('/organizations').catch(() => ({ organizations: [] })),
-      api.get<{ slot1?: { resellerEmail?: string | null; name?: string | null }; slot2?: { resellerEmail?: string | null; name?: string | null } }>('/google-workspace/status').catch(() => ({})),
+      api.get<{ slot1?: { resellerEmail?: string | null; name?: string | null }; slot2?: { resellerEmail?: string | null; name?: string | null } }>('/google-workspace/status').catch(() => ({} as { slot1?: { resellerEmail?: string | null; name?: string | null }; slot2?: { resellerEmail?: string | null; name?: string | null } })),
     ]);
     subscriptions = data.subscriptions ?? [];
     total = data.total ?? 0;
