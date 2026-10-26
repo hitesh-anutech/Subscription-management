@@ -17,6 +17,7 @@ export async function saveGoogleCredentialsAction(formData: FormData, slot: 1 | 
   const clientId = formData.get('client_id') as string;
   const clientSecret = formData.get('client_secret') as string;
   const resellerEmail = formData.get('reseller_email') as string;
+  const resellerName = formData.get('reseller_name') as string;
 
   const settings: Array<{ key: string; value: string; sensitive: boolean; description: string }> = [];
 
@@ -28,6 +29,9 @@ export async function saveGoogleCredentialsAction(formData: FormData, slot: 1 | 
   }
   if (resellerEmail !== null && resellerEmail !== undefined) {
     settings.push({ key: `reseller_email${suffix}`, value: resellerEmail, sensitive: false, description: `Google Reseller admin email (Reseller ${slot})` });
+  }
+  if (resellerName !== null && resellerName !== undefined) {
+    settings.push({ key: `reseller_name${suffix}`, value: resellerName, sensitive: false, description: `Google Reseller display name (Reseller ${slot})` });
   }
 
   if (settings.length === 0) {

@@ -297,6 +297,7 @@ model Organization {
   webhookEvents               WebhookEvent[]
   orgSettings                 OrgSettings?
   emailTemplates              EmailTemplate[]
+  googleResellerSubscriptions GoogleResellerSubscription[]
 
   @@index([isActive])
   @@index([zohoOrgId])
@@ -502,6 +503,7 @@ model Domain {
   organization        Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   subscriptions       Subscription[]
   renewalHistory      RenewalHistory[]
+  googleResellerMatches GoogleResellerSubscription[]
 
   @@unique([organizationId, zohoCustomerId, domainName], name: "uq_domain_org_customer_name", map: "uq_domain_org_customer_name")
   @@index([organizationId, zohoCustomerId])
@@ -710,6 +712,7 @@ model Subscription {
   renewalHistory                  RenewalHistory[]
   renewedQuoteItems               QuickQuoteItem[] @relation("SubscriptionRenewals")
   comments                        SubscriptionComment[]
+  googleResellerMatches           GoogleResellerSubscription[]
 
   @@index([organizationId, lifecycleStatus])
   @@index([domainId])
@@ -920,6 +923,73 @@ model WebhookEvent {
   @@index([zohoEntityId])
   @@index([createdAt(sort: Desc)])
   @@map("webhook_events")
+}
+
+// ---------------------------------------------------------------------
+// GoogleResellerSubscription — All subscriptions fetched from Google
+// Workspace Reseller Console (both slots), enriched with customer data
+// and reconciled against app subscriptions.
+// ---------------------------------------------------------------------
+model GoogleResellerSubscription {
+  id                    String    @id @default(uuid()) @db.Uuid
+  organizationId        String    @map("organization_id") @db.Uuid
+
+  // From Google /subscriptions API
+  googleSubscriptionId  String    @map("google_subscription_id") @db.VarChar(100)
+  customerId            String    @map("customer_id") @db.VarChar(100)
+  customerUid           String?   @map("customer_uid") @db.VarChar(100)
+  customerDomain        String    @map("customer_domain") @db.VarChar(255)
+  skuId                 String    @map("sku_id") @db.VarChar(100)
+  skuName               String?   @map("sku_name") @db.VarChar(255)
+  googleStatus          String    @map("google_status") @db.VarChar(50)
+  planName              String?   @map("plan_name") @db.VarChar(100)
+  isCommitmentPlan      Boolean?  @map("is_commitment_plan")
+  seatsLicensed         Int?      @map("seats_licensed")
+  seatsMaximum          Int?      @map("seats_maximum")
+  renewalType           String?   @map("renewal_type") @db.VarChar(100)
+  isInTrial             Boolean?  @map("is_in_trial")
+  trialEndTime          DateTime? @map("trial_end_time") @db.Timestamptz
+  googleCreationTime    DateTime? @map("google_creation_time") @db.Timestamptz
+  suspensionReasons     String[]  @map("suspension_reasons")
+  resellerSlot          Int       @map("reseller_slot")
+  resellerEmail         String?   @map("reseller_email") @db.VarChar(255)
+  subscriptionFetchedAt DateTime? @map("subscription_fetched_at") @db.Timestamptz
+
+  // From Google /customers/{customerId} API (separate fetch)
+  orgName               String?   @map("org_name") @db.VarChar(255)
+  contactName           String?   @map("contact_name") @db.VarChar(255)
+  alternateEmail        String?   @map("alternate_email") @db.VarChar(255)
+  countryCode           String?   @map("country_code") @db.VarChar(10)
+  customerCreationTime  DateTime? @map("customer_creation_time") @db.Timestamptz
+  resourceUiUrl         String?   @map("resource_ui_url") @db.VarChar(500)
+  customerFetchedAt     DateTime? @map("customer_fetched_at") @db.Timestamptz
+
+  // Manually entered alias domains; tried as fallback during reconciliation
+  additionalDomains     String[]  @map("additional_domains")
+
+  // Reconciliation
+  reconciliationStatus  String    @default("not_matched") @map("reconciliation_status") @db.VarChar(20)
+  reconciliationFlags   String[]  @map("reconciliation_flags")
+  matchedDomainId       String?   @map("matched_domain_id") @db.Uuid
+  matchedSubscriptionId String?   @map("matched_subscription_id") @db.Uuid
+  matchedDomainName     String?   @map("matched_domain_name") @db.VarChar(255)
+  appSeats              Int?      @map("app_seats")
+  reconciledAt          DateTime? @map("reconciled_at") @db.Timestamptz
+
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt             DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  organization          Organization  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  matchedDomain         Domain?       @relation(fields: [matchedDomainId], references: [id], onDelete: SetNull)
+  matchedSubscription   Subscription? @relation(fields: [matchedSubscriptionId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, googleSubscriptionId], name: "uq_grs_org_sub_id")
+  @@index([organizationId, reconciliationStatus])
+  @@index([customerDomain])
+  @@index([googleStatus])
+  @@index([matchedDomainId])
+  @@index([matchedSubscriptionId])
+  @@map("google_reseller_subscriptions")
 }
 
 // =====================================================================

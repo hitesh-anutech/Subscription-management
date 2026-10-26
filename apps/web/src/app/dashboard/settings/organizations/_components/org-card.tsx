@@ -60,13 +60,18 @@ export function OrgCard({ org }: { org: Organization }) {
           fetch(`${API_BASE}/organizations/${org.id}/sync-customers`, { method: 'POST', credentials: 'include' }),
           fetch(`${API_BASE}/organizations/${org.id}/sync-items`,    { method: 'POST', credentials: 'include' }),
         ]);
-        const [cus, itm] = await Promise.all([
-          cusRes.json() as Promise<{ synced?: number }>,
-          itmRes.json() as Promise<{ synced?: number }>,
+        const [cusBody, itmBody] = await Promise.all([
+          cusRes.json() as Promise<{ synced?: number; error?: string; message?: string }>,
+          itmRes.json() as Promise<{ synced?: number; error?: string; message?: string }>,
         ]);
-        setSyncResult(`✅ ${cus.synced ?? 0} customers · ${itm.synced ?? 0} items synced`);
+        if (!cusRes.ok || !itmRes.ok) {
+          const errBody = !cusRes.ok ? cusBody : itmBody;
+          setSyncResult(`❌ Sync failed: ${errBody.message ?? errBody.error ?? 'Unknown error'}`);
+          return;
+        }
+        setSyncResult(`✅ ${cusBody.synced ?? 0} customers · ${itmBody.synced ?? 0} items synced`);
       } catch {
-        setSyncResult('❌ Sync failed');
+        setSyncResult('❌ Sync failed — could not reach server');
       }
     });
   }

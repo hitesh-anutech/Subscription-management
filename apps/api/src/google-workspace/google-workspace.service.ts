@@ -130,6 +130,10 @@ export class GoogleWorkspaceService {
     return this.settings.get('google', key('reseller_email', slot));
   }
 
+  async getResellerName(slot: Slot): Promise<string | null> {
+    return this.settings.get('google', key('reseller_name', slot));
+  }
+
   private getRedirectUri(): string {
     if (this.config.get('GOOGLE_REDIRECT_URI')) {
       return this.config.get<string>('GOOGLE_REDIRECT_URI')!;
@@ -286,19 +290,21 @@ export class GoogleWorkspaceService {
   }
 
   async getStatus(): Promise<{
-    slot1: { connected: boolean; resellerEmail: string | null };
-    slot2: { connected: boolean; resellerEmail: string | null };
+    slot1: { connected: boolean; resellerEmail: string | null; name: string | null };
+    slot2: { connected: boolean; resellerEmail: string | null; name: string | null };
     connected: boolean;
   }> {
-    const [c1, c2, e1, e2] = await Promise.all([
+    const [c1, c2, e1, e2, n1, n2] = await Promise.all([
       this.isConnected(1),
       this.isConnected(2),
       this.getResellerEmail(1),
       this.getResellerEmail(2),
+      this.getResellerName(1),
+      this.getResellerName(2),
     ]);
     return {
-      slot1: { connected: c1, resellerEmail: e1 },
-      slot2: { connected: c2, resellerEmail: e2 },
+      slot1: { connected: c1, resellerEmail: e1, name: n1 },
+      slot2: { connected: c2, resellerEmail: e2, name: n2 },
       connected: c1 || c2,
     };
   }
@@ -548,6 +554,54 @@ export class GoogleWorkspaceService {
 
   getSyncJobStatus(jobId: string): SyncJob | null {
     return this.syncJobs.get(jobId) ?? null;
+  }
+
+  // ------------------------------------------------------------------
+  // Shared helpers for GoogleResellerSubsService
+  // ------------------------------------------------------------------
+
+  /** Fetch a single customer by customerId. Retries up to 3× on 429 (rate limit). */
+  async fetchCustomerById(customerId: string, slot: Slot): Promise<GoogleCustomer | null> {
+    const RETRY_DELAYS = [2000, 4000, 8000];
+    for (let attempt = 0; attempt <= RETRY_DELAYS.length; attempt++) {
+      try {
+        return await this.buildClient(slot).get<GoogleCustomer>(`/customers/${customerId}`);
+      } catch (err) {
+        const status = (err as AxiosError)?.response?.status;
+        if (status === 429 && attempt < RETRY_DELAYS.length) {
+          const delay = RETRY_DELAYS[attempt];
+          this.logger.warn(`Rate limited on customer ${customerId} (slot ${slot}), retry ${attempt + 1}/3 in ${delay}ms`);
+          await new Promise(r => setTimeout(r, delay));
+          continue;
+        }
+        this.logger.warn(`fetchCustomerById ${customerId} slot ${slot}: ${(err as Error).message}`);
+        return null;
+      }
+    }
+    return null;
+  }
+
+  /** Fetch all subscription pages for a slot, optionally filtered by customerId. */
+  async fetchAllSubscriptionsForSlot(slot: Slot, customerId?: string): Promise<GoogleSubscription[]> {
+    const all: GoogleSubscription[] = [];
+    let pageToken: string | undefined;
+    let page = 0;
+    do {
+      page++;
+      // maxResults=100 (Google's hard ceiling for this API — valid range: 1–100)
+      const params: Record<string, string> = { maxResults: '100' };
+      if (customerId) params.customerId = customerId;
+      if (pageToken) params.pageToken = pageToken;
+      const resp = await this.buildClient(slot).get<GoogleSubscriptionsResponse>('/subscriptions', params);
+      const count = resp.subscriptions?.length ?? 0;
+      this.logger.log(
+        `Slot ${slot} page ${page}: ${count} subscriptions | nextPageToken: ${resp.nextPageToken ? `"${resp.nextPageToken.slice(0, 20)}…"` : 'NONE (last page)'}`,
+      );
+      all.push(...(resp.subscriptions ?? []));
+      pageToken = resp.nextPageToken;
+    } while (pageToken);
+    this.logger.log(`Slot ${slot} TOTAL: ${all.length} subscriptions across ${page} page(s)`);
+    return all;
   }
 
   async getDomainGoogleData(domainId: string): Promise<{

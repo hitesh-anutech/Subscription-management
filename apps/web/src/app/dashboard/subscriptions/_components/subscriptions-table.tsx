@@ -1043,11 +1043,13 @@ export function SubscriptionsTable({
   initialSelectedIds,
   isAdmin = false,
   categories = [],
+  resellerNames = {},
 }: {
   subscriptions: Subscription[];
   initialSelectedIds?: string[];
   isAdmin?: boolean;
   categories?: { itemValue: string; itemLabel: string }[];
+  resellerNames?: Record<string, string>; // email → display name
 }) {
   const [selectedIds, setSelectedIds] = useState<string[]>(initialSelectedIds ?? []);
   const [isUpdatingPrice, setIsUpdatingPrice] = useState(false);
@@ -1892,7 +1894,7 @@ export function SubscriptionsTable({
                             {has('reseller') && (
                               <td className="px-4 py-2.5">
                                 {sub.domain.googleResellerEmail
-                                  ? <span className="text-[11px] text-slate-600 font-medium">{sub.domain.googleResellerEmail.includes('@') ? sub.domain.googleResellerEmail.split('@')[1] : sub.domain.googleResellerEmail}</span>
+                                  ? <span className="text-[11px] text-slate-600 font-medium">{resellerNames[sub.domain.googleResellerEmail] ?? (sub.domain.googleResellerEmail.includes('@') ? sub.domain.googleResellerEmail.split('@')[1] : sub.domain.googleResellerEmail)}</span>
                                   : <span className="text-slate-300 text-xs">—</span>
                                 }
                               </td>
@@ -2023,7 +2025,7 @@ export function SubscriptionsTable({
                       {has('reseller') && (
                         <td className="px-4 py-2.5">
                           {sub.domain.googleResellerEmail
-                            ? <span className="text-[11px] text-slate-600 font-medium">{sub.domain.googleResellerEmail.includes('@') ? sub.domain.googleResellerEmail.split('@')[1] : sub.domain.googleResellerEmail}</span>
+                            ? <span className="text-[11px] text-slate-600 font-medium">{resellerNames[sub.domain.googleResellerEmail] ?? (sub.domain.googleResellerEmail.includes('@') ? sub.domain.googleResellerEmail.split('@')[1] : sub.domain.googleResellerEmail)}</span>
                             : <span className="text-slate-300 text-xs">—</span>
                           }
                         </td>

@@ -55,7 +55,23 @@ export class GoogleApiClient {
   }
 
   async get<T>(path: string, params?: Record<string, string>): Promise<T> {
-    const { data } = await this.axios.get<T>(path, { params });
-    return data;
+    try {
+      const { data } = await this.axios.get<T>(path, { params });
+      return data;
+    } catch (err) {
+      const axErr = err as import('axios').AxiosError<{ error?: { message?: string; status?: string } }>;
+      const status = axErr.response?.status;
+      const googleMsg = axErr.response?.data?.error?.message;
+      const googleStatus = axErr.response?.data?.error?.status;
+
+      if (googleMsg) {
+        // Augment message in-place — keeps it as an AxiosError so callers can still
+        // check response.status (e.g. 429 retry logic in fetchCustomerById).
+        const detail = googleStatus ? `${googleStatus}: ${googleMsg}` : googleMsg;
+        axErr.message = `Google API ${status ?? '?'} — ${detail}`;
+        this.logger.error(`GET ${path} → ${axErr.message}`);
+      }
+      throw err;
+    }
   }
 }

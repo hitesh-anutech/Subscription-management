@@ -22,6 +22,7 @@ interface SlotProps {
   initialClientId: string;
   initialClientSecret: string;
   initialResellerEmail: string;
+  initialResellerName: string;
   isClientIdSet: boolean;
   isClientSecretSet: boolean;
   isConnected: boolean;
@@ -34,6 +35,7 @@ export function GoogleResellerSlotCard({
   initialClientId,
   initialClientSecret,
   initialResellerEmail,
+  initialResellerName,
   isClientIdSet,
   isClientSecretSet,
   isConnected,
@@ -119,6 +121,22 @@ export function GoogleResellerSlotCard({
 
         {/* Credentials form */}
         <form action={credAction} className="space-y-4">
+          {/* Reseller Name */}
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">
+              Reseller Name
+              {initialResellerName && <span className="ml-2 text-xs text-green-600 font-normal">● Set</span>}
+            </label>
+            <input
+              name="reseller_name"
+              type="text"
+              defaultValue={initialResellerName}
+              placeholder={slot === 1 ? 'e.g. Anutech Digital' : 'e.g. Excel Technologies'}
+              className="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <p className="text-xs text-slate-400 mt-1">Reconciliation और Subscriptions table के Reseller column में दिखेगा।</p>
+          </div>
+
           {/* Reseller Email */}
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1.5">
@@ -132,7 +150,7 @@ export function GoogleResellerSlotCard({
               placeholder="info@reseller.yourdomain.com"
               className="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
-            <p className="text-xs text-slate-400 mt-1">इस reseller account का admin email — subscriptions column में दिखेगा।</p>
+            <p className="text-xs text-slate-400 mt-1">इस reseller account का admin email — internal use के लिए।</p>
           </div>
 
           {/* Client ID */}

@@ -1033,11 +1033,18 @@ export class ZohoService {
     let synced = 0;
 
     while (hasMore) {
-      const data = await client.get<{ contacts: Array<Record<string, unknown>>; page_context?: { has_more_page: boolean } }>(
+      const data = await client.get<{ code?: number; message?: string; contacts: Array<Record<string, unknown>>; page_context?: { has_more_page: boolean } }>(
         '/contacts', { contact_type: 'customer', page, per_page: 200 },
       );
 
+      // Zoho sometimes returns HTTP 200 with a non-zero code on permission/auth errors.
+      if (data.code !== undefined && data.code !== 0) {
+        this.logger.error(`Zoho /contacts returned code=${data.code}: ${data.message} (org=${orgId})`);
+        throw new Error(`Zoho API error ${data.code}: ${data.message}`);
+      }
+
       const contacts: Array<Record<string, unknown>> = data.contacts ?? [];
+      this.logger.debug(`syncCustomers page=${page}: received ${contacts.length} contacts`);
       if (contacts.length === 0) break;
 
       for (const c of contacts) {
@@ -1114,11 +1121,17 @@ export class ZohoService {
     let synced = 0;
 
     while (hasMore) {
-      const data = await client.get<{ items: Array<Record<string, unknown>>; page_context?: { has_more_page: boolean } }>(
+      const data = await client.get<{ code?: number; message?: string; items: Array<Record<string, unknown>>; page_context?: { has_more_page: boolean } }>(
         '/items', { page, per_page: 200 },
       );
 
+      if (data.code !== undefined && data.code !== 0) {
+        this.logger.error(`Zoho /items returned code=${data.code}: ${data.message} (org=${orgId})`);
+        throw new Error(`Zoho API error ${data.code}: ${data.message}`);
+      }
+
       const items: Array<Record<string, unknown>> = data.items ?? [];
+      this.logger.debug(`syncItems page=${page}: received ${items.length} items`);
       if (items.length === 0) break;
 
       for (const item of items) {

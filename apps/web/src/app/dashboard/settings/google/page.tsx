@@ -75,6 +75,7 @@ export default async function GoogleWorkspaceSettingsPage({ searchParams }: Prop
         initialClientId={getValue('client_id')}
         initialClientSecret={getValue('client_secret')}
         initialResellerEmail={getValue('reseller_email')}
+        initialResellerName={getValue('reseller_name')}
         isClientIdSet={isSet('client_id')}
         isClientSecretSet={isSet('client_secret')}
         isConnected={slot1.connected}
@@ -88,6 +89,7 @@ export default async function GoogleWorkspaceSettingsPage({ searchParams }: Prop
         initialClientId={getValue('client_id_2')}
         initialClientSecret={getValue('client_secret_2')}
         initialResellerEmail={getValue('reseller_email_2')}
+        initialResellerName={getValue('reseller_name_2')}
         isClientIdSet={isSet('client_id_2')}
         isClientSecretSet={isSet('client_secret_2')}
         isConnected={slot2.connected}

@@ -61,6 +61,7 @@ export default async function SubscriptionsPage({
   let total = 0;
   let categories: { itemValue: string; itemLabel: string }[] = [];
   let orgs: { id: string; name: string }[] = [];
+  const resellerNames: Record<string, string> = {}; // email → display name
   const page = Number(sp.page ?? 1);
   const limit = [25, 50, 100, 200, 500].includes(Number(sp.limit)) ? Number(sp.limit) : 25;
 
@@ -78,15 +79,23 @@ export default async function SubscriptionsPage({
     params.set('page', String(page));
     params.set('limit', String(limit));
 
-    const [data, catData, orgsData] = await Promise.all([
+    const [data, catData, orgsData, googleStatus] = await Promise.all([
       api.get<{ subscriptions: Subscription[]; total: number }>(`/subscriptions?${params.toString()}`),
       api.get<{ itemValue: string; itemLabel: string }[]>('/master-data/subscription_category').catch(() => []),
       api.get<{ organizations: { id: string; name: string }[] }>('/organizations').catch(() => ({ organizations: [] })),
+      api.get<{ slot1?: { resellerEmail?: string | null; name?: string | null }; slot2?: { resellerEmail?: string | null; name?: string | null } }>('/google-workspace/status').catch(() => ({})),
     ]);
     subscriptions = data.subscriptions ?? [];
     total = data.total ?? 0;
     categories = catData ?? [];
     orgs = orgsData.organizations ?? [];
+    // Build email → display name map for the Reseller column
+    if (googleStatus.slot1?.resellerEmail && googleStatus.slot1?.name) {
+      resellerNames[googleStatus.slot1.resellerEmail] = googleStatus.slot1.name;
+    }
+    if (googleStatus.slot2?.resellerEmail && googleStatus.slot2?.name) {
+      resellerNames[googleStatus.slot2.resellerEmail] = googleStatus.slot2.name;
+    }
   } catch {
     // empty state
   }
@@ -181,6 +190,7 @@ export default async function SubscriptionsPage({
         initialSelectedIds={sp.ids ? sp.ids.split(',').filter(Boolean) : undefined}
         isAdmin={isAdmin}
         categories={categories}
+        resellerNames={resellerNames}
       />
 
       {/* Pagination */}

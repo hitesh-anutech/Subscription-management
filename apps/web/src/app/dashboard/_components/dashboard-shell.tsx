@@ -5,7 +5,7 @@ import Link from 'next/link';
 import {
   LayoutDashboard, ListChecks, Target, FileText, FileSpreadsheet,
   Globe, Users, Settings, ShieldCheck, History, Bug,
-  ChevronsLeft, ChevronsRight,
+  ChevronsLeft, ChevronsRight, GitMerge,
   type LucideIcon,
 } from 'lucide-react';
 import { LogoutButton } from './logout-button';
@@ -127,6 +127,23 @@ export function DashboardShell({ initials, displayName, children }: Props) {
                 )}
               </div>
             ))}
+
+            <div className={`border-t border-white/10 my-3 ${collapsed ? 'mx-2' : 'mx-4'}`} />
+
+            {!collapsed && (
+              <div className="px-4 mb-2">
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Google Workspace</span>
+              </div>
+            )}
+
+            <div className={collapsed ? 'px-1' : 'px-2'}>
+              <SidebarNavLink
+                href="/dashboard/google-workspace"
+                label="Reconciliation"
+                icon={<GitMerge size={18} />}
+                collapsed={collapsed}
+              />
+            </div>
 
             <div className={`border-t border-white/10 my-3 ${collapsed ? 'mx-2' : 'mx-4'}`} />
 
