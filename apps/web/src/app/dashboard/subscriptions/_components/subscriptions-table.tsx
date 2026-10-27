@@ -1098,6 +1098,38 @@ export function SubscriptionsTable({
   }, []);
   const { visible, toggle, has } = useColumns();
 
+  // Restore pending sync job from sessionStorage (survives page refresh)
+  useEffect(() => {
+    const savedId = typeof window !== 'undefined' ? sessionStorage.getItem('gSyncJobId') : null;
+    if (savedId) setGSyncJobId(savedId);
+  }, []);
+
+  // Poll job status every 2s while a job is active
+  useEffect(() => {
+    if (!gSyncJobId) return;
+    const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3001/api';
+
+    const poll = async () => {
+      try {
+        const res = await fetch(`${apiBase}/google-workspace/customers/sync-job/${gSyncJobId}`, { credentials: 'include' });
+        if (!res.ok) { sessionStorage.removeItem('gSyncJobId'); setGSyncJobId(null); return; }
+        const data = await res.json() as SyncJobStatus;
+        if (data.status === 'not_found') { sessionStorage.removeItem('gSyncJobId'); setGSyncJobId(null); return; }
+        setGSyncStatus(data);
+        if (data.status === 'done') {
+          sessionStorage.removeItem('gSyncJobId');
+          setGSyncJobId(null);
+          router.refresh();
+        }
+      } catch { /* non-fatal */ }
+    };
+
+    void poll();
+    const interval = setInterval(() => void poll(), 2000);
+    return () => clearInterval(interval);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gSyncJobId]);
+
   if (subscriptions.length === 0) {
     return (
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
@@ -1287,38 +1319,6 @@ export function SubscriptionsTable({
     try { await startGoogleSync({ syncAll: true }); }
     catch (err: unknown) { alert(`Sync All Error: ${err instanceof Error ? err.message : 'Unknown error'}`); }
   };
-
-  // Restore pending sync job from sessionStorage (survives page refresh)
-  useEffect(() => {
-    const savedId = typeof window !== 'undefined' ? sessionStorage.getItem('gSyncJobId') : null;
-    if (savedId) setGSyncJobId(savedId);
-  }, []);
-
-  // Poll job status every 2s while a job is active
-  useEffect(() => {
-    if (!gSyncJobId) return;
-    const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3001/api';
-
-    const poll = async () => {
-      try {
-        const res = await fetch(`${apiBase}/google-workspace/customers/sync-job/${gSyncJobId}`, { credentials: 'include' });
-        if (!res.ok) { sessionStorage.removeItem('gSyncJobId'); setGSyncJobId(null); return; }
-        const data = await res.json() as SyncJobStatus;
-        if (data.status === 'not_found') { sessionStorage.removeItem('gSyncJobId'); setGSyncJobId(null); return; }
-        setGSyncStatus(data);
-        if (data.status === 'done') {
-          sessionStorage.removeItem('gSyncJobId');
-          setGSyncJobId(null);
-          router.refresh();
-        }
-      } catch { /* non-fatal */ }
-    };
-
-    void poll();
-    const interval = setInterval(() => void poll(), 2000);
-    return () => clearInterval(interval);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gSyncJobId]);
 
   const handleExportCsv = () => {
     window.open('/api/subscriptions/export-csv' + window.location.search);
