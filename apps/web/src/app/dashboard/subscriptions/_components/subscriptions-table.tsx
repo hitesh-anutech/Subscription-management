@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useState, useRef, useEffect, Fragment } from 'react';
 import { createPortal } from 'react-dom';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { api, API_BASE } from '@/lib/api';
 import { Trash2 } from 'lucide-react';
 import { deleteMultipleSubscriptionsAction } from '../actions';
@@ -966,41 +966,105 @@ function StatusBadge({ status, endDate }: { status: string; endDate: string }) {
 // ─── Column Customization ────────────────────────────────────────────────────
 
 const COLUMN_DEFS = [
-  { id: 'domain',       label: 'Domain',       defaultOn: true  },
-  { id: 'item',         label: 'Item',         defaultOn: true  },
-  { id: 'qty_price',    label: 'Qty / Price',  defaultOn: true  },
-  { id: 'status',       label: 'Status',       defaultOn: true  },
-  { id: 'last_quote',   label: 'Last Quote',   defaultOn: true  },
-  { id: 'last_invoice', label: 'Last Invoice', defaultOn: true  },
-  { id: 'reseller',     label: 'Reseller',     defaultOn: false },
-  { id: 'gws_recon',   label: 'Recon',        defaultOn: true  },
+  { id: 'domain',       label: 'Domain',       defaultOn: true,  defaultW: 160, sortable: true  },
+  { id: 'item',         label: 'Item',         defaultOn: true,  defaultW: 240, sortable: true  },
+  { id: 'qty_price',    label: 'Qty / Price',  defaultOn: true,  defaultW: 120, sortable: false },
+  { id: 'status',       label: 'Status',       defaultOn: true,  defaultW: 110, sortable: true  },
+  { id: 'last_quote',   label: 'Last Quote',   defaultOn: true,  defaultW: 140, sortable: true  },
+  { id: 'last_invoice', label: 'Last Invoice', defaultOn: true,  defaultW: 140, sortable: true  },
+  { id: 'reseller',     label: 'Reseller',     defaultOn: false, defaultW: 150, sortable: false },
+  { id: 'gws_recon',    label: 'Recon',        defaultOn: true,  defaultW: 90,  sortable: false },
 ] as const;
 
 type ColId = (typeof COLUMN_DEFS)[number]['id'];
+type ColDef = (typeof COLUMN_DEFS)[number];
 
-function useColumns() {
-  const KEY = 'subs_columns_v1';
-  const defaults = COLUMN_DEFS.filter((c) => c.defaultOn).map((c) => c.id);
-  const [visible, setVisible] = useState<ColId[]>(defaults);
+// ── localStorage helpers ──────────────────────────────────────────────────────
+const SK_VIS    = 'subs_columns_v2';
+const SK_ORDER  = 'subs_col_order_v1';
+const SK_WIDTHS = 'subs_col_widths_v1';
 
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem(KEY);
-      if (stored) setVisible(JSON.parse(stored) as ColId[]);
-    } catch { /* keep defaults */ }
-  }, []);
-
-  const toggle = (id: ColId) =>
-    setVisible((prev) => {
-      const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
-      localStorage.setItem(KEY, JSON.stringify(next));
-      return next;
-    });
-  const has = (id: ColId) => visible.includes(id);
-  return { visible, toggle, has };
+function lsGet<T>(key: string, fallback: T): T {
+  if (typeof window === 'undefined') return fallback;
+  try { const s = localStorage.getItem(key); return s ? (JSON.parse(s) as T) : fallback; } catch { return fallback; }
+}
+function lsSet(key: string, val: unknown) {
+  try { localStorage.setItem(key, JSON.stringify(val)); } catch { /* ignore */ }
 }
 
-function ColumnsPanel({ visible, toggle }: { visible: ColId[]; toggle: (id: ColId) => void }) {
+function loadVisible(): Set<ColId> {
+  return new Set(lsGet<ColId[]>(SK_VIS, COLUMN_DEFS.filter(c => c.defaultOn).map(c => c.id)));
+}
+function loadOrder(): ColId[] {
+  const saved = lsGet<ColId[]>(SK_ORDER, []);
+  const allIds = COLUMN_DEFS.map(c => c.id);
+  if (!saved.length) return [...allIds] as ColId[];
+  const savedSet = new Set(saved);
+  return [
+    ...saved.filter((id): id is ColId => (allIds as readonly string[]).includes(id)),
+    ...allIds.filter(id => !savedSet.has(id)),
+  ];
+}
+function loadWidths(): Partial<Record<ColId, number>> {
+  return lsGet<Partial<Record<ColId, number>>>(SK_WIDTHS, {});
+}
+
+// ── Column state hook ─────────────────────────────────────────────────────────
+function useColState() {
+  const [visibleCols, setVisibleCols] = useState<Set<ColId>>(
+    () => new Set(COLUMN_DEFS.filter(c => c.defaultOn).map(c => c.id)),
+  );
+  const [colOrder, setColOrder] = useState<ColId[]>(() => COLUMN_DEFS.map(c => c.id));
+  const [colWidths, setColWidths] = useState<Partial<Record<ColId, number>>>({});
+
+  useEffect(() => {
+    setVisibleCols(loadVisible());
+    setColOrder(loadOrder());
+    setColWidths(loadWidths());
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const getW = (id: ColId) => colWidths[id] ?? COLUMN_DEFS.find(c => c.id === id)?.defaultW ?? 130;
+
+  const orderedVisible: ColDef[] = colOrder
+    .filter(id => visibleCols.has(id))
+    .map(id => COLUMN_DEFS.find(c => c.id === id)!)
+    .filter(Boolean) as ColDef[];
+
+  const toggle = (id: ColId) => {
+    setVisibleCols(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      lsSet(SK_VIS, [...next]);
+      return next;
+    });
+  };
+
+  return { visibleCols, setVisibleCols, colOrder, setColOrder, colWidths, setColWidths, getW, orderedVisible, toggle };
+}
+
+// ── Visual helpers ────────────────────────────────────────────────────────────
+function GripIcon() {
+  return (
+    <svg className="w-3 h-3 text-slate-400 flex-shrink-0" viewBox="0 0 8 12" fill="currentColor">
+      <circle cx="2" cy="2" r="1.2" /><circle cx="6" cy="2" r="1.2" />
+      <circle cx="2" cy="6" r="1.2" /><circle cx="6" cy="6" r="1.2" />
+      <circle cx="2" cy="10" r="1.2" /><circle cx="6" cy="10" r="1.2" />
+    </svg>
+  );
+}
+function SortIcon({ active, dir }: { active: boolean; dir?: 'asc' | 'desc' }) {
+  if (!active) return (
+    <svg className="w-3 h-3 text-slate-300 flex-shrink-0" viewBox="0 0 12 12" fill="currentColor">
+      <path d="M6 2L9 6H3L6 2Z" /><path d="M6 10L3 6H9L6 10Z" />
+    </svg>
+  );
+  return dir === 'desc'
+    ? <svg className="w-3 h-3 text-[#286FAD] flex-shrink-0" viewBox="0 0 12 12" fill="currentColor"><path d="M6 10L3 4H9L6 10Z" /></svg>
+    : <svg className="w-3 h-3 text-[#286FAD] flex-shrink-0" viewBox="0 0 12 12" fill="currentColor"><path d="M6 2L9 8H3L6 2Z" /></svg>;
+}
+
+function ColumnsPanel({ visibleCols, toggle }: { visibleCols: Set<ColId>; toggle: (id: ColId) => void }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -1028,7 +1092,7 @@ function ColumnsPanel({ visible, toggle }: { visible: ColId[]; toggle: (id: ColI
             <label key={col.id} className="flex items-center gap-2 py-1.5 cursor-pointer text-[13px] text-slate-700 hover:text-slate-900">
               <input
                 type="checkbox"
-                checked={visible.includes(col.id)}
+                checked={visibleCols.has(col.id)}
                 onChange={() => toggle(col.id)}
                 className="rounded border-slate-300 text-[#286FAD] focus:ring-[#286FAD]/20"
               />
@@ -1039,6 +1103,83 @@ function ColumnsPanel({ visible, toggle }: { visible: ColId[]; toggle: (id: ColI
       )}
     </div>
   );
+}
+
+// ─── Cell helpers ─────────────────────────────────────────────────────────────
+
+const CELL_CLS: Record<ColId, string> = {
+  domain:       'px-4 py-2.5 overflow-hidden',
+  item:         'px-4 py-2.5 overflow-hidden',
+  qty_price:    'px-4 py-2.5 text-right overflow-hidden',
+  status:       'px-4 py-2.5 text-center overflow-hidden',
+  last_quote:   'px-4 py-2.5 text-center overflow-hidden',
+  last_invoice: 'px-4 py-2.5 text-center overflow-hidden',
+  reseller:     'px-4 py-2.5 overflow-hidden',
+  gws_recon:    'px-4 py-2.5 text-center overflow-hidden',
+};
+
+const COPY_SVG = (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3">
+    <path d="M5.5 3.5A1.5 1.5 0 0 1 7 2h4.5A1.5 1.5 0 0 1 13 3.5v7a1.5 1.5 0 0 1-1.5 1.5H11v-1h.5a.5.5 0 0 0 .5-.5v-7a.5.5 0 0 0-.5-.5H7a.5.5 0 0 0-.5.5V4H5.5v-.5Z" />
+    <path d="M3 5.5A1.5 1.5 0 0 1 4.5 4h4A1.5 1.5 0 0 1 10 5.5v7A1.5 1.5 0 0 1 8.5 14h-4A1.5 1.5 0 0 1 3 12.5v-7Zm1.5-.5a.5.5 0 0 0-.5.5v7a.5.5 0 0 0 .5.5h4a.5.5 0 0 0 .5-.5v-7a.5.5 0 0 0-.5-.5h-4Z" />
+  </svg>
+);
+
+function renderCell(sub: Subscription, colId: ColId, resellerNames: Record<string, string>): React.ReactNode {
+  switch (colId) {
+    case 'domain':
+      return (
+        <span className="inline-flex items-center gap-1 group max-w-full">
+          <span className="text-[13px] font-mono text-slate-500 group-hover:text-blue-600 transition-colors truncate">{sub.domain.domainName}</span>
+          <button type="button" title="Copy domain name"
+            onClick={e => { e.stopPropagation(); void navigator.clipboard.writeText(sub.domain.domainName); }}
+            className="opacity-0 group-hover:opacity-100 transition-all text-slate-400 group-hover:text-blue-500 hover:text-blue-700 p-0.5 rounded hover:bg-blue-50 flex-shrink-0">
+            {COPY_SVG}
+          </button>
+        </span>
+      );
+    case 'item':
+      return (
+        <>
+          <p className="text-slate-700 text-[13px] leading-snug truncate">{sub.zohoItemName ?? '—'}</p>
+          <p className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1 flex-wrap">
+            {fmt(sub.startDate)} <span className="text-slate-300">→</span> {fmt(sub.endDate)}
+            <span className="text-slate-300">·</span>
+            <span className={`text-[9px] font-bold px-1.5 py-px rounded ${CYCLE_BADGE_CLASS[sub.billingCycle] ?? 'bg-slate-100 text-slate-500'}`}>
+              {cycleLabel(sub.billingCycle)}
+            </span>
+          </p>
+        </>
+      );
+    case 'qty_price':
+      return (
+        <>
+          <p className="text-[13px] text-slate-700 font-medium">{sub.quantity}</p>
+          <p className="text-[11px] text-slate-400">{money(Number(sub.subscriptionPrice), sub.currency)}</p>
+        </>
+      );
+    case 'status':
+      return (
+        <div className="flex flex-col items-center gap-0.5">
+          <StatusBadge status={sub.lifecycleStatus} endDate={sub.endDate} />
+          <ProcessStatusBadge status={sub.processStatus} />
+        </div>
+      );
+    case 'last_quote':
+      return <LastQuoteCell sub={sub} />;
+    case 'last_invoice':
+      return <LastInvoiceCell sub={sub} />;
+    case 'reseller':
+      return sub.domain.googleResellerEmail
+        ? <span className="text-[11px] text-slate-600 font-medium truncate block">{resellerNames[sub.domain.googleResellerEmail] ?? (sub.domain.googleResellerEmail.includes('@') ? sub.domain.googleResellerEmail.split('@')[1] : sub.domain.googleResellerEmail)}</span>
+        : <span className="text-slate-300 text-xs">—</span>;
+    case 'gws_recon':
+      return sub.subscriptionCategory === 'google_workspace'
+        ? sub._count.googleResellerMatches > 0
+          ? <span className="inline-block text-[10px] font-semibold text-green-700 bg-green-50 border border-green-200 px-1.5 py-0.5 rounded">✓ Matched</span>
+          : <span className="inline-block text-[10px] font-semibold text-orange-700 bg-orange-50 border border-orange-200 px-1.5 py-0.5 rounded">✗ Unmatched</span>
+        : <span className="text-slate-300 text-xs">—</span>;
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1056,6 +1197,67 @@ export function SubscriptionsTable({
   categories?: { itemValue: string; itemLabel: string }[];
   resellerNames?: Record<string, string>; // email → display name
 }) {
+  // ── Column state (order, widths, visibility) ─────────────────────────────
+  const { visibleCols, colOrder, setColOrder, colWidths, setColWidths, getW, orderedVisible, toggle } = useColState();
+
+  // ── Sort state from URL ───────────────────────────────────────────────────
+  const searchParams = useSearchParams();
+  const sortBy  = searchParams.get('sortBy')  ?? '';
+  const sortDir = (searchParams.get('sortDir') ?? 'asc') as 'asc' | 'desc';
+
+  const handleSort = (colId: ColId) => {
+    const col = COLUMN_DEFS.find(c => c.id === colId);
+    if (!col?.sortable) return;
+    const cur = sortBy === colId ? sortDir : undefined;
+    const next = cur === 'asc' ? 'desc' : 'asc';
+    const p = new URLSearchParams(searchParams.toString());
+    p.set('sortBy', colId); p.set('sortDir', next); p.delete('page');
+    router.push(`/dashboard/subscriptions?${p.toString()}`);
+  };
+
+  // ── Drag-to-reorder ───────────────────────────────────────────────────────
+  const dragColRef  = useRef<ColId | null>(null);
+  const [dragOverCol, setDragOverCol] = useState<ColId | null>(null);
+
+  const reorderCol = (fromId: ColId, toId: ColId) => {
+    if (fromId === toId) return;
+    const next = [...colOrder];
+    const fi = next.indexOf(fromId), ti = next.indexOf(toId);
+    next.splice(fi, 1); next.splice(ti, 0, fromId);
+    setColOrder(next); lsSet(SK_ORDER, next);
+  };
+
+  // ── Resize columns ────────────────────────────────────────────────────────
+  const resizingRef = useRef<{ id: ColId; startX: number; startW: number } | null>(null);
+
+  const startResize = (e: React.MouseEvent, id: ColId) => {
+    e.preventDefault(); e.stopPropagation();
+    resizingRef.current = { id, startX: e.clientX, startW: getW(id) };
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    const onMove = (ev: MouseEvent) => {
+      if (!resizingRef.current) return;
+      const newW = Math.max(60, resizingRef.current.startW + ev.clientX - resizingRef.current.startX);
+      setColWidths(prev => ({ ...prev, [resizingRef.current!.id]: newW }));
+    };
+    const onUp = () => {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      setColWidths(prev => { lsSet(SK_WIDTHS, prev); return prev; });
+      resizingRef.current = null;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+
+  // ── Table layout ──────────────────────────────────────────────────────────
+  const CUSTOMER_W = 180;
+  const CHECKBOX_W = 44;
+  const ACTIONS_W  = 64;
+  const tableMinWidth = CHECKBOX_W + CUSTOMER_W + orderedVisible.reduce((s, c) => s + getW(c.id), 0) + ACTIONS_W;
+
   const [selectedIds, setSelectedIds] = useState<string[]>(initialSelectedIds ?? []);
   const [isUpdatingPrice, setIsUpdatingPrice] = useState(false);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
@@ -1096,8 +1298,6 @@ export function SubscriptionsTable({
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
-  const { visible, toggle, has } = useColumns();
-
   // Restore pending sync job from sessionStorage (survives page refresh)
   useEffect(() => {
     const savedId = typeof window !== 'undefined' ? sessionStorage.getItem('gSyncJobId') : null;
@@ -1604,7 +1804,7 @@ export function SubscriptionsTable({
           >
             {groupByCustomer ? '▼ Grouped by Customer' : '⊞ Group by Customer'}
           </button>
-          <ColumnsPanel visible={visible} toggle={toggle} />
+          <ColumnsPanel visibleCols={visibleCols} toggle={toggle} />
           {isAdmin && (
             <button
               onClick={handleBulkDelete}
@@ -1727,32 +1927,63 @@ export function SubscriptionsTable({
         </div>
       )}
 
-      {/* Scrollable table — sticky header, both H and V scroll */}
+      {/* Scrollable table — sticky header, H + V scroll, fixed layout */}
       <div className="rounded-xl border border-slate-200 overflow-auto max-h-[calc(100vh-290px)] bg-white">
-        <table className="w-full text-sm min-w-[900px]">
+        <table className="text-sm" style={{ tableLayout: 'fixed', minWidth: tableMinWidth }}>
+          <colgroup>
+            <col style={{ width: CHECKBOX_W }} />
+            <col style={{ width: CUSTOMER_W }} />
+            {orderedVisible.map(col => <col key={col.id} style={{ width: getW(col.id) }} />)}
+            <col style={{ width: ACTIONS_W }} />
+          </colgroup>
           <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
             <tr>
-              <th className="px-4 py-3 text-left w-10">
+              {/* Checkbox */}
+              <th className="px-3 py-3 text-left" style={{ width: CHECKBOX_W }}>
                 <input
                   type="checkbox"
                   checked={selectedIds.length > 0 && selectedIds.length === subscriptions.length}
-                  ref={el => {
-                    if (el) el.indeterminate = selectedIds.length > 0 && selectedIds.length < subscriptions.length;
-                  }}
+                  ref={el => { if (el) el.indeterminate = selectedIds.length > 0 && selectedIds.length < subscriptions.length; }}
                   onChange={toggleAll}
                   className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                 />
               </th>
-              <th className="text-left px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">Customer</th>
-              {has('domain')       && <th className="text-left px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">Domain</th>}
-              {has('item')         && <th className="text-left px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide min-w-[260px]">Item</th>}
-              {has('qty_price')    && <th className="text-right px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">Qty / Price</th>}
-              {has('status')       && <th className="text-center px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">Status</th>}
-              {has('last_quote')   && <th className="text-center px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">Last Quote</th>}
-              {has('last_invoice') && <th className="text-center px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">Last Invoice</th>}
-              {has('reseller')     && <th className="text-left px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">Reseller</th>}
-              {has('gws_recon')    && <th className="text-center px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wide">Recon</th>}
-              <th className="px-4 py-3 w-20"></th>
+              {/* Customer — fixed, always first */}
+              <th className="px-4 py-3 text-left font-semibold text-slate-600 text-xs uppercase tracking-wide" style={{ width: CUSTOMER_W }}>
+                Customer
+              </th>
+              {/* Reorderable columns */}
+              {orderedVisible.map(col => (
+                <th
+                  key={col.id}
+                  style={{ width: getW(col.id) }}
+                  className={`relative group/hdr select-none ${col.sortable ? 'cursor-pointer hover:bg-slate-100/80' : ''} ${dragOverCol === col.id ? 'border-l-2 border-l-blue-500 bg-blue-50/50' : ''}`}
+                  draggable
+                  onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; dragColRef.current = col.id; }}
+                  onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverCol(col.id); }}
+                  onDrop={e => { e.preventDefault(); if (dragColRef.current) reorderCol(dragColRef.current, col.id); setDragOverCol(null); dragColRef.current = null; }}
+                  onDragEnd={() => { setDragOverCol(null); dragColRef.current = null; }}
+                  onClick={() => col.sortable && handleSort(col.id)}
+                >
+                  <div className="flex items-center gap-1.5 px-4 py-3 overflow-hidden">
+                    <span className="opacity-0 group-hover/hdr:opacity-100 transition-opacity flex-shrink-0" title="Drag to reorder">
+                      <GripIcon />
+                    </span>
+                    <span className="truncate font-semibold text-slate-600 text-xs uppercase tracking-wide">{col.label}</span>
+                    {col.sortable && <SortIcon active={sortBy === col.id} dir={sortBy === col.id ? sortDir : undefined} />}
+                  </div>
+                  {/* Resize handle */}
+                  <div
+                    className="absolute right-0 top-0 bottom-0 w-[5px] cursor-col-resize z-10 group/resize"
+                    onMouseDown={e => startResize(e, col.id)}
+                    onClick={e => e.stopPropagation()}
+                  >
+                    <div className="absolute inset-y-2 left-[2px] w-px bg-slate-200 group-hover/resize:bg-blue-400 transition-colors" />
+                  </div>
+                </th>
+              ))}
+              {/* Actions */}
+              <th className="px-3 py-3" style={{ width: ACTIONS_W }} />
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -1775,19 +2006,13 @@ export function SubscriptionsTable({
                             className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                           />
                         </td>
-                        <td colSpan={1 + COLUMN_DEFS.filter((c) => visible.includes(c.id)).length} className="px-4 py-2">
+                        <td colSpan={1 + orderedVisible.length} className="px-4 py-2">
                           <div className="flex items-center gap-3">
-                            <button
-                              onClick={() => toggleGroupCollapse(customerKey)}
-                              className="text-slate-400 hover:text-slate-700 text-[11px] font-bold w-4 text-center shrink-0"
-                            >
+                            <button onClick={() => toggleGroupCollapse(customerKey)} className="text-slate-400 hover:text-slate-700 text-[11px] font-bold w-4 text-center shrink-0">
                               {isCollapsed ? '▶' : '▼'}
                             </button>
                             {firstSub.zohoCustomerId ? (
-                              <Link
-                                href={`/dashboard/customers/${firstSub.zohoCustomerId}?org_id=${firstSub.organization.id}`}
-                                className="font-bold text-blue-700 hover:underline text-[13px]"
-                              >
+                              <Link href={`/dashboard/customers/${firstSub.zohoCustomerId}?org_id=${firstSub.organization.id}`} className="font-bold text-blue-700 hover:underline text-[13px]">
                                 {customerKey}
                               </Link>
                             ) : (
@@ -1800,20 +2025,14 @@ export function SubscriptionsTable({
                         </td>
                         <td className="px-4 py-2 text-right">
                           <div className="flex items-center justify-end gap-1.5">
-                            <button
-                              onClick={() => handleGroupQuote(groupSubs)}
-                              disabled={isQuoting}
-                              className="px-3 py-1 bg-blue-600 text-white text-[11px] font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-50 whitespace-nowrap"
-                            >
+                            <button onClick={() => handleGroupQuote(groupSubs)} disabled={isQuoting}
+                              className="px-3 py-1 bg-blue-600 text-white text-[11px] font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-50 whitespace-nowrap">
                               {isQuoting ? 'Generating…' : 'Generate Quote'}
                             </button>
                             {groupSubs.length > 1 && (
-                              <button
-                                onClick={() => handleGroupCombinedQuote(groupSubs)}
-                                disabled={isQuoting}
-                                title="One combined estimate — all subscriptions as separate line items (different renewal dates allowed)"
-                                className="px-3 py-1 bg-violet-600 text-white text-[11px] font-semibold rounded-lg hover:bg-violet-700 disabled:opacity-50 whitespace-nowrap"
-                              >
+                              <button onClick={() => handleGroupCombinedQuote(groupSubs)} disabled={isQuoting}
+                                title="One combined estimate — all subscriptions as separate line items"
+                                className="px-3 py-1 bg-violet-600 text-white text-[11px] font-semibold rounded-lg hover:bg-violet-700 disabled:opacity-50 whitespace-nowrap">
                                 🔗 Combined
                               </button>
                             )}
@@ -1822,123 +2041,33 @@ export function SubscriptionsTable({
                       </tr>
                       {/* Group subscription rows */}
                       {!isCollapsed && groupSubs.map((sub) => {
-                        const days = daysUntil(sub.endDate);
-                        const isUrgent = days <= 30 && days >= 0;
                         const isSelected = selectedIds.includes(sub.id);
                         return (
-                          <tr
-                            key={sub.id}
-                            onClick={() => router.push(`/dashboard/subscriptions/${sub.id}`)}
-                            className={`transition-colors cursor-pointer ${isSelected ? 'bg-blue-50/60' : 'hover:bg-slate-50/80'}`}
-                          >
+                          <tr key={sub.id} onClick={() => router.push(`/dashboard/subscriptions/${sub.id}`)}
+                            className={`transition-colors cursor-pointer ${isSelected ? 'bg-blue-50/60' : 'hover:bg-slate-50/80'}`}>
                             <td className="px-4 py-2.5 pl-9" onClick={e => e.stopPropagation()}>
-                              <input
-                                type="checkbox"
-                                checked={isSelected}
-                                onChange={() => toggleOne(sub.id)}
-                                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                              />
+                              <input type="checkbox" checked={isSelected} onChange={() => toggleOne(sub.id)} className="rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
                             </td>
-                            {/* Customer col (always) — org name; customer shown in group header */}
-                            <td className="px-4 py-2.5">
-                              <p className="text-[11px] text-slate-400">{sub.organization.name}</p>
+                            {/* Customer (org name in grouped view) */}
+                            <td className="px-4 py-2.5 overflow-hidden">
+                              <p className="text-[11px] text-slate-400 truncate">{sub.organization.name}</p>
                             </td>
-                            {has('domain') && (
-                              <td className="px-4 py-2.5" onClick={e => e.stopPropagation()}>
-                                <span className="inline-flex items-center gap-1 group">
-                                  <span className="text-[13px] font-mono text-slate-500 group-hover:text-blue-600 transition-colors">{sub.domain.domainName}</span>
-                                  <button
-                                    type="button"
-                                    title="Copy domain name"
-                                    onClick={() => void navigator.clipboard.writeText(sub.domain.domainName)}
-                                    className="opacity-0 group-hover:opacity-100 transition-all text-slate-400 group-hover:text-blue-500 hover:text-blue-700 p-0.5 group-hover:p-1 rounded hover:bg-blue-50"
-                                  >
-                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 group-hover:w-3.5 group-hover:h-3.5 transition-all">
-                                      <path d="M5.5 3.5A1.5 1.5 0 0 1 7 2h4.5A1.5 1.5 0 0 1 13 3.5v7a1.5 1.5 0 0 1-1.5 1.5H11v-1h.5a.5.5 0 0 0 .5-.5v-7a.5.5 0 0 0-.5-.5H7a.5.5 0 0 0-.5.5V4H5.5v-.5Z" />
-                                      <path d="M3 5.5A1.5 1.5 0 0 1 4.5 4h4A1.5 1.5 0 0 1 10 5.5v7A1.5 1.5 0 0 1 8.5 14h-4A1.5 1.5 0 0 1 3 12.5v-7Zm1.5-.5a.5.5 0 0 0-.5.5v7a.5.5 0 0 0 .5.5h4a.5.5 0 0 0 .5-.5v-7a.5.5 0 0 0-.5-.5h-4Z" />
-                                    </svg>
-                                  </button>
-                                </span>
+                            {orderedVisible.map(col => (
+                              <td key={col.id} style={{ width: getW(col.id) }} className={CELL_CLS[col.id]}
+                                  onClick={col.id === 'domain' ? e => e.stopPropagation() : undefined}>
+                                {renderCell(sub, col.id, resellerNames)}
                               </td>
-                            )}
-                            {has('item') && (
-                              <td className="px-4 py-2.5 min-w-[260px]">
-                                <p className="text-slate-700 text-[13px] leading-snug">{sub.zohoItemName ?? '—'}</p>
-                                <p className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1 flex-wrap">
-                                  {fmt(sub.startDate)} <span className="text-slate-300">→</span> {fmt(sub.endDate)}
-                                  <span className="text-slate-300">·</span>
-                                  <span className={`text-[9px] font-bold px-1.5 py-px rounded ${CYCLE_BADGE_CLASS[sub.billingCycle] ?? 'bg-slate-100 text-slate-500'}`}>
-                                    {cycleLabel(sub.billingCycle)}
-                                  </span>
-                                </p>
-                              </td>
-                            )}
-                            {has('qty_price') && (
-                              <td className="px-4 py-2.5 text-right">
-                                <p className="text-[13px] text-slate-700 font-medium">{sub.quantity}</p>
-                                <p className="text-[11px] text-slate-400">{money(Number(sub.subscriptionPrice), sub.currency)}</p>
-                              </td>
-                            )}
-                            {has('status') && (
-                              <td className="px-4 py-2.5 text-center">
-                                <div className="flex flex-col items-center gap-0.5">
-                                  <StatusBadge status={sub.lifecycleStatus} endDate={sub.endDate} />
-                                  <ProcessStatusBadge status={sub.processStatus} />
-                                </div>
-                              </td>
-                            )}
-                            {has('last_quote') && (
-                              <td className="px-4 py-2.5 text-center">
-                                <LastQuoteCell sub={sub} />
-                              </td>
-                            )}
-                            {has('last_invoice') && (
-                              <td className="px-4 py-2.5 text-center">
-                                <LastInvoiceCell sub={sub} />
-                              </td>
-                            )}
-                            {has('reseller') && (
-                              <td className="px-4 py-2.5">
-                                {sub.domain.googleResellerEmail
-                                  ? <span className="text-[11px] text-slate-600 font-medium">{resellerNames[sub.domain.googleResellerEmail] ?? (sub.domain.googleResellerEmail.includes('@') ? sub.domain.googleResellerEmail.split('@')[1] : sub.domain.googleResellerEmail)}</span>
-                                  : <span className="text-slate-300 text-xs">—</span>
-                                }
-                              </td>
-                            )}
-                            {has('gws_recon') && (
-                              <td className="px-4 py-2.5 text-center">
-                                {sub.subscriptionCategory === 'Google Workspace'
-                                  ? sub._count.googleResellerMatches > 0
-                                    ? <span className="inline-block text-[10px] font-semibold text-green-700 bg-green-50 border border-green-200 px-1.5 py-0.5 rounded">✓ Matched</span>
-                                    : <span className="inline-block text-[10px] font-semibold text-orange-700 bg-orange-50 border border-orange-200 px-1.5 py-0.5 rounded">✗ Unmatched</span>
-                                  : <span className="text-slate-300 text-xs">—</span>
-                                }
-                              </td>
-                            )}
-                            <td className="px-4 py-2.5" onClick={e => e.stopPropagation()}>
+                            ))}
+                            <td className="px-3 py-2.5" onClick={e => e.stopPropagation()}>
                               <div className="flex items-center justify-end gap-1.5">
                                 {sub.zohoItemName?.toLowerCase().includes('google workspace') && (
-                                  <GoogleResellerButton domainId={sub.domain.id} domainName={sub.domain.domainName} googleCustomerId={sub.domain.googleCustomerId} showAlert={sub.subscriptionCategory === 'Google Workspace' && sub._count.googleResellerMatches === 0} />
+                                  <GoogleResellerButton domainId={sub.domain.id} domainName={sub.domain.domainName} googleCustomerId={sub.domain.googleCustomerId} showAlert={sub.subscriptionCategory === 'google_workspace' && sub._count.googleResellerMatches === 0} />
                                 )}
                                 <RowCommentsButton subscriptionId={sub.id} commentCount={sub._count.comments} />
-                                <EditSubscriptionButton
-                                  iconOnly
-                                  subscriptionId={sub.id}
-                                  itemId={sub.zohoItemId}
-                                  itemName={sub.zohoItemName ?? ''}
-                                  orgId={sub.organization.id}
-                                  quantity={Number(sub.quantity)}
-                                  currency={sub.currency ?? 'INR'}
-                                  exchangeRate={Number(sub.exchangeRate ?? 1)}
-                                  billingCycle={sub.billingCycle}
-                                  price={Number(sub.subscriptionPrice)}
-                                  nextRenewalPrice={sub.nextRenewalPrice !== null ? Number(sub.nextRenewalPrice) : null}
-                                  startDate={sub.startDate}
-                                  endDate={sub.endDate}
-                                  autoRenew={sub.autoRenew}
-                                  lastQuoteNumber={sub.lastQuoteNumber}
-                                  lastInvoiceNumber={sub.lastInvoiceNumber}
-                                />
+                                <EditSubscriptionButton iconOnly subscriptionId={sub.id} itemId={sub.zohoItemId} itemName={sub.zohoItemName ?? ''} orgId={sub.organization.id}
+                                  quantity={Number(sub.quantity)} currency={sub.currency ?? 'INR'} exchangeRate={Number(sub.exchangeRate ?? 1)} billingCycle={sub.billingCycle}
+                                  price={Number(sub.subscriptionPrice)} nextRenewalPrice={sub.nextRenewalPrice !== null ? Number(sub.nextRenewalPrice) : null}
+                                  startDate={sub.startDate} endDate={sub.endDate} autoRenew={sub.autoRenew} lastQuoteNumber={sub.lastQuoteNumber} lastInvoiceNumber={sub.lastInvoiceNumber} />
                               </div>
                             </td>
                           </tr>
@@ -1948,138 +2077,41 @@ export function SubscriptionsTable({
                   );
                 })
               : subscriptions.map((sub) => {
-                  const days = daysUntil(sub.endDate);
-                  const isUrgent = days <= 30 && days >= 0;
                   const isSelected = selectedIds.includes(sub.id);
                   return (
-                    <tr
-                      key={sub.id}
-                      onClick={() => router.push(`/dashboard/subscriptions/${sub.id}`)}
-                      className={`transition-colors cursor-pointer ${isSelected ? 'bg-blue-50/60' : 'hover:bg-slate-50/80'}`}
-                    >
+                    <tr key={sub.id} onClick={() => router.push(`/dashboard/subscriptions/${sub.id}`)}
+                      className={`transition-colors cursor-pointer ${isSelected ? 'bg-blue-50/60' : 'hover:bg-slate-50/80'}`}>
                       <td className="px-4 py-2.5" onClick={e => e.stopPropagation()}>
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={() => toggleOne(sub.id)}
-                          className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                        />
+                        <input type="checkbox" checked={isSelected} onChange={() => toggleOne(sub.id)} className="rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
                       </td>
-                      {/* Customer (always visible) */}
-                      <td className="px-4 py-2.5" onClick={e => e.stopPropagation()}>
+                      {/* Customer (full in flat view) */}
+                      <td className="px-4 py-2.5 overflow-hidden" onClick={e => e.stopPropagation()}>
                         {sub.zohoCustomerId ? (
-                          <Link
-                            href={`/dashboard/customers/${sub.zohoCustomerId}?org_id=${sub.organization.id}`}
-                            className="font-semibold text-blue-700 hover:underline truncate max-w-48 block text-[13px]"
-                          >
+                          <Link href={`/dashboard/customers/${sub.zohoCustomerId}?org_id=${sub.organization.id}`}
+                            className="font-semibold text-blue-700 hover:underline truncate block text-[13px]">
                             {sub.zohoCustomerName ?? '—'}
                           </Link>
                         ) : (
-                          <p className="font-semibold text-slate-800 truncate max-w-48 text-[13px]">
-                            {sub.zohoCustomerName ?? '—'}
-                          </p>
+                          <p className="font-semibold text-slate-800 truncate text-[13px]">{sub.zohoCustomerName ?? '—'}</p>
                         )}
-                        <p className="text-[11px] text-slate-400 mt-0.5">{sub.organization.name}</p>
+                        <p className="text-[11px] text-slate-400 mt-0.5 truncate">{sub.organization.name}</p>
                       </td>
-                      {/* Domain column (optional) */}
-                      {has('domain') && (
-                        <td className="px-4 py-2.5" onClick={e => e.stopPropagation()}>
-                          <span className="inline-flex items-center gap-1 group">
-                            <span className="text-[13px] font-mono text-slate-500 group-hover:text-blue-600 transition-colors">{sub.domain.domainName}</span>
-                            <button
-                              type="button"
-                              title="Copy domain name"
-                              onClick={() => void navigator.clipboard.writeText(sub.domain.domainName)}
-                              className="opacity-0 group-hover:opacity-100 transition-all text-slate-400 group-hover:text-blue-500 hover:text-blue-700 p-0.5 group-hover:p-1 rounded hover:bg-blue-50"
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 group-hover:w-3.5 group-hover:h-3.5 transition-all">
-                                <path d="M5.5 3.5A1.5 1.5 0 0 1 7 2h4.5A1.5 1.5 0 0 1 13 3.5v7a1.5 1.5 0 0 1-1.5 1.5H11v-1h.5a.5.5 0 0 0 .5-.5v-7a.5.5 0 0 0-.5-.5H7a.5.5 0 0 0-.5.5V4H5.5v-.5Z" />
-                                <path d="M3 5.5A1.5 1.5 0 0 1 4.5 4h4A1.5 1.5 0 0 1 10 5.5v7A1.5 1.5 0 0 1 8.5 14h-4A1.5 1.5 0 0 1 3 12.5v-7Zm1.5-.5a.5.5 0 0 0-.5.5v7a.5.5 0 0 0 .5.5h4a.5.5 0 0 0 .5-.5v-7a.5.5 0 0 0-.5-.5h-4Z" />
-                              </svg>
-                            </button>
-                          </span>
+                      {orderedVisible.map(col => (
+                        <td key={col.id} style={{ width: getW(col.id) }} className={CELL_CLS[col.id]}
+                            onClick={col.id === 'domain' ? e => e.stopPropagation() : undefined}>
+                          {renderCell(sub, col.id, resellerNames)}
                         </td>
-                      )}
-                      {has('item') && (
-                        <td className="px-4 py-2.5 min-w-[260px]">
-                          <p className="text-slate-700 text-[13px] leading-snug">{sub.zohoItemName ?? '—'}</p>
-                          <p className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1 flex-wrap">
-                            {fmt(sub.startDate)} <span className="text-slate-300">→</span> {fmt(sub.endDate)}
-                            <span className="text-slate-300">·</span>
-                            <span className={`text-[9px] font-bold px-1.5 py-px rounded ${CYCLE_BADGE_CLASS[sub.billingCycle] ?? 'bg-slate-100 text-slate-500'}`}>
-                              {cycleLabel(sub.billingCycle)}
-                            </span>
-                          </p>
-                        </td>
-                      )}
-                      {has('qty_price') && (
-                        <td className="px-4 py-2.5 text-right">
-                          <p className="text-[13px] text-slate-700 font-medium">{sub.quantity}</p>
-                          <p className="text-[11px] text-slate-400">{money(Number(sub.subscriptionPrice), sub.currency)}</p>
-                        </td>
-                      )}
-                      {has('status') && (
-                        <td className="px-4 py-2.5 text-center">
-                          <div className="flex flex-col items-center gap-0.5">
-                            <StatusBadge status={sub.lifecycleStatus} endDate={sub.endDate} />
-                            <ProcessStatusBadge status={sub.processStatus} />
-                          </div>
-                        </td>
-                      )}
-                      {has('last_quote') && (
-                        <td className="px-4 py-2.5 text-center">
-                          <LastQuoteCell sub={sub} />
-                        </td>
-                      )}
-                      {has('last_invoice') && (
-                        <td className="px-4 py-2.5 text-center">
-                          {sub.lastInvoiceNumber
-                            ? <p className="text-[11px] font-mono text-slate-600">{sub.lastInvoiceNumber}</p>
-                            : <p className="text-[11px] text-slate-300">—</p>}
-                        </td>
-                      )}
-                      {has('reseller') && (
-                        <td className="px-4 py-2.5">
-                          {sub.domain.googleResellerEmail
-                            ? <span className="text-[11px] text-slate-600 font-medium">{resellerNames[sub.domain.googleResellerEmail] ?? (sub.domain.googleResellerEmail.includes('@') ? sub.domain.googleResellerEmail.split('@')[1] : sub.domain.googleResellerEmail)}</span>
-                            : <span className="text-slate-300 text-xs">—</span>
-                          }
-                        </td>
-                      )}
-                      {has('gws_recon') && (
-                        <td className="px-4 py-2.5 text-center">
-                          {sub.subscriptionCategory === 'Google Workspace'
-                            ? sub._count.googleResellerMatches > 0
-                              ? <span className="inline-block text-[10px] font-semibold text-green-700 bg-green-50 border border-green-200 px-1.5 py-0.5 rounded">✓ Matched</span>
-                              : <span className="inline-block text-[10px] font-semibold text-orange-700 bg-orange-50 border border-orange-200 px-1.5 py-0.5 rounded">✗ Unmatched</span>
-                            : <span className="text-slate-300 text-xs">—</span>
-                          }
-                        </td>
-                      )}
-                      <td className="px-4 py-2.5" onClick={e => e.stopPropagation()}>
+                      ))}
+                      <td className="px-3 py-2.5" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-1.5">
                           {sub.zohoItemName?.toLowerCase().includes('google workspace') && (
-                            <GoogleResellerButton domainId={sub.domain.id} domainName={sub.domain.domainName} googleCustomerId={sub.domain.googleCustomerId} showAlert={sub.subscriptionCategory === 'Google Workspace' && sub._count.googleResellerMatches === 0} />
+                            <GoogleResellerButton domainId={sub.domain.id} domainName={sub.domain.domainName} googleCustomerId={sub.domain.googleCustomerId} showAlert={sub.subscriptionCategory === 'google_workspace' && sub._count.googleResellerMatches === 0} />
                           )}
                           <RowCommentsButton subscriptionId={sub.id} commentCount={sub._count.comments} />
-                          <EditSubscriptionButton
-                            iconOnly
-                            subscriptionId={sub.id}
-                            itemId={sub.zohoItemId}
-                            itemName={sub.zohoItemName ?? ''}
-                            orgId={sub.organization.id}
-                            quantity={Number(sub.quantity)}
-                            currency={sub.currency ?? 'INR'}
-                            exchangeRate={Number(sub.exchangeRate ?? 1)}
-                            billingCycle={sub.billingCycle}
-                            price={Number(sub.subscriptionPrice)}
-                            nextRenewalPrice={sub.nextRenewalPrice !== null ? Number(sub.nextRenewalPrice) : null}
-                            startDate={sub.startDate}
-                            endDate={sub.endDate}
-                            autoRenew={sub.autoRenew}
-                            lastQuoteNumber={sub.lastQuoteNumber}
-                            lastInvoiceNumber={sub.lastInvoiceNumber}
-                          />
+                          <EditSubscriptionButton iconOnly subscriptionId={sub.id} itemId={sub.zohoItemId} itemName={sub.zohoItemName ?? ''} orgId={sub.organization.id}
+                            quantity={Number(sub.quantity)} currency={sub.currency ?? 'INR'} exchangeRate={Number(sub.exchangeRate ?? 1)} billingCycle={sub.billingCycle}
+                            price={Number(sub.subscriptionPrice)} nextRenewalPrice={sub.nextRenewalPrice !== null ? Number(sub.nextRenewalPrice) : null}
+                            startDate={sub.startDate} endDate={sub.endDate} autoRenew={sub.autoRenew} lastQuoteNumber={sub.lastQuoteNumber} lastInvoiceNumber={sub.lastInvoiceNumber} />
                         </div>
                       </td>
                     </tr>

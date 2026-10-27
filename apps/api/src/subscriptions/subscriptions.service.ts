@@ -55,10 +55,13 @@ export class SubscriptionsService {
     domainId?: string;
     renewalStatus?: string;
     category?: string;
+    reconStatus?: string;
+    sortBy?: string;
+    sortDir?: string;
     page?: number;
     limit?: number;
   }) {
-    const { orgId, status, billingCycle, expiringDays, expiringOn, search, ids, domainId, renewalStatus, category, page = 1, limit = 20 } = params;
+    const { orgId, status, billingCycle, expiringDays, expiringOn, search, ids, domainId, renewalStatus, category, reconStatus, sortBy, sortDir, page = 1, limit = 20 } = params;
     const skip = (page - 1) * limit;
 
     const where: Record<string, unknown> = {};
@@ -88,10 +91,29 @@ export class SubscriptionsService {
       where.processStatus   = 'Renewal_Paid';
     }
 
+    if (reconStatus === 'matched') {
+      where.googleResellerMatches = { some: {} };
+    } else if (reconStatus === 'unmatched') {
+      where.subscriptionCategory  = 'google_workspace';
+      where.googleResellerMatches = { none: {} };
+    }
+
+    const dir = sortDir === 'desc' ? 'desc' : 'asc';
+    const orderBy: Prisma.SubscriptionOrderByWithRelationInput = (() => {
+      switch (sortBy) {
+        case 'domain':       return { domain: { domainName: dir } };
+        case 'item':         return { zohoItemName: dir };
+        case 'status':       return { lifecycleStatus: dir };
+        case 'last_quote':   return { lastQuoteDate: dir };
+        case 'last_invoice': return { lastInvoiceDate: dir };
+        default:             return { endDate: 'asc' };
+      }
+    })();
+
     const [subscriptions, total] = await Promise.all([
       this.prisma.subscription.findMany({
         where,
-        orderBy: { endDate: 'asc' },
+        orderBy,
         skip,
         take: limit,
         include: {

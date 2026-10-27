@@ -31,6 +31,9 @@ export class SubscriptionsController {
     @Query('domain_id')      domainId?: string,
     @Query('renewal_status') renewalStatus?: string,
     @Query('category')       category?: string,
+    @Query('recon_status')   reconStatus?: string,
+    @Query('sort_by')        sortBy?: string,
+    @Query('sort_dir')       sortDir?: string,
     @Query('page')           page?: string,
     @Query('limit')          limit?: string,
   ) {
@@ -45,6 +48,9 @@ export class SubscriptionsController {
       domainId,
       renewalStatus,
       category,
+      reconStatus,
+      sortBy,
+      sortDir,
       page:  page  ? Number(page)  : 1,
       limit: limit ? Number(limit) : 20,
     });
