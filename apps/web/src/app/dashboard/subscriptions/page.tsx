@@ -34,7 +34,8 @@ interface Subscription {
   lastInvoiceDate: string | null;
   organization: { id: string; name: string; zohoOrgId: string; dataCenter: string };
   domain: { id: string; domainName: string; googleCustomerId: string | null; googleResellerEmail: string | null };
-  _count: { renewalHistory: number; comments: number };
+  subscriptionCategory: string | null;
+  _count: { renewalHistory: number; comments: number; googleResellerMatches: number };
   renewalHistory: {
     id: string; quoteNumber: string | null; quoteDate: string | null;
     quantity: string | null; sellingPrice: string | null; subtotalAmount: string | null;

@@ -97,7 +97,7 @@ export class SubscriptionsService {
         include: {
           organization: { select: { id: true, name: true, zohoOrgId: true, dataCenter: true } },
           domain:       { select: { id: true, domainName: true, googleCustomerId: true, googleResellerEmail: true } },
-          _count:       { select: { renewalHistory: true, comments: true } },
+          _count:       { select: { renewalHistory: true, comments: true, googleResellerMatches: true } },
           renewalHistory: {
             orderBy: { createdAt: 'desc' },
             take: 15,
