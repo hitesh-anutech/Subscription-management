@@ -250,6 +250,7 @@ export default function CustomerSubscriptions({
   const [gSyncStatus, setGSyncStatus] = useState<SyncJobStatus | null>(null);
   const [reconBusy, setReconBusy] = useState(false);
   const [reconResult, setReconResult] = useState<{ matched: number; total: number } | null>(null);
+  const [collapsed, setCollapsed] = useState(false);
 
   // Search + filters (client-side — the list is already loaded)
   const [query, setQuery] = useState('');
@@ -469,10 +470,16 @@ export default function CustomerSubscriptions({
   return (
     <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
       {/* Section header with the two right-aligned action buttons */}
-      <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between flex-wrap gap-2">
-        <h2 className="text-sm font-semibold text-slate-700">
-          📄 Active Subscriptions ({subscriptions.length})
-        </h2>
+      <div className={`px-5 py-3.5 flex items-center justify-between flex-wrap gap-2 ${collapsed ? '' : 'border-b border-slate-100'}`}>
+        <button
+          onClick={() => setCollapsed(c => !c)}
+          className="flex items-center gap-2 text-left group"
+        >
+          <span className={`text-slate-400 text-xs transition-transform duration-200 ${collapsed ? '' : 'rotate-90'}`}>▶</span>
+          <h2 className="text-sm font-semibold text-slate-700 group-hover:text-slate-900">
+            📄 Active Subscriptions ({subscriptions.length})
+          </h2>
+        </button>
         <div className="flex items-center gap-2">
           <Link
             href={newSubHref as any}
@@ -602,6 +609,8 @@ export default function CustomerSubscriptions({
           onClose={() => setShowTransfer(false)}
         />
       )}
+
+      {!collapsed && (<>
 
       {result && (
         <div
@@ -885,6 +894,8 @@ export default function CustomerSubscriptions({
           </table>
         </div>
       )}
+
+      </>)}
     </div>
   );
 }

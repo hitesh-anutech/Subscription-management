@@ -369,7 +369,7 @@ export default async function CustomerDetailPage({
       />
 
       {/* ── Mapped Domains (collapsible — native <details>, no JS needed) ── */}
-      <details className="bg-white border border-slate-200 rounded-xl overflow-hidden group">
+      <details open className="bg-white border border-slate-200 rounded-xl overflow-hidden group">
         <summary className="px-5 py-3.5 flex items-center justify-between cursor-pointer select-none hover:bg-slate-50 list-none [&::-webkit-details-marker]:hidden">
           <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
             <span className="text-slate-400 text-xs transition-transform group-open:rotate-90">▶</span>
