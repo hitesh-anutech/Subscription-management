@@ -41,6 +41,7 @@ interface Sub {
   lastInvoiceId: string | null; lastInvoiceNumber: string | null; lastInvoiceDate: string | null;
   domain: { id: string; domainName: string; googleCustomerId: string | null } | null;
   _count: { googleResellerMatches: number };
+  googleResellerMatches: { reconciliationFlags: string[] }[];
 }
 interface Dom { id: string; domainName: string; createdAt: string }
 interface Quote {

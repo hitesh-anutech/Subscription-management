@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { GoogleWorkspaceService, GoogleCustomer, GoogleSubscription } from './google-workspace.service';
 
@@ -479,14 +480,24 @@ export class GoogleResellerSubsService {
   // ------------------------------------------------------------------
   // Reconciliation
   // ------------------------------------------------------------------
-  async reconcile(params: { id?: string; orgId?: string }): Promise<ReconcileResult> {
-    const orgId = await this.resolveOrgId(params.orgId);
+  async reconcile(params: { id?: string; orgId?: string; domainNames?: string[] }): Promise<ReconcileResult> {
+    let where: Prisma.GoogleResellerSubscriptionWhereInput;
+
+    if (params.id) {
+      where = { id: params.id };
+    } else if (params.domainNames?.length) {
+      // Domain-targeted reconcile: cross-org, filter by specific domain names
+      where = {
+        customerDomain: { in: params.domainNames, mode: 'insensitive' },
+        reconciliationStatus: { not: 'excluded' },
+      };
+    } else {
+      const orgId = await this.resolveOrgId(params.orgId);
+      where = { organizationId: orgId, reconciliationStatus: { not: 'excluded' } };
+    }
 
     const rows = await this.prisma.googleResellerSubscription.findMany({
-      where: {
-        organizationId: orgId,
-        ...(params.id ? { id: params.id } : { reconciliationStatus: { not: 'excluded' } }),
-      },
+      where,
       select: { id: true, customerDomain: true, additionalDomains: true, skuName: true, seatsLicensed: true },
     });
 
@@ -567,6 +578,29 @@ export class GoogleResellerSubsService {
       await this.prisma.googleResellerSubscription.update({
         where: { id: row.id },
         data: { reconciliationStatus: 'matched', reconciliationFlags: flags, matchedDomainId: matchedDomain.id, matchedSubscriptionId: appSub.id, matchedDomainName: matchedDomain.domainName, appSeats, reconciledAt: new Date() },
+      });
+      return 'matched';
+    }
+
+    // Secondary fallback: domain matched but plan name didn't — look for any GWS subscription on this domain
+    const fallbackSub = await this.prisma.subscription.findFirst({
+      where: {
+        domainId: { in: domainIds },
+        zohoItemName: { contains: 'Google Workspace', mode: 'insensitive' },
+        lifecycleStatus: { notIn: ['Cancelled', 'Inactive'] },
+      },
+      select: { id: true, quantity: true, zohoItemName: true, domainId: true },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (fallbackSub) {
+      flags.push('plan_mismatch');
+      const appSeats = Number(fallbackSub.quantity);
+      if (row.seatsLicensed !== null && row.seatsLicensed !== appSeats) flags.push('seats_mismatch');
+      const fallbackDomain = domains.find((d) => d.id === fallbackSub.domainId) ?? matchedDomain;
+      await this.prisma.googleResellerSubscription.update({
+        where: { id: row.id },
+        data: { reconciliationStatus: 'matched', reconciliationFlags: flags, matchedDomainId: fallbackDomain.id, matchedSubscriptionId: fallbackSub.id, matchedDomainName: fallbackDomain.domainName, appSeats, reconciledAt: new Date() },
       });
       return 'matched';
     }

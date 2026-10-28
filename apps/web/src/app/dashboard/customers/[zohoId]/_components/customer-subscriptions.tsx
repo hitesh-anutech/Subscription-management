@@ -187,6 +187,7 @@ interface Sub {
   lastInvoiceNumber: string | null;
   domain: { id: string; domainName: string; googleCustomerId: string | null } | null;
   _count: { googleResellerMatches: number };
+  googleResellerMatches: { reconciliationFlags: string[] }[];
 }
 
 interface SyncJobStatus {
@@ -443,10 +444,17 @@ export default function CustomerSubscriptions({
   const handleRunRecon = async () => {
     setReconBusy(true); setReconResult(null);
     try {
+      const selectedGwsDomainNames = [...new Set(
+        subscriptions.filter(s => selectedIds.includes(s.id) && isGws(s) && s.domain).map(s => s.domain!.domainName)
+      )];
+      const allGwsDomainNames = [...new Set(
+        subscriptions.filter(s => isGws(s) && s.domain).map(s => s.domain!.domainName)
+      )];
+      const reconDomainNames = selectedGwsDomainNames.length > 0 ? selectedGwsDomainNames : allGwsDomainNames;
       const res = await fetch(`${API_BASE}/google-workspace/reseller-subs/reconcile`, {
         method: 'POST', credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orgId }),
+        body: JSON.stringify({ domainNames: reconDomainNames }),
       });
       if (!res.ok) throw new Error('Recon failed');
       const data = await res.json() as { matched: number; total: number };
@@ -698,6 +706,7 @@ export default function CustomerSubscriptions({
                 <th className="px-4 py-2.5 text-xs font-semibold text-slate-500">Domain</th>
                 <th className="px-4 py-2.5 text-xs font-semibold text-slate-500 text-right whitespace-nowrap">Qty / Price</th>
                 <th className="px-4 py-2.5 text-xs font-semibold text-slate-500 whitespace-nowrap">Last Quote / Invoice</th>
+                <th className="px-4 py-2.5 text-xs font-semibold text-slate-500 text-center whitespace-nowrap">Recon</th>
                 <th className="px-4 py-2.5 text-xs font-semibold text-slate-500 text-right">Actions</th>
               </tr>
             </thead>
@@ -817,13 +826,21 @@ export default function CustomerSubscriptions({
                         }
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
+                    <td className="px-4 py-3 text-center">
+                      <div className="flex flex-col items-center gap-0.5">
                         {s.subscriptionCategory === 'google_workspace' && (
                           s._count.googleResellerMatches > 0
                             ? <span className="inline-block text-[10px] font-semibold text-green-700 bg-green-50 border border-green-200 px-1.5 py-0.5 rounded">✓ Matched</span>
-                            : <span className="inline-block text-[10px] font-semibold text-orange-700 bg-orange-50 border border-orange-200 px-1.5 py-0.5 rounded">✗ Unmatched</span>
+                            : <span className="inline-block text-[10px] font-bold text-red-700 bg-red-100 border border-red-400 px-1.5 py-0.5 rounded">✗ Unmatched</span>
                         )}
+                        {s.googleResellerMatches?.[0]?.reconciliationFlags?.includes('plan_mismatch') && (
+                          <span className="inline-block text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded" title="Matched on domain only — plan names differ between Google and local subscription">⚠ Plan Mismatch</span>
+                        )}
+                        {!isGws(s) && <span className="text-slate-300 text-xs">—</span>}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-1.5">
                         {s.domain && (
                           <GoogleResellerButton
                             domainId={s.domain.id}

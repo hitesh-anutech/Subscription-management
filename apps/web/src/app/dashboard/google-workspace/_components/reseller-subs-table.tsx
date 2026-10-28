@@ -139,6 +139,11 @@ function ReconStatusBadge({ status, flags, googleSeats, appSeats }: {
           ~ alias
         </span>
       )}
+      {flags.includes('plan_mismatch') && (
+        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium bg-amber-50 text-amber-700 border border-amber-200" title="Matched on domain only — plan names differ between Google and local subscription">
+          ⚠ Plan Mismatch
+        </span>
+      )}
     </div>
   );
 }
@@ -933,7 +938,7 @@ export function ResellerSubsTable({ rows, total, page, limit, totalPages, summar
             <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Flag</label>
             <select value={filters.hasFlag ?? ''} onChange={e => updateFilter('hasFlag', e.target.value || undefined)}
               className="border border-gray-300 rounded-md px-2.5 py-1.5 text-[13px] bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 min-w-[150px]">
-              <option value="">All</option><option value="seats_mismatch">⚠ Seats Mismatch</option><option value="domain_alias_match">~ Alias Match</option>
+              <option value="">All</option><option value="seats_mismatch">⚠ Seats Mismatch</option><option value="plan_mismatch">⚠ Plan Mismatch</option><option value="domain_alias_match">~ Alias Match</option>
             </select>
           </div>
           <div className="flex flex-col gap-1">
