@@ -1218,42 +1218,42 @@ export class ZohoService {
       where: { uq_zoho_cache_entity: { organizationId: orgId, entityType: 'customer', zohoId } },
     });
 
+    if (!customer) throw new NotFoundException(`Customer ${zohoId} not found in this organisation`);
+
     // The cached summary lacks billing_address / contact_persons / contact_number,
     // so pull the full Zoho contact and merge it into `extra` for the detail view.
     // Non-fatal: on failure we fall back to whatever is cached.
     let customerOut = customer;
-    if (customer) {
-      // PERF_PLAN #5: skip the live Zoho contact fetch when the cached copy is both
-      // COMPLETE (a full-contact sync stored billing_address; the list-sync doesn't)
-      // and FRESH (within CONTACT_TTL). Otherwise fetch once and persist it back to
-      // zoho_cache so subsequent page views are served from cache (0 Zoho calls).
-      const extra = (customer.extra ?? {}) as Record<string, unknown>;
-      const hasFull = !!extra.billing_address;
-      const ageMs = Date.now() - new Date(customer.lastSyncedAt).getTime();
-      const fresh = hasFull && ageMs < ZohoService.CONTACT_TTL_MS;
+    // PERF_PLAN #5: skip the live Zoho contact fetch when the cached copy is both
+    // COMPLETE (a full-contact sync stored billing_address; the list-sync doesn't)
+    // and FRESH (within CONTACT_TTL). Otherwise fetch once and persist it back to
+    // zoho_cache so subsequent page views are served from cache (0 Zoho calls).
+    const extra = (customer.extra ?? {}) as Record<string, unknown>;
+    const hasFull = !!extra.billing_address;
+    const ageMs = Date.now() - new Date(customer.lastSyncedAt).getTime();
+    const fresh = hasFull && ageMs < ZohoService.CONTACT_TTL_MS;
 
-      if (!fresh) {
-        try {
-          const client = await this.clientFor(orgId);
-          const resp = await client.get<{ contact?: Record<string, unknown> }>(`/contacts/${zohoId}`);
-          const full = resp.contact;
-          if (full) {
-            const merged = {
-              displayName: (full.contact_name as string) ?? customer.displayName,
-              email:       (full.email as string) || customer.email,
-              phone:       (full.phone as string) || (full.mobile as string) || customer.phone,
-              gstin:       (full.gst_no as string) ?? customer.gstin,
-            };
-            // Persist the full contact so the next view is a cache hit.
-            await this.prisma.zohoCache.update({
-              where: { uq_zoho_cache_entity: { organizationId: orgId, entityType: 'customer', zohoId } },
-              data:  { ...merged, extra: full as Prisma.InputJsonValue, lastSyncedAt: new Date() },
-            }).catch((e) => this.logger.warn(`Contact cache write failed for ${zohoId}: ${String(e)}`));
-            customerOut = { ...customer, ...merged, extra: full as Prisma.JsonValue };
-          }
-        } catch (err) {
-          this.logger.warn(`Full contact fetch failed for ${zohoId}: ${err instanceof Error ? err.message : String(err)}`);
+    if (!fresh) {
+      try {
+        const client = await this.clientFor(orgId);
+        const resp = await client.get<{ contact?: Record<string, unknown> }>(`/contacts/${zohoId}`);
+        const full = resp.contact;
+        if (full) {
+          const merged = {
+            displayName: (full.contact_name as string) ?? customer.displayName,
+            email:       (full.email as string) || customer.email,
+            phone:       (full.phone as string) || (full.mobile as string) || customer.phone,
+            gstin:       (full.gst_no as string) ?? customer.gstin,
+          };
+          // Persist the full contact so the next view is a cache hit.
+          await this.prisma.zohoCache.update({
+            where: { uq_zoho_cache_entity: { organizationId: orgId, entityType: 'customer', zohoId } },
+            data:  { ...merged, extra: full as Prisma.InputJsonValue, lastSyncedAt: new Date() },
+          }).catch((e) => this.logger.warn(`Contact cache write failed for ${zohoId}: ${String(e)}`));
+          customerOut = { ...customer, ...merged, extra: full as Prisma.JsonValue };
         }
+      } catch (err) {
+        this.logger.warn(`Full contact fetch failed for ${zohoId}: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
 

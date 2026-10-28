@@ -2,13 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { CustomizeColumnsModal, type CustomizableColumn } from '@/components/customize-columns-modal';
 import { syncCustomersAction } from '../actions';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3001/api';
 
 interface Org { id: string; name: string; isActive?: boolean }
-interface CustomerRow { zohoId: string; fields: Record<string, string | number> }
+interface CustomerRow { zohoId: string; orgId: string; fields: Record<string, string | number> }
 interface SavedView {
   id: string; name: string; orgId?: string;
   columns: string[]; sort?: { key: string; dir: 'asc' | 'desc' } | null; search?: string;
@@ -40,8 +41,10 @@ function fmtMoney(v: number, currency: string): string {
 }
 
 export function CustomersBrowser({ isAdmin = false }: { isAdmin?: boolean }) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [orgs, setOrgs] = useState<Org[]>([]);
-  const [orgId, setOrgId] = useState('');
+  const [orgId, setOrgId] = useState(() => searchParams.get('org') ?? '');
   const [search, setSearch] = useState('');
   const [query, setQuery] = useState('');
 
@@ -78,6 +81,15 @@ export function CustomersBrowser({ isAdmin = false }: { isAdmin?: boolean }) {
   // keep orgsRef in sync
   useEffect(() => { orgsRef.current = orgs; }, [orgs]);
 
+  // when orgs load and we're in "all companies" mode, trigger initial fetch
+  useEffect(() => {
+    if (orgId === '' && orgs.length > 0) {
+      void loadColumns(orgs[0]?.id || '');
+      void fetchRows('', query, 1, perPage);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orgs]);
+
   // close dropdowns on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -95,7 +107,6 @@ export function CustomersBrowser({ isAdmin = false }: { isAdmin?: boolean }) {
       .then((d: { organizations: Org[] }) => {
         const active = (d.organizations ?? []).filter(o => o.isActive !== false);
         setOrgs(active);
-        if (active[0]) setOrgId(active[0].id);
       })
       .catch(() => setMsg('Organizations load nahi ho paaye'));
     fetch(`${API_BASE}/customer-views`, { credentials: 'include' })
@@ -138,7 +149,9 @@ export function CustomersBrowser({ isAdmin = false }: { isAdmin?: boolean }) {
               .catch(() => ({ rows: [] as CustomerRow[] })),
           ),
         );
-        const all = results.flatMap(d => d.rows ?? []);
+        const all = results.flatMap((d, i) =>
+          (d.rows ?? []).map(row => ({ ...row, orgId: row.orgId || allOrgs[i].id })),
+        );
         const start = (goToPage - 1) * pp;
         setRows(all.slice(start, start + pp)); setTotal(all.length); setPage(goToPage);
         setMsg(all.length === 0 ? 'Koi customer nahi mila.' : null);
@@ -210,9 +223,8 @@ export function CustomersBrowser({ isAdmin = false }: { isAdmin?: boolean }) {
     const raw = row.fields[key];
     if (key === 'displayName') {
       const name = String(raw || row.zohoId);
-      const linkOrgId = orgId || orgsRef.current[0]?.id || '';
       return (
-        <Link href={`/dashboard/customers/${row.zohoId}?org_id=${linkOrgId}`} className="font-medium text-blue-700 hover:underline">
+        <Link href={`/dashboard/customers/${row.zohoId}?org_id=${row.orgId}`} className="font-medium text-blue-700 hover:underline">
           {name}
         </Link>
       );
@@ -321,7 +333,13 @@ export function CustomersBrowser({ isAdmin = false }: { isAdmin?: boolean }) {
         {/* Company dropdown */}
         <select
           value={orgId}
-          onChange={e => { setActiveViewId(''); setOrgId(e.target.value); }}
+          onChange={e => {
+            setActiveViewId('');
+            setOrgId(e.target.value);
+            const p = new URLSearchParams(searchParams.toString());
+            p.set('org', e.target.value); // '' = All Companies, preserved across refresh
+            router.replace(`/dashboard/customers?${p.toString()}`);
+          }}
           className="px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs bg-white focus:ring-2 focus:ring-blue-500/20 focus:outline-none"
         >
           <option value="">All Companies</option>

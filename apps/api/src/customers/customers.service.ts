@@ -11,6 +11,7 @@ export interface CustomerColumn {
 
 export interface CustomerRow {
   zohoId: string;
+  orgId: string;
   fields: Record<string, string | number>;
 }
 
@@ -295,7 +296,7 @@ export class CustomersService {
       fields.last_quote_number   = qt?.number ?? '';
       fields.last_quote_date     = qt?.date ? qt.date.toISOString() : '';
 
-      return { zohoId: r.zohoId, fields };
+      return { zohoId: r.zohoId, orgId, fields };
     });
 
     return { rows, total, page, limit };
