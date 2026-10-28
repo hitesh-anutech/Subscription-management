@@ -407,11 +407,20 @@ export default function CustomerSubscriptions({
     router.refresh();
   };
 
-  const gwsDomainIds = () => [...new Set(
-    subscriptions
-      .filter(s => s.subscriptionCategory === 'google_workspace' && s.domain)
-      .map(s => s.domain!.id),
+  // GWS detection: category field OR item name (same as subscriptions list page)
+  const isGws = (s: Sub) =>
+    s.subscriptionCategory === 'google_workspace' ||
+    (s.zohoItemName?.toLowerCase().includes('google workspace') ?? false);
+
+  const allGwsDomainIds = [...new Set(
+    subscriptions.filter(s => isGws(s) && s.domain).map(s => s.domain!.id),
   )];
+  const selectedGwsDomainIds = [...new Set(
+    subscriptions.filter(s => selectedIds.includes(s.id) && isGws(s) && s.domain).map(s => s.domain!.id),
+  )];
+  // If any GWS subs are selected → operate on those; else → all GWS domains
+  const syncDomainIds = selectedGwsDomainIds.length > 0 ? selectedGwsDomainIds : allGwsDomainIds;
+  const selectedGwsCount = subscriptions.filter(s => selectedIds.includes(s.id) && isGws(s)).length;
 
   const startGoogleSync = async (body: { domainIds?: string[]; syncAll?: boolean }) => {
     const res = await fetch(`${API_BASE}/google-workspace/customers/fetch-bulk`, {
@@ -425,11 +434,9 @@ export default function CustomerSubscriptions({
     setGSyncStatus({ jobId, status: 'running', total, processed: 0, succeeded: 0, failed: 0, results: [] });
   };
 
-  const handleSyncAllGoogle = async () => {
-    const ids = gwsDomainIds();
-    if (!ids.length) { alert('Is customer ki koi GWS subscription nahi hai।'); return; }
-    if (!confirm(`Sync ${ids.length} Google domain(s) for this customer?`)) return;
-    try { await startGoogleSync({ domainIds: ids }); }
+  const handleGoogleSync = async () => {
+    if (!syncDomainIds.length) { alert('Koi GWS subscription nahi mili।'); return; }
+    try { await startGoogleSync({ domainIds: syncDomainIds }); }
     catch (err: unknown) { alert(`Sync Error: ${err instanceof Error ? err.message : 'Unknown'}`); }
   };
 
@@ -512,7 +519,7 @@ export default function CustomerSubscriptions({
         {/* Google Sync + Recon toolbar */}
         <div className="flex items-center gap-2 w-full pt-1 border-t border-slate-100 mt-1">
           <button
-            onClick={() => void handleSyncAllGoogle()}
+            onClick={() => void handleGoogleSync()}
             disabled={!!gSyncJobId}
             className="px-3 py-1.5 bg-white border border-slate-200 text-slate-600 text-xs font-semibold rounded-lg hover:bg-slate-50 inline-flex items-center gap-1.5 disabled:opacity-50"
           >
@@ -522,14 +529,22 @@ export default function CustomerSubscriptions({
               <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
               <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
             </svg>
-            {gSyncJobId ? `Syncing ${gSyncStatus?.processed ?? 0}/${gSyncStatus?.total ?? '…'}` : `Sync All Google (${gwsDomainIds().length})`}
+            {gSyncJobId
+              ? `Syncing ${gSyncStatus?.processed ?? 0}/${gSyncStatus?.total ?? '…'}`
+              : selectedGwsDomainIds.length > 0
+                ? `G Sync Selected (${selectedGwsDomainIds.length} domains)`
+                : `Sync All Google (${allGwsDomainIds.length} domains)`}
           </button>
           <button
             onClick={() => void handleRunRecon()}
             disabled={reconBusy || !!gSyncJobId}
             className="px-3 py-1.5 bg-white border border-slate-200 text-slate-600 text-xs font-semibold rounded-lg hover:bg-slate-50 inline-flex items-center gap-1.5 disabled:opacity-50"
           >
-            {reconBusy ? '⏳ Running…' : '🔄 Run Reconciliation'}
+            {reconBusy
+              ? '⏳ Running…'
+              : selectedGwsCount > 0
+                ? `🔄 Recon Selected (${selectedGwsCount})`
+                : '🔄 Run Reconciliation'}
           </button>
           {reconResult && (
             <span className="text-xs text-green-700 bg-green-50 border border-green-200 px-2 py-1 rounded">
