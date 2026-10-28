@@ -689,9 +689,9 @@ export function GoogleResellerButton({ domainId, domainName, googleCustomerId, s
               <div className="bg-slate-50 border border-slate-200 rounded-lg divide-y divide-slate-200">
                 {/* Customer ID */}
                 <div className="flex items-center justify-between px-3 py-2 gap-2">
-                  <div className="min-w-0">
-                    <p className="text-[10px] text-slate-400 font-medium">Customer ID</p>
-                    <p className="text-xs font-mono text-slate-700">{gd.customerId}</p>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <p className="text-[10px] text-slate-400 font-medium shrink-0">Customer ID</p>
+                    <p className="text-xs font-mono text-slate-700 truncate">{gd.customerId}</p>
                   </div>
                   <button
                     type="button"
@@ -705,9 +705,9 @@ export function GoogleResellerButton({ domainId, domainName, googleCustomerId, s
 
                 {/* Organization */}
                 {gd.postalAddress?.organizationName && (
-                  <div className="px-3 py-2">
-                    <p className="text-[10px] text-slate-400 font-medium">Organization</p>
-                    <p className="text-xs font-semibold text-slate-700 mt-0.5">{gd.postalAddress.organizationName}</p>
+                  <div className="flex items-center gap-2 px-3 py-2">
+                    <p className="text-[10px] text-slate-400 font-medium shrink-0">Organization</p>
+                    <p className="text-xs font-semibold text-slate-700 truncate">{gd.postalAddress.organizationName}</p>
                   </div>
                 )}
 
