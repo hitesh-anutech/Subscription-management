@@ -420,11 +420,13 @@ export default async function CustomerDetailPage({
       />
 
       {/* ── Order History (quotes + invoices, newest first) ── */}
-      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-        <div className="px-5 py-3.5 border-b border-slate-100 flex items-center gap-2">
+      <details open className="bg-white border border-slate-200 rounded-xl overflow-hidden group">
+        <summary className="px-5 py-3.5 flex items-center gap-2 cursor-pointer select-none hover:bg-slate-50 list-none [&::-webkit-details-marker]:hidden">
+          <span className="text-slate-400 text-xs transition-transform duration-200 group-open:rotate-90">▶</span>
           <h2 className="text-sm font-semibold text-slate-700">📜 Order History</h2>
           <span className="text-xs text-slate-400">Quotes + Invoices — newest first</span>
-        </div>
+        </summary>
+        <div className="border-t border-slate-100">
         {orderHistory.length === 0 ? (
           <p className="px-5 py-4 text-sm text-slate-400">अभी तक कोई order history नहीं।</p>
         ) : (
@@ -506,6 +508,7 @@ export default async function CustomerDetailPage({
           </div>
         )}
       </div>
+      </details>
 
     </div>
   );

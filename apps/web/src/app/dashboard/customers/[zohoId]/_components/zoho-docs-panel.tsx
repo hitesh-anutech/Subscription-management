@@ -154,6 +154,7 @@ export default function ZohoDocsPanel({ orgId, zohoCustomerId, zohoCustomerName,
 
   // Bulk checkboxes
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [collapsed, setCollapsed] = useState(false);
 
   // ── Auto-load from cache on mount ─────────────────────────────────
   useEffect(() => {
@@ -538,9 +539,11 @@ export default function ZohoDocsPanel({ orgId, zohoCustomerId, zohoCustomerName,
   return (
     <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
       {/* Header */}
-      <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <h2 className="text-sm font-semibold text-slate-700">📂 Zoho Documents</h2>
+      <div className={`px-5 py-3.5 flex items-center justify-between gap-3 flex-wrap ${collapsed ? '' : 'border-b border-slate-100'}`}>
+        <button onClick={() => setCollapsed(c => !c)} className="flex items-center gap-2 text-left group">
+          <span className={`text-slate-400 text-xs transition-transform duration-200 ${collapsed ? '' : 'rotate-90'}`}>▶</span>
+          <div>
+          <h2 className="text-sm font-semibold text-slate-700 group-hover:text-slate-900">📂 Zoho Documents</h2>
           {fetched && (
             <p className="text-xs text-slate-400 mt-0.5">
               {docs.length} documents · {linked} linked · {unlinked} unlinked
@@ -551,7 +554,8 @@ export default function ZohoDocsPanel({ orgId, zohoCustomerId, zohoCustomerName,
               )}
             </p>
           )}
-        </div>
+          </div>
+        </button>
         <div className="flex items-center gap-2">
           {selected.size > 0 && (
             <a href={bulkImportUrl} target="_blank" rel="noopener noreferrer"
@@ -565,6 +569,8 @@ export default function ZohoDocsPanel({ orgId, zohoCustomerId, zohoCustomerName,
           </button>
         </div>
       </div>
+
+      {!collapsed && (<>
 
       {error && (
         <div className="px-5 py-3 text-sm text-red-600 bg-red-50 border-b border-red-100">❌ {error}</div>
@@ -1024,6 +1030,8 @@ export default function ZohoDocsPanel({ orgId, zohoCustomerId, zohoCustomerName,
           </div>
         );
       })()}
+
+      </>)}
     </div>
   );
 }
