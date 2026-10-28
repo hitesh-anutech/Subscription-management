@@ -828,7 +828,7 @@ export default function CustomerSubscriptions({
                     </td>
                     <td className="px-4 py-3 text-center">
                       <div className="flex flex-col items-center gap-0.5">
-                        {s.subscriptionCategory === 'google_workspace' && (
+                        {isGws(s) && (
                           s._count.googleResellerMatches > 0
                             ? <span className="inline-block text-[10px] font-semibold text-green-700 bg-green-50 border border-green-200 px-1.5 py-0.5 rounded">✓ Matched</span>
                             : <span className="inline-block text-[10px] font-bold text-red-700 bg-red-100 border border-red-400 px-1.5 py-0.5 rounded">✗ Unmatched</span>
@@ -846,7 +846,7 @@ export default function CustomerSubscriptions({
                             domainId={s.domain.id}
                             domainName={s.domain.domainName}
                             googleCustomerId={s.domain.googleCustomerId}
-                            showAlert={s.subscriptionCategory === 'google_workspace' && s._count.googleResellerMatches === 0}
+                            showAlert={isGws(s) && s._count.googleResellerMatches === 0}
                           />
                         )}
                         <EditSubscriptionButton
