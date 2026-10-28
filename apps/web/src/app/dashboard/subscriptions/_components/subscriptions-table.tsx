@@ -514,12 +514,13 @@ export function GoogleResellerButton({ domainId, domainName, googleCustomerId, s
     if (!btnRef.current) return;
     const rect = btnRef.current.getBoundingClientRect();
     const MARGIN = 16;
+    const HEADER_H = 68; // popup header height (not scrollable)
     const x = Math.min(rect.right + 8, window.innerWidth - G_POPUP_W - MARGIN);
     const spaceBelow = window.innerHeight - rect.bottom - MARGIN;
     const spaceAbove = rect.top - MARGIN;
     const above = spaceBelow < 320 && spaceAbove > spaceBelow;
     setOpenAbove(above);
-    setMaxPopupH(Math.min(520, above ? spaceAbove - 8 : spaceBelow - 8));
+    setMaxPopupH(Math.min(480, (above ? spaceAbove : spaceBelow) - HEADER_H - 8));
     const y = above ? rect.top - 4 : rect.bottom + 4;
     setPopupPos({ x, y });
     setOpen(true);
