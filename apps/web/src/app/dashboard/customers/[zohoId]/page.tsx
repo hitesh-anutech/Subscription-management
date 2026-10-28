@@ -39,7 +39,8 @@ interface Sub {
   billingCycle: string; startDate: string; endDate: string;
   lastQuoteId: string | null; lastQuoteNumber: string | null;
   lastInvoiceId: string | null; lastInvoiceNumber: string | null; lastInvoiceDate: string | null;
-  domain: { id: string; domainName: string } | null;
+  domain: { id: string; domainName: string; googleCustomerId: string | null } | null;
+  _count: { googleResellerMatches: number };
 }
 interface Dom { id: string; domainName: string; createdAt: string }
 interface Quote {
@@ -182,7 +183,7 @@ export default async function CustomerDetailPage({
     new Date(b.quoteDate ?? b.invoiceDate ?? 0).getTime() - new Date(a.quoteDate ?? a.invoiceDate ?? 0).getTime());
 
   return (
-    <div className="max-w-5xl space-y-5 pb-10">
+    <div className="w-full space-y-5 pb-10">
 
       {/* ── Header ── */}
       <div className="bg-white border border-slate-200 rounded-xl p-5">

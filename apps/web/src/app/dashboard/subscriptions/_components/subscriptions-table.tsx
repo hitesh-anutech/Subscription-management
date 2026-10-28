@@ -492,7 +492,7 @@ function resellerBadgeColor(email: string) {
   return RESELLER_BADGE_COLORS[h % RESELLER_BADGE_COLORS.length];
 }
 
-function GoogleResellerButton({ domainId, domainName, googleCustomerId, showAlert = false }: {
+export function GoogleResellerButton({ domainId, domainName, googleCustomerId, showAlert = false }: {
   domainId: string; domainName: string; googleCustomerId: string | null; showAlert?: boolean;
 }) {
   const btnRef = useRef<HTMLButtonElement>(null);

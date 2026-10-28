@@ -1284,7 +1284,8 @@ export class ZohoService {
           lastQuoteId: true,
           lastQuoteNumber: true,
           lastQuoteDate: true,
-          domain: { select: { id: true, domainName: true, createdAt: true } },
+          domain: { select: { id: true, domainName: true, createdAt: true, googleCustomerId: true } },
+          _count: { select: { googleResellerMatches: true } },
           // Fallback: if lastQuoteNumber is null, take it from the latest renewal_history row
           renewalHistory: {
             select: { quoteId: true, quoteNumber: true },
