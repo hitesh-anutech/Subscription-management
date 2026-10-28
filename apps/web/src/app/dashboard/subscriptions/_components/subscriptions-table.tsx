@@ -499,6 +499,7 @@ export function GoogleResellerButton({ domainId, domainName, googleCustomerId, s
   const [open, setOpen] = useState(false);
   const [popupPos, setPopupPos] = useState<{ x: number; y: number } | null>(null);
   const [openAbove, setOpenAbove] = useState(false);
+  const [maxPopupH, setMaxPopupH] = useState(480);
   const [mounted, setMounted] = useState(false);
   const [data, setData] = useState<GApiResp | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -512,10 +513,13 @@ export function GoogleResellerButton({ domainId, domainName, googleCustomerId, s
   async function openPopup() {
     if (!btnRef.current) return;
     const rect = btnRef.current.getBoundingClientRect();
-    const x = Math.min(rect.right + 8, window.innerWidth - G_POPUP_W - 8);
-    const spaceBelow = window.innerHeight - rect.bottom;
-    const above = spaceBelow < 280;
+    const MARGIN = 16;
+    const x = Math.min(rect.right + 8, window.innerWidth - G_POPUP_W - MARGIN);
+    const spaceBelow = window.innerHeight - rect.bottom - MARGIN;
+    const spaceAbove = rect.top - MARGIN;
+    const above = spaceBelow < 320 && spaceAbove > spaceBelow;
     setOpenAbove(above);
+    setMaxPopupH(Math.min(520, above ? spaceAbove - 8 : spaceBelow - 8));
     const y = above ? rect.top - 4 : rect.bottom + 4;
     setPopupPos({ x, y });
     setOpen(true);
@@ -613,7 +617,7 @@ export function GoogleResellerButton({ domainId, domainName, googleCustomerId, s
         </div>
       </div>
 
-      <div className="max-h-[480px] overflow-y-auto divide-y divide-slate-100">
+      <div className="overflow-y-auto divide-y divide-slate-100" style={{ maxHeight: maxPopupH }}>
         {/* Loading */}
         {loading && (
           <div className="flex items-center justify-center gap-2 py-8 text-xs text-slate-400">
