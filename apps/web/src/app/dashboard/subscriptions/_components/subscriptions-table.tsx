@@ -724,7 +724,7 @@ export function GoogleResellerButton({ domainId, domainName, googleCustomerId, s
 
                 {/* Partner Console */}
                 <a
-                  href={`https://channelservices.cloud.google.com/customers/${gd.customerUid ?? gd.customerId}`}
+                  href={data?.consoleUrl ?? `https://channelservices.cloud.google.com/customers/${gd.customerId}`}
                   target="_blank" rel="noreferrer"
                   className="flex items-center justify-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition-colors rounded-b-lg"
                 >
