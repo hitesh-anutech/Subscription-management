@@ -233,12 +233,14 @@ function ImportUidModal({ onClose, onDone }: { onClose: () => void; onDone: () =
     setParseError('');
     const lines = csvText.trim().split('\n').filter(l => l.trim());
     if (!lines.length) { setParseError('कोई data नहीं मिला'); return; }
-    const firstLine = lines[0].split(',').map(c => c.trim().replace(/^"|"$/g, ''));
+    // Auto-detect delimiter: tab (Excel copy-paste) or comma (raw CSV)
+    const delim = lines[0].includes('\t') ? '\t' : ',';
+    const firstLine = lines[0].split(delim).map(c => c.trim().replace(/^"|"$/g, '').replace(/\r$/, ''));
     let cidIdx = -1, uidIdx = -1;
     firstLine.forEach((h, i) => {
       const lower = h.toLowerCase();
-      if (['customerid','customer id','customer_id','cid'].some(v => lower.includes(v))) cidIdx = i;
-      if (['customeruid','customer uid','customer_uid','uid'].some(v => lower.includes(v))) uidIdx = i;
+      if (lower === 'customer id' || lower === 'customerid' || lower === 'customer_id' || lower === 'cid') cidIdx = i;
+      if (lower === 'customer uid' || lower === 'customeruid' || lower === 'customer_uid' || lower === 'uid') uidIdx = i;
     });
     const hasHeader = cidIdx >= 0 || uidIdx >= 0;
     const dataLines = hasHeader ? lines.slice(1) : lines;
@@ -247,7 +249,7 @@ function ImportUidModal({ onClose, onDone }: { onClose: () => void; onDone: () =
     const parsed: Array<{ customerId: string; customerUid: string }> = [];
     const errors: string[] = [];
     dataLines.forEach((line, i) => {
-      const cols = line.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
+      const cols = line.split(delim).map(c => c.trim().replace(/^"|"$/g, '').replace(/\r$/, ''));
       const cid = cols[cidIdx] ?? '', uid = cols[uidIdx] ?? '';
       if (!cid && !uid) return;
       if (!cid) { errors.push(`Row ${i + 1}: Customer ID missing`); return; }
@@ -279,9 +281,10 @@ function ImportUidModal({ onClose, onDone }: { onClose: () => void; onDone: () =
           {!result ? (!isParsed ? (
             <>
               <div className="mb-3 bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-[13px] text-blue-800">
-                <p className="font-medium mb-1">Expected CSV format:</p>
+                <p className="font-medium mb-1">CSV या Excel से copy-paste करें:</p>
                 <code className="block font-mono text-xs">Customer ID,Customer UID</code>
-                <code className="block font-mono text-xs">C01abc123,123456789</code>
+                <code className="block font-mono text-xs">C01abc123,SNF6xJMgJjVV5j</code>
+                <p className="mt-1.5 text-blue-600">Excel से copy-paste भी supported है (tab-separated)।</p>
               </div>
               <textarea
                 className="w-full h-48 border border-gray-300 rounded-lg p-3 text-[13px] font-mono resize-none focus:outline-none focus:ring-1 focus:ring-blue-500"
@@ -549,7 +552,7 @@ function renderCell(colId: ColumnId, row: ResellerSubRow, onRefresh: () => void,
       return <CustomerUidEditor id={row.id} initial={row.customerUid} onSaved={onRefresh} />;
     case 'partnerSalesConsole':
       return row.customerUid
-        ? <a href={`https://channelservices.cloud.google.com/customers/${row.customerUid}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-[13px]">Open ↗</a>
+        ? <a href={`https://channelservices.cloud.google.com/customers/${row.customerUid}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-[13px] break-all">{`https://channelservices.cloud.google.com/customers/${row.customerUid}`}</a>
         : <span className="text-gray-300 text-[13px]">UID required</span>;
     default:
       return null;

@@ -606,6 +606,7 @@ export class GoogleWorkspaceService {
 
   async getDomainGoogleData(domainId: string): Promise<{
     googleCustomerId: string | null;
+    customerUid: string | null;
     consoleUrl: string | null;
     syncedAt: Date | null;
     googleData: Record<string, unknown> | null;
@@ -619,9 +620,24 @@ export class GoogleWorkspaceService {
 
     const googleCustomerId = domain.googleCustomerId ?? null;
     const googleData = ((domain.metadata as Record<string, unknown>)?.google as Record<string, unknown>) ?? null;
+
+    // Look up customerUid from the reseller subscriptions table — needed for Partner Console URL
+    const resellerRow = googleCustomerId
+      ? await this.prisma.googleResellerSubscription.findFirst({
+          where: { matchedDomainId: domainId, customerUid: { not: null } },
+          select: { customerUid: true },
+        })
+      : null;
+    const customerUid = resellerRow?.customerUid ?? null;
+
+    const consoleUrl = customerUid
+      ? `https://channelservices.cloud.google.com/customers/${customerUid}`
+      : googleCustomerId ? this.getResellerConsoleUrl(googleCustomerId) : null;
+
     return {
       googleCustomerId,
-      consoleUrl: googleCustomerId ? this.getResellerConsoleUrl(googleCustomerId) : null,
+      customerUid,
+      consoleUrl,
       syncedAt: domain.googleSyncedAt ?? null,
       googleData,
       resellerEmail: domain.googleResellerEmail ?? null,

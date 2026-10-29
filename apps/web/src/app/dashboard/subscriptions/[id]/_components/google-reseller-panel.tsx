@@ -21,6 +21,7 @@ interface GoogleSubscriptionData {
 
 interface GoogleData {
   customerId: string;
+  customerUid: string | null;
   customerDomain: string;
   alternateEmail: string | null;
   resourceUiUrl: string | null;
@@ -242,7 +243,7 @@ export function GoogleResellerPanel({ domainId, domainName }: Props) {
             {/* Section B: Console Links */}
             <div className="flex flex-wrap gap-2 pt-1">
               <a
-                href={`https://channelservices.cloud.google.com/customers/${gd.customerId}`}
+                href={`https://channelservices.cloud.google.com/customers/${gd.customerUid ?? gd.customerId}`}
                 target="_blank"
                 rel="noreferrer"
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold border border-blue-200 transition-colors"
