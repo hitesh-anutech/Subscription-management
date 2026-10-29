@@ -86,6 +86,12 @@ export async function reconcileAllAction() {
   return result;
 }
 
+export async function reconcileNotMatchedAction() {
+  const result = await apiPost<{ matched: number; notMatched: number; skipped: number; total: number }>('/google-workspace/reseller-subs/reconcile', { onlyNotMatched: true });
+  if (result.data) revalidatePath('/dashboard/google-workspace');
+  return result;
+}
+
 export async function reconcileOneAction(id: string) {
   const result = await apiPost<{ matched: number; notMatched: number; total: number }>(`/google-workspace/reseller-subs/${id}/reconcile`);
   if (result.data) revalidatePath('/dashboard/google-workspace');

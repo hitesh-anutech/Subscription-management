@@ -9,6 +9,7 @@ import {
   fetchResellerCustomersAction,
   getResellerJobStatusAction,
   reconcileAllAction,
+  reconcileNotMatchedAction,
   reconcileOneAction,
   refreshSubscriptionAction,
   refreshCustomerAction,
@@ -571,8 +572,9 @@ export function ResellerSubsTable({ rows, total, page, limit, totalPages, summar
   const [showColModal, setShowColModal] = useState(false);
   const [showFilters, setShowFilters]   = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
-  const [showFetchDropdown, setShowFetchDropdown]       = useState(false);
-  const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
+  const [showFetchDropdown, setShowFetchDropdown]         = useState(false);
+  const [showCustomerDropdown, setShowCustomerDropdown]   = useState(false);
+  const [showReconcileDropdown, setShowReconcileDropdown] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState<'both' | 1 | 2>('both');
   const [actionMsg, setActionMsg]   = useState('');
   const [loadingMsg, setLoadingMsg] = useState('');
@@ -836,22 +838,43 @@ export function ResellerSubsTable({ rows, total, page, limit, totalPages, summar
           )}
         </div>
 
-        {/* Reconcile */}
-        <button
-          disabled={isPending}
-          onClick={() => bulkAction(
-            () => reconcileAllAction(),
-            (d: unknown) => { const r = d as { matched: number; notMatched: number; total: number }; return `✓ Reconciled: ${r.matched} matched, ${r.notMatched} not matched`; },
-            '⏳ Reconciling all subscriptions…',
+        {/* Reconcile split button */}
+        <div className="relative">
+          <div className="flex items-stretch rounded overflow-hidden shadow-sm">
+            <button
+              disabled={isPending}
+              onClick={() => bulkAction(
+                () => reconcileAllAction(),
+                (d: unknown) => { const r = d as { matched: number; notMatched: number; total: number }; return `✓ Reconciled: ${r.matched} matched, ${r.notMatched} not matched`; },
+                '⏳ Reconciling all subscriptions…',
+              )}
+              className="flex items-center gap-2 px-3.5 py-2 bg-emerald-600 text-white text-[13px] font-medium hover:bg-emerald-700 disabled:opacity-50 whitespace-nowrap"
+            >
+              {isPending && loadingMsg.includes('Reconcil') ? (
+                <><svg className="animate-spin h-3.5 w-3.5" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/></svg>Reconciling…</>
+              ) : (
+                <><svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/></svg>Reconcile All</>
+              )}
+            </button>
+            <button
+              disabled={isPending}
+              onClick={() => { setShowFetchDropdown(false); setShowCustomerDropdown(false); setShowReconcileDropdown(o => !o); }}
+              className="px-2.5 py-2 bg-emerald-700 text-white hover:bg-emerald-800 disabled:opacity-50 border-l border-emerald-500"
+            >▾</button>
+          </div>
+          {showReconcileDropdown && (
+            <div className="absolute left-0 top-full mt-1 z-20 bg-white rounded-md shadow-lg ring-1 ring-black/10 w-52 text-[13px] py-1">
+              <button className="w-full text-left px-4 py-2.5 hover:bg-gray-50 text-gray-700"
+                onClick={() => { setShowReconcileDropdown(false); bulkAction(() => reconcileAllAction(), (d: unknown) => { const r = d as { matched: number; notMatched: number; total: number }; return `✓ Reconciled: ${r.matched} matched, ${r.notMatched} not matched`; }, '⏳ Reconciling all subscriptions…'); }}>
+                Reconcile All
+              </button>
+              <button className="w-full text-left px-4 py-2.5 hover:bg-gray-50 text-gray-700"
+                onClick={() => { setShowReconcileDropdown(false); bulkAction(() => reconcileNotMatchedAction(), (d: unknown) => { const r = d as { matched: number; notMatched: number; total: number }; return `✓ Done: ${r.matched} matched, ${r.notMatched} still unmatched`; }, '⏳ Reconciling unmatched only…'); }}>
+                Reconcile Not Matched Only
+              </button>
+            </div>
           )}
-          className="flex items-center gap-2 px-3.5 py-2 bg-emerald-600 text-white text-[13px] font-medium rounded shadow-sm hover:bg-emerald-700 disabled:opacity-50"
-        >
-          {isPending && loadingMsg.includes('Reconcil') ? (
-            <><svg className="animate-spin h-3.5 w-3.5" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/></svg>Reconciling…</>
-          ) : (
-            <><svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/></svg>Reconcile All</>
-          )}
-        </button>
+        </div>
 
         <button
           onClick={() => setShowImportModal(true)}

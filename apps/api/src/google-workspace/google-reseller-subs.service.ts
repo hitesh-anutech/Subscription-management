@@ -480,7 +480,7 @@ export class GoogleResellerSubsService {
   // ------------------------------------------------------------------
   // Reconciliation
   // ------------------------------------------------------------------
-  async reconcile(params: { id?: string; orgId?: string; domainNames?: string[] }): Promise<ReconcileResult> {
+  async reconcile(params: { id?: string; orgId?: string; domainNames?: string[]; onlyNotMatched?: boolean }): Promise<ReconcileResult> {
     let where: Prisma.GoogleResellerSubscriptionWhereInput;
 
     if (params.id) {
@@ -493,7 +493,10 @@ export class GoogleResellerSubsService {
       };
     } else {
       const orgId = await this.resolveOrgId(params.orgId);
-      where = { organizationId: orgId, reconciliationStatus: { not: 'excluded' } };
+      where = {
+        organizationId: orgId,
+        reconciliationStatus: params.onlyNotMatched ? 'not_matched' : { not: 'excluded' },
+      };
     }
 
     const rows = await this.prisma.googleResellerSubscription.findMany({

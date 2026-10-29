@@ -231,8 +231,8 @@ export class GoogleWorkspaceController {
    * Body: { orgId?: string }
    */
   @Post('reseller-subs/reconcile')
-  reconcileAll(@Body() body: { orgId?: string; domainNames?: string[] }) {
-    return this.resellerSubs.reconcile({ orgId: body.orgId, domainNames: body.domainNames });
+  reconcileAll(@Body() body: { orgId?: string; domainNames?: string[]; onlyNotMatched?: boolean }) {
+    return this.resellerSubs.reconcile({ orgId: body.orgId, domainNames: body.domainNames, onlyNotMatched: body.onlyNotMatched });
   }
 
   /**
