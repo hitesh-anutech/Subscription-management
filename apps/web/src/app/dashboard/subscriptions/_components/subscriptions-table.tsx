@@ -1011,6 +1011,439 @@ function RowCommentsButton({ subscriptionId, commentCount: initialCount }: { sub
   );
 }
 
+// ─── RefreshZohoButton ────────────────────────────────────────────────────────
+
+const REFRESH_POPUP_W = 440;
+
+interface RZDLine {
+  id: string; lineOrder: number; name: string;
+  qty: number; rate: number; domain: string | null;
+  startDate: string | null; endDate: string | null;
+}
+interface RZDoc {
+  id: string; docKey: string;
+  quoteId: string | null; quoteNumber: string | null; quoteDate: string | null;
+  quoteStatus: string | null; quoteTotal: number | null;
+  invoiceId: string | null; invoiceNumber: string | null; invoiceDate: string | null;
+  invoiceStatus: string | null; invoiceTotal: number | null; invoiceBalance: number | null;
+  businessType: string | null;
+  domainLines: RZDLine[];
+}
+interface RZSub {
+  id: string; startDate: string; endDate: string;
+  quantity: string; subscriptionPrice: string;
+  billingCycle: string; currency: string; exchangeRate: string | null;
+  domainName: string;
+  renewalHistory: Array<{
+    id: string; invoiceNumber: string | null; quoteNumber: string | null;
+    businessType: string; renewalStatus: string;
+    serviceStartDate: string | null; serviceEndDate: string | null;
+  }>;
+}
+interface RZResponse { subscription: RZSub; docs: RZDoc[] }
+
+function RefreshZohoButton({ subscriptionId, domainName, zohoCustomerId, orgZohoId, orgDataCenter }: {
+  subscriptionId: string; domainName: string; zohoCustomerId: string | null;
+  orgZohoId: string; orgDataCenter: string;
+}) {
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const [open, setOpen] = useState(false);
+  const [popupPos, setPopupPos] = useState<{ x: number; y: number } | null>(null);
+  const [mounted, setMounted] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<RZResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [maxH, setMaxH] = useState(460);
+  const [actionStates, setActionStates] = useState<Record<string, 'idle' | 'loading' | 'done' | 'error'>>({});
+
+  useEffect(() => { setMounted(true); }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open]);
+
+  async function doFetch() {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_BASE}/subscriptions/${subscriptionId}/refresh-zoho-docs`, {
+        method: 'POST', credentials: 'include',
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json() as RZResponse;
+      setResult(data);
+      setActionStates({});
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Sync failed');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function openPopup() {
+    if (!btnRef.current) return;
+    const rect = btnRef.current.getBoundingClientRect();
+    const MARGIN = 12;
+    const x = Math.max(MARGIN, Math.min(rect.right - REFRESH_POPUP_W, window.innerWidth - REFRESH_POPUP_W - MARGIN));
+    const spaceBelow = window.innerHeight - rect.bottom - MARGIN;
+    const spaceAbove = rect.top - MARGIN;
+    setMaxH(Math.min(460, Math.max(spaceBelow, spaceAbove) - 48));
+    setPopupPos({ x, y: rect.bottom + 6 });
+    setOpen(true);
+    if (!result) void doFetch();
+  }
+
+  async function handleSyncDates(doc: RZDoc, line: RZDLine) {
+    const key = `sync-${doc.id}`;
+    setActionStates(prev => ({ ...prev, [key]: 'loading' }));
+    try {
+      const res = await fetch(`${API_BASE}/subscriptions/${subscriptionId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          startDate: line.startDate,
+          endDate: line.endDate,
+          quantity: line.qty,
+          subscriptionPrice: line.rate,
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setResult(prev => prev ? {
+        ...prev,
+        subscription: {
+          ...prev.subscription,
+          startDate: line.startDate ?? prev.subscription.startDate,
+          endDate: line.endDate ?? prev.subscription.endDate,
+          quantity: String(line.qty),
+          subscriptionPrice: String(line.rate),
+        },
+      } : prev);
+      setActionStates(prev => ({ ...prev, [key]: 'done' }));
+    } catch {
+      setActionStates(prev => ({ ...prev, [key]: 'error' }));
+    }
+  }
+
+  async function handleAddHistory(doc: RZDoc, line: RZDLine) {
+    const key = `hist-${doc.id}`;
+    setActionStates(prev => ({ ...prev, [key]: 'loading' }));
+    try {
+      const res = await fetch(`${API_BASE}/subscriptions/${subscriptionId}/add-history`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          history: [{
+            invoiceId: doc.invoiceId || undefined,
+            invoiceNumber: doc.invoiceNumber || undefined,
+            invoiceDate: doc.invoiceDate || undefined,
+            invoiceStatus: doc.invoiceStatus || undefined,
+            quoteId: doc.quoteId || undefined,
+            quoteNumber: doc.quoteNumber || undefined,
+            quoteDate: doc.quoteDate || undefined,
+            quoteStatus: doc.quoteStatus || undefined,
+            startDate: line.startDate || undefined,
+            endDate: line.endDate || undefined,
+            quantity: line.qty,
+            price: line.rate,
+            businessType: doc.businessType || undefined,
+          }],
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setResult(prev => {
+        if (!prev) return prev;
+        const h = {
+          id: `tmp-${doc.id}`,
+          invoiceNumber: doc.invoiceNumber,
+          quoteNumber: doc.quoteNumber,
+          businessType: doc.businessType ?? 'Renewal',
+          renewalStatus: 'Quoted',
+          serviceStartDate: line.startDate,
+          serviceEndDate: line.endDate,
+        };
+        return { ...prev, subscription: { ...prev.subscription, renewalHistory: [...prev.subscription.renewalHistory, h] } };
+      });
+      setActionStates(prev => ({ ...prev, [key]: 'done' }));
+    } catch {
+      setActionStates(prev => ({ ...prev, [key]: 'error' }));
+    }
+  }
+
+  if (!zohoCustomerId) return null;
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={() => (open ? setOpen(false) : openPopup())}
+        title="Refresh Zoho Docs"
+        className={`w-7 h-7 rounded-lg border flex items-center justify-center transition-all ${
+          open
+            ? 'bg-amber-50 border-amber-200 text-amber-600'
+            : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-amber-50 hover:border-amber-200 hover:text-amber-600'
+        }`}
+      >
+        <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+          <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" />
+          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+        </svg>
+      </button>
+
+      {open && popupPos && mounted && createPortal(
+        <>
+          <div className="fixed inset-0 z-[9998]" onClick={() => setOpen(false)} />
+          <div
+            style={{ position: 'fixed', left: popupPos.x, top: popupPos.y, width: REFRESH_POPUP_W, zIndex: 9999 }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden">
+              {/* Header */}
+              <div className="px-3 py-2.5 border-b border-slate-100 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <svg width="12" height="12" fill="none" stroke="#D97706" strokeWidth={2} viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" />
+                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                  </svg>
+                  <span className="text-[11px] font-bold text-slate-700 truncate">{domainName}</span>
+                  <span className="text-[10px] text-slate-400 shrink-0">— Zoho Docs</span>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {result && (
+                    <button
+                      onClick={() => void doFetch()}
+                      disabled={loading}
+                      className="text-[10px] text-slate-500 hover:text-amber-600 disabled:opacity-40 px-1.5 py-0.5 rounded border border-slate-200 hover:border-amber-300 transition-colors flex items-center gap-1"
+                    >
+                      {loading
+                        ? <span className="inline-block w-3 h-3 border border-current border-t-transparent rounded-full animate-spin" />
+                        : '↺'}
+                      <span>Re-sync</span>
+                    </button>
+                  )}
+                  <button onClick={() => setOpen(false)} className="text-slate-300 hover:text-slate-500 text-sm leading-none">✕</button>
+                </div>
+              </div>
+
+              <div style={{ maxHeight: maxH, overflowY: 'auto' }}>
+                {/* Loading state (initial fetch) */}
+                {loading && !result && (
+                  <div className="px-3 py-6 flex flex-col items-center gap-2">
+                    <span className="inline-block w-5 h-5 border-2 border-slate-200 border-t-amber-500 rounded-full animate-spin" />
+                    <p className="text-[11px] text-slate-400">Syncing from Zoho Books…</p>
+                  </div>
+                )}
+
+                {/* Error state */}
+                {error && !loading && (
+                  <div className="px-3 py-4 text-center space-y-1">
+                    <p className="text-[11px] text-red-500">{error}</p>
+                    <button onClick={() => void doFetch()} className="text-[10px] text-amber-600 underline">Retry</button>
+                  </div>
+                )}
+
+                {result && (
+                  <>
+                    {/* Current subscription strip */}
+                    <div className="px-3 py-2 bg-slate-50 border-b border-slate-100 text-[10px] text-slate-600 flex items-center gap-1 flex-wrap">
+                      <span className="font-semibold text-slate-700">Current:</span>
+                      <span>{fmtShort(result.subscription.startDate)}</span>
+                      <span className="text-slate-300">→</span>
+                      <span>{fmtShort(result.subscription.endDate)}</span>
+                      <span className="text-slate-300">·</span>
+                      <span>Qty {Number(result.subscription.quantity)}</span>
+                      <span className="text-slate-300">·</span>
+                      <span>
+                        {CURRENCY_SYMBOL[result.subscription.currency] ?? result.subscription.currency}
+                        {Number(result.subscription.subscriptionPrice).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                      </span>
+                      {loading && (
+                        <span className="ml-auto inline-block w-3 h-3 border border-amber-400 border-t-transparent rounded-full animate-spin" />
+                      )}
+                    </div>
+
+                    {result.docs.length === 0 && (
+                      <p className="px-3 py-5 text-center text-[11px] text-slate-400">No Zoho documents found for this domain.</p>
+                    )}
+
+                    {result.docs.map(doc => {
+                      const line = doc.domainLines[0];
+                      if (!line) return null;
+
+                      const lineEndDate = line.endDate ? new Date(line.endDate) : null;
+                      const subEndDate  = new Date(result.subscription.endDate);
+                      const datesAhead  = lineEndDate && !isNaN(lineEndDate.getTime()) && !isNaN(subEndDate.getTime()) && lineEndDate > subEndDate;
+
+                      const inHistory = result.subscription.renewalHistory.some(h =>
+                        (doc.invoiceNumber && h.invoiceNumber === doc.invoiceNumber) ||
+                        (doc.quoteNumber   && h.quoteNumber   === doc.quoteNumber),
+                      );
+                      const proRata = /pro.?rata/i.test(doc.businessType ?? '');
+
+                      const docDate   = doc.invoiceDate ?? doc.quoteDate;
+                      const rawStatus = (doc.invoiceStatus ?? doc.quoteStatus ?? '').toLowerCase();
+
+                      const syncKey  = `sync-${doc.id}`;
+                      const histKey  = `hist-${doc.id}`;
+                      const syncSt   = actionStates[syncKey] ?? 'idle';
+                      const histSt   = actionStates[histKey] ?? 'idle';
+
+                      const btNorm = (doc.businessType ?? '').toLowerCase().replace(/[-\s]/g, '');
+                      const btColor = btNorm.includes('renewal')
+                        ? 'bg-teal-50 text-teal-700 border-teal-200'
+                        : btNorm.includes('prorata') || (btNorm.includes('pro') && btNorm.includes('rata'))
+                        ? 'bg-orange-50 text-orange-700 border-orange-200'
+                        : btNorm.includes('fresh')
+                        ? 'bg-green-50 text-green-700 border-green-200'
+                        : 'bg-slate-50 text-slate-600 border-slate-200';
+
+                      const statusColor = rawStatus === 'paid'
+                        ? 'bg-green-100 text-green-800'
+                        : rawStatus === 'sent' || rawStatus === 'accepted'
+                        ? 'bg-blue-100 text-blue-800'
+                        : rawStatus === 'draft'
+                        ? 'bg-slate-100 text-slate-600'
+                        : rawStatus === 'expired' || rawStatus === 'declined'
+                        ? 'bg-red-100 text-red-700'
+                        : rawStatus === 'invoiced'
+                        ? 'bg-purple-100 text-purple-800'
+                        : 'bg-slate-100 text-slate-500';
+
+                      const sym = CURRENCY_SYMBOL[result.subscription.currency] ?? result.subscription.currency;
+
+                      return (
+                        <div key={doc.id} className="px-3 py-2.5 border-b border-slate-50 last:border-0">
+                          {/* Doc header */}
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {doc.invoiceId && (
+                              <span className="flex items-center gap-1">
+                                <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700">Invoice</span>
+                                <span className="text-[11px] font-bold text-slate-800">{doc.invoiceNumber}</span>
+                                <a
+                                  href={zohoUrl(
+                                    { zohoOrgId: orgZohoId, dataCenter: orgDataCenter } as Subscription['organization'],
+                                    'invoices', doc.invoiceId,
+                                  )}
+                                  target="_blank" rel="noreferrer"
+                                  title="Open invoice in Zoho Books"
+                                  onClick={e => e.stopPropagation()}
+                                  className="text-slate-400 hover:text-blue-600 transition-colors"
+                                >
+                                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                                  </svg>
+                                </a>
+                              </span>
+                            )}
+                            {doc.quoteId && (
+                              <span className="flex items-center gap-1">
+                                <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-violet-50 text-violet-700">Quote</span>
+                                <span className="text-[11px] font-bold text-slate-800">{doc.quoteNumber}</span>
+                                <a
+                                  href={zohoUrl(
+                                    { zohoOrgId: orgZohoId, dataCenter: orgDataCenter } as Subscription['organization'],
+                                    'estimates', doc.quoteId,
+                                  )}
+                                  target="_blank" rel="noreferrer"
+                                  title="Open quote in Zoho Books"
+                                  onClick={e => e.stopPropagation()}
+                                  className="text-slate-400 hover:text-blue-600 transition-colors"
+                                >
+                                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                                  </svg>
+                                </a>
+                              </span>
+                            )}
+                            {docDate && <span className="text-[10px] text-slate-400">{fmtShort(docDate)}</span>}
+                            {doc.businessType && (
+                              <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded border ${btColor}`}>
+                                {doc.businessType}
+                              </span>
+                            )}
+                            {rawStatus && (
+                              <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded ${statusColor}`}>
+                                {doc.invoiceStatus ?? doc.quoteStatus}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Line item data */}
+                          <div className="mt-1 text-[10px] text-slate-600 flex items-center gap-1 flex-wrap">
+                            {line.startDate && line.endDate && (
+                              <>
+                                <span>{fmtShort(line.startDate)}</span>
+                                <span className="text-slate-300">→</span>
+                                <span className={datesAhead ? 'font-semibold text-amber-700' : ''}>{fmtShort(line.endDate)}</span>
+                                <span className="text-slate-300">·</span>
+                              </>
+                            )}
+                            <span>Qty {line.qty}</span>
+                            {line.rate > 0 && (
+                              <>
+                                <span className="text-slate-300">·</span>
+                                <span>{sym}{line.rate.toLocaleString('en-IN', { maximumFractionDigits: 0 })}/unit</span>
+                              </>
+                            )}
+                            {datesAhead && <span className="text-[9px] text-amber-600 font-medium">▲ newer dates</span>}
+                          </div>
+
+                          {/* Action buttons */}
+                          <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
+                            {datesAhead && (
+                              <button
+                                onClick={() => void handleSyncDates(doc, line)}
+                                disabled={syncSt === 'loading' || syncSt === 'done'}
+                                className={`text-[10px] font-medium px-2 py-0.5 rounded border transition-colors flex items-center gap-1 ${
+                                  syncSt === 'done'  ? 'bg-green-50 border-green-200 text-green-700' :
+                                  syncSt === 'error' ? 'bg-red-50 border-red-200 text-red-600' :
+                                  'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100 disabled:opacity-40'
+                                }`}
+                              >
+                                {syncSt === 'loading' && <span className="inline-block w-3 h-3 border border-current border-t-transparent rounded-full animate-spin" />}
+                                {syncSt === 'done' ? '✓ Synced' : syncSt === 'error' ? '✕ Error' : '↑ Sync Dates'}
+                              </button>
+                            )}
+
+                            {!inHistory && (
+                              <button
+                                onClick={() => void handleAddHistory(doc, line)}
+                                disabled={histSt === 'loading' || histSt === 'done'}
+                                className={`text-[10px] font-medium px-2 py-0.5 rounded border transition-colors flex items-center gap-1 ${
+                                  histSt === 'done'  ? 'bg-green-50 border-green-200 text-green-700' :
+                                  histSt === 'error' ? 'bg-red-50 border-red-200 text-red-600' :
+                                  proRata
+                                    ? 'bg-orange-50 border-orange-200 text-orange-700 hover:bg-orange-100 disabled:opacity-40'
+                                    : 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100 disabled:opacity-40'
+                                }`}
+                              >
+                                {histSt === 'loading' && <span className="inline-block w-3 h-3 border border-current border-t-transparent rounded-full animate-spin" />}
+                                {histSt === 'done' ? '✓ Added' : histSt === 'error' ? '✕ Error' : proRata ? '+ Add Pro-rata' : '+ Add to History'}
+                              </button>
+                            )}
+
+                            {inHistory && <span className="text-[10px] text-slate-400 italic">✓ In history</span>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        </>,
+        document.body,
+      )}
+    </>
+  );
+}
+
 function StatusBadge({ status, endDate }: { status: string; endDate: string }) {
   const eff = effectiveStatus(status, endDate);
   const label = eff.replace('_', ' ');
@@ -2166,6 +2599,7 @@ export function SubscriptionsTable({
                             <GoogleResellerButton domainId={sub.domain.id} domainName={sub.domain.domainName} googleCustomerId={sub.domain.googleCustomerId} showAlert={sub.subscriptionCategory === 'google_workspace' && sub._count.googleResellerMatches === 0} />
                           )}
                           <RowCommentsButton subscriptionId={sub.id} commentCount={sub._count.comments} />
+                          <RefreshZohoButton subscriptionId={sub.id} domainName={sub.domain.domainName} zohoCustomerId={sub.zohoCustomerId} orgZohoId={sub.organization.zohoOrgId} orgDataCenter={sub.organization.dataCenter} />
                           <EditSubscriptionButton iconOnly subscriptionId={sub.id} itemId={sub.zohoItemId} itemName={sub.zohoItemName ?? ''} orgId={sub.organization.id}
                             quantity={Number(sub.quantity)} currency={sub.currency ?? 'INR'} exchangeRate={Number(sub.exchangeRate ?? 1)} billingCycle={sub.billingCycle}
                             price={Number(sub.subscriptionPrice)} nextRenewalPrice={sub.nextRenewalPrice !== null ? Number(sub.nextRenewalPrice) : null}

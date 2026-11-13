@@ -112,9 +112,10 @@ function fmtDateTime(iso: string | null): string {
 // ---------------------------------------------------------------------------
 function GoogleStatusBadge({ status }: { status: string }) {
   const cls =
-    status === 'ACTIVE'    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
-    status === 'SUSPENDED' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
-                             'bg-gray-100 text-gray-500 border border-gray-200';
+    status === 'ACTIVE'      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+    status === 'SUSPENDED'   ? 'bg-amber-50 text-amber-700 border border-amber-200' :
+    status === 'NOT_EXIST'   ? 'bg-red-50 text-red-700 border border-red-200' :
+                               'bg-gray-100 text-gray-500 border border-gray-200';
   return (
     <span className={`inline-flex items-center px-2 py-0.5 rounded text-[12px] font-medium ${cls}`}>
       {status}
@@ -472,6 +473,93 @@ function GripIcon() {
 }
 
 // ---------------------------------------------------------------------------
+// MultiSelectFilter
+// ---------------------------------------------------------------------------
+function MultiSelectFilter({
+  options, selected, onChange, minWidth = 150,
+}: {
+  options: { value: string; label: string }[];
+  selected: string[];
+  onChange: (values: string[]) => void;
+  minWidth?: number;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, []);
+  const toggle = (val: string) => {
+    onChange(selected.includes(val) ? selected.filter(v => v !== val) : [...selected, val]);
+  };
+  const displayText = selected.length === 0 ? 'All'
+    : selected.length === 1 ? (options.find(o => o.value === selected[0])?.label ?? selected[0])
+    : `${selected.length} selected`;
+  return (
+    <div ref={ref} className="relative">
+      <button onClick={() => setOpen(o => !o)}
+        style={{ minWidth }}
+        className={`flex items-center justify-between gap-2 border rounded-md px-2.5 py-1.5 text-[13px] bg-white hover:bg-gray-50 focus:outline-none focus:ring-1 focus:ring-blue-500 w-full ${selected.length > 0 ? 'border-blue-400 text-blue-700 font-medium' : 'border-gray-300 text-gray-700'}`}
+      >
+        <span className="truncate">{displayText}</span>
+        <svg className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7"/></svg>
+      </button>
+      {open && (
+        <div className="absolute top-full left-0 mt-1 z-30 bg-white rounded-md shadow-lg ring-1 ring-black/10 py-1 max-h-64 overflow-y-auto" style={{ minWidth }}>
+          {options.map(opt => (
+            <label key={opt.value} className="flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 cursor-pointer">
+              <input type="checkbox" checked={selected.includes(opt.value)} onChange={() => toggle(opt.value)}
+                className="rounded border-gray-300 text-blue-600 w-3.5 h-3.5" />
+              <span className="text-[13px] text-gray-700 whitespace-nowrap">{opt.label}</span>
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// CSV export helper — plain-text value per column
+// ---------------------------------------------------------------------------
+function csvEscape(val: unknown): string {
+  if (val == null || val === '') return '';
+  const s = String(val);
+  return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s;
+}
+function getCsvValue(colId: ColumnId, row: ResellerSubRow, resellerNames?: { 1: string; 2: string }): string {
+  switch (colId) {
+    case 'customerDomain':        return csvEscape(row.customerDomain);
+    case 'orgName':               return csvEscape(row.orgName);
+    case 'skuName':               return csvEscape(row.skuName);
+    case 'seatsLicensed':         return csvEscape(row.seatsLicensed);
+    case 'googleStatus':          return csvEscape(row.googleStatus);
+    case 'resellerSlot':          return csvEscape(resellerNames?.[row.resellerSlot as 1 | 2] ?? `Slot ${row.resellerSlot}`);
+    case 'reconciliationStatus':  return csvEscape(row.reconciliationStatus);
+    case 'subscriptionFetchedAt': return csvEscape(row.subscriptionFetchedAt ? new Date(row.subscriptionFetchedAt).toLocaleString('en-IN') : '');
+    case 'customerId':            return csvEscape(row.customerId);
+    case 'skuId':                 return csvEscape(row.skuId);
+    case 'planName':              return csvEscape(row.planName);
+    case 'isInTrial':             return csvEscape(row.isInTrial != null ? (row.isInTrial ? 'Yes' : 'No') : '');
+    case 'trialEndTime':          return csvEscape(row.trialEndTime ? new Date(row.trialEndTime).toLocaleDateString('en-IN') : '');
+    case 'renewalType':           return csvEscape(row.renewalType);
+    case 'contactName':           return csvEscape(row.contactName);
+    case 'alternateEmail':        return csvEscape(row.alternateEmail);
+    case 'countryCode':           return csvEscape(row.countryCode);
+    case 'resellerEmail':         return csvEscape(row.resellerEmail);
+    case 'googleCreationTime':    return csvEscape(row.googleCreationTime ? new Date(row.googleCreationTime).toLocaleDateString('en-IN') : '');
+    case 'customerFetchedAt':     return csvEscape(row.customerFetchedAt ? new Date(row.customerFetchedAt).toLocaleString('en-IN') : '');
+    case 'additionalDomains':     return csvEscape(row.additionalDomains.join('; '));
+    case 'matchedSubscription':   return csvEscape(row.matchedSubscription?.subscriptionNumber ?? '');
+    case 'appSeats':              return csvEscape(row.appSeats);
+    case 'customerUid':           return csvEscape(row.customerUid);
+    case 'partnerSalesConsole':   return csvEscape(row.customerUid ? `https://channelservices.cloud.google.com/customers/${row.customerUid}` : '');
+    default:                      return '';
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Props
 // ---------------------------------------------------------------------------
 interface Props {
@@ -488,6 +576,7 @@ interface Props {
     googleStatus?: string;
     resellerSlot?: string;
     skuName?: string;
+    planName?: string;
     hasFlag?: string;
     search?: string;
     sortBy?: string;
@@ -578,6 +667,18 @@ export function ResellerSubsTable({ rows, total, page, limit, totalPages, summar
   const [showFetchDropdown, setShowFetchDropdown]         = useState(false);
   const [showCustomerDropdown, setShowCustomerDropdown]   = useState(false);
   const [showReconcileDropdown, setShowReconcileDropdown] = useState(false);
+  const toolbarDropdownRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (toolbarDropdownRef.current && !toolbarDropdownRef.current.contains(e.target as Node)) {
+        setShowFetchDropdown(false);
+        setShowCustomerDropdown(false);
+        setShowReconcileDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
   const [selectedSlot, setSelectedSlot] = useState<'both' | 1 | 2>('both');
   const [actionMsg, setActionMsg]   = useState('');
   const [loadingMsg, setLoadingMsg] = useState('');
@@ -657,6 +758,25 @@ export function ResellerSubsTable({ rows, total, page, limit, totalPages, summar
   };
 
   const showMsg = (msg: string) => { setActionMsg(msg); setTimeout(() => setActionMsg(''), 5000); };
+
+  const handleExport = async () => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('limit', '10000');
+    params.set('page', '1');
+    const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3001/api';
+    try {
+      const res = await fetch(`${apiBase}/google-workspace/reseller-subs?${params.toString()}`, { credentials: 'include', cache: 'no-store' });
+      const data = await res.json() as { rows: ResellerSubRow[] };
+      const headers = orderedVisible.map(col => col.label).join(',');
+      const csvRows = data.rows.map(row => orderedVisible.map(col => getCsvValue(col.id, row, resellerNames)).join(','));
+      const csv = '﻿' + [headers, ...csvRows].join('\r\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `gws-reconciliation-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click(); URL.revokeObjectURL(url);
+    } catch { showMsg('❌ Export failed'); }
+  };
 
   const bulkAction = (
     fn: () => Promise<{ data?: unknown; error?: string }>,
@@ -757,7 +877,7 @@ export function ResellerSubsTable({ rows, total, page, limit, totalPages, summar
     <div className="flex flex-col gap-2" style={{ height: 'calc(100vh - 168px)' }}>
 
       {/* ── Action bar ── */}
-      <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
+      <div ref={toolbarDropdownRef} className="flex flex-wrap items-center gap-2 flex-shrink-0">
         {/* Fetch Subscriptions */}
         <div className="relative">
           <div className="flex items-stretch rounded overflow-hidden shadow-sm">
@@ -795,7 +915,7 @@ export function ResellerSubsTable({ rows, total, page, limit, totalPages, summar
                   className={`w-full text-left px-4 py-2.5 flex items-center justify-between hover:bg-gray-50 ${selectedSlot === s ? 'text-blue-600 font-medium bg-blue-50' : 'text-gray-700'}`}
                   onClick={() => { setSelectedSlot(s); setShowFetchDropdown(false); }}
                 >
-                  {s === 'both' ? 'Both Slots' : `Slot ${s} Only`}
+                  {s === 'both' ? 'Both Resellers' : `${resellerNames[s]} Only`}
                   {selectedSlot === s && <span className="text-blue-500 text-xs font-bold">✓</span>}
                 </button>
               ))}
@@ -897,6 +1017,13 @@ export function ResellerSubsTable({ rows, total, page, limit, totalPages, summar
           Filters{Object.values(filters).some(Boolean) ? ' ●' : ''}
         </button>
         <button
+          onClick={handleExport}
+          className="flex items-center gap-1.5 px-3 py-2 text-[13px] font-medium rounded border border-gray-300 text-gray-600 bg-white hover:bg-gray-50 shadow-sm"
+        >
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1M16 10l-4 4m0 0l-4-4m4 4V4"/></svg>
+          Export CSV
+        </button>
+        <button
           onClick={() => setShowColModal(true)}
           className="flex items-center gap-1.5 px-3 py-2 text-[13px] font-medium rounded border border-gray-300 text-gray-600 bg-white hover:bg-gray-50 shadow-sm"
         >
@@ -940,25 +1067,50 @@ export function ResellerSubsTable({ rows, total, page, limit, totalPages, summar
         <div className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 flex flex-wrap gap-4 flex-shrink-0">
           <div className="flex flex-col gap-1">
             <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Google Status</label>
-            <select value={filters.googleStatus ?? ''} onChange={e => updateFilter('googleStatus', e.target.value || undefined)}
-              className="border border-gray-300 rounded-md px-2.5 py-1.5 text-[13px] bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 min-w-[130px]">
-              <option value="">All</option><option value="ACTIVE">ACTIVE</option><option value="SUSPENDED">SUSPENDED</option><option value="CANCELLED">CANCELLED</option>
-            </select>
+            <MultiSelectFilter
+              minWidth={140}
+              options={[
+                { value: 'ACTIVE', label: 'ACTIVE' },
+                { value: 'SUSPENDED', label: 'SUSPENDED' },
+                { value: 'CANCELLED', label: 'CANCELLED' },
+                { value: 'NOT_EXIST', label: 'NOT EXIST' },
+              ]}
+              selected={filters.googleStatus ? filters.googleStatus.split(',') : []}
+              onChange={vals => updateFilter('googleStatus', vals.length ? vals.join(',') : undefined)}
+            />
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Reseller Slot</label>
+            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Reseller</label>
             <select value={filters.resellerSlot ?? ''} onChange={e => updateFilter('resellerSlot', e.target.value || undefined)}
-              className="border border-gray-300 rounded-md px-2.5 py-1.5 text-[13px] bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 min-w-[110px]">
-              <option value="">All</option><option value="1">Slot 1</option><option value="2">Slot 2</option>
+              className="border border-gray-300 rounded-md px-2.5 py-1.5 text-[13px] bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 min-w-[130px]">
+              <option value="">All</option>
+              <option value="1">{resellerNames[1]}</option>
+              <option value="2">{resellerNames[2]}</option>
             </select>
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Plan</label>
-            <select value={filters.skuName ?? ''} onChange={e => updateFilter('skuName', e.target.value || undefined)}
-              className="border border-gray-300 rounded-md px-2.5 py-1.5 text-[13px] bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 min-w-[150px]">
-              <option value="">All Plans</option>
-              {skuNames.map(n => <option key={n} value={n}>{n}</option>)}
-            </select>
+            <MultiSelectFilter
+              minWidth={220}
+              options={skuNames.map(n => ({ value: n, label: n }))}
+              selected={filters.skuName ? filters.skuName.split(',') : []}
+              onChange={vals => updateFilter('skuName', vals.length ? vals.join(',') : undefined)}
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Plan Type</label>
+            <MultiSelectFilter
+              minWidth={180}
+              options={[
+                { value: 'FLEXIBLE', label: 'Flexible' },
+                { value: 'ANNUAL_MONTHLY_PAY', label: 'Annual (Monthly Pay)' },
+                { value: 'ANNUAL_YEARLY_PAY', label: 'Annual (Yearly Pay)' },
+                { value: 'TRIAL', label: 'Trial' },
+                { value: 'FREE', label: 'Free' },
+              ]}
+              selected={filters.planName ? filters.planName.split(',') : []}
+              onChange={vals => updateFilter('planName', vals.length ? vals.join(',') : undefined)}
+            />
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Flag</label>

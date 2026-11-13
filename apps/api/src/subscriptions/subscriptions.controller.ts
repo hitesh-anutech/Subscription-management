@@ -386,6 +386,13 @@ export class SubscriptionsController {
     return this.service.syncInvoiceFromEstimate(id);
   }
 
+  /** POST /api/subscriptions/:id/refresh-zoho-docs — trigger live Zoho sync and return domain-filtered quotes/invoices for the inline popup */
+  @Post(':id/refresh-zoho-docs')
+  @HttpCode(HttpStatus.OK)
+  refreshZohoDocs(@Param('id') id: string) {
+    return this.service.refreshZohoDocs(id);
+  }
+
   /** DELETE /api/subscriptions/renewal-history/:historyId — remove a single order history entry */
   @Delete('renewal-history/:historyId')
   @HttpCode(HttpStatus.OK)

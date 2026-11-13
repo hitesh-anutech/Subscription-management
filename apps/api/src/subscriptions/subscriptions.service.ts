@@ -2146,6 +2146,7 @@ export class SubscriptionsService {
         quoteNumber:        h.quoteNumber,
         quoteDate:          h.quoteDate ? new Date(h.quoteDate) : null,
         zohoEstimateStatus: h.quoteStatus,
+        zohoInvoiceStatus:  h.invoiceStatus,
         invoiceId:        h.invoiceId,
         invoiceNumber:    h.invoiceNumber,
         invoiceDate:      h.invoiceDate ? new Date(h.invoiceDate) : null,
@@ -4251,5 +4252,87 @@ export class SubscriptionsService {
     }
 
     return candidates;
+  }
+
+  // ------------------------------------------------------------------
+  // Refresh Zoho Docs for a subscription row
+  // Triggers a live Zoho sync for the subscription's customer (identical to the
+  // customer-page "Re-sync" button), then returns all cached docs that have at
+  // least one line item matching the subscription's domain — ready for the
+  // inline popup to show quotes/invoices and offer sync/history actions.
+  // ------------------------------------------------------------------
+  async refreshZohoDocs(subscriptionId: string) {
+    const sub = await this.prisma.subscription.findUnique({
+      where: { id: subscriptionId },
+      select: {
+        id: true,
+        startDate: true,
+        endDate: true,
+        quantity: true,
+        subscriptionPrice: true,
+        billingCycle: true,
+        currency: true,
+        exchangeRate: true,
+        zohoCustomerId: true,
+        organization: { select: { id: true } },
+        domain: { select: { id: true, domainName: true } },
+        renewalHistory: {
+          select: {
+            id: true,
+            invoiceNumber: true,
+            quoteNumber: true,
+            businessType: true,
+            renewalStatus: true,
+            serviceStartDate: true,
+            serviceEndDate: true,
+          },
+          orderBy: { createdAt: 'desc' },
+        },
+      },
+    });
+    if (!sub) throw new NotFoundException(`Subscription ${subscriptionId} not found`);
+    if (!sub.zohoCustomerId) {
+      throw new BadRequestException('Subscription has no Zoho customer linked');
+    }
+
+    const orgId = sub.organization.id;
+    const domainName = sub.domain.domainName.toLowerCase();
+
+    // Trigger live Zoho sync — same call as the customer-page "Re-sync" button;
+    // upserts zoho_customer_docs so the customer page also reflects fresh data.
+    await this.zoho.getCustomerZohoDocs(orgId, sub.zohoCustomerId);
+
+    // Load all cached docs with their line items for this customer
+    const allDocs = await this.prisma.zohoCustomerDoc.findMany({
+      where: { organizationId: orgId, zohoCustomerId: sub.zohoCustomerId },
+      include: { lines: { orderBy: { lineOrder: 'asc' } } },
+    });
+
+    // Keep only docs that have at least one line matching this domain;
+    // strip lines for other domains so the frontend only sees relevant data.
+    const docs = allDocs
+      .map(doc => ({
+        ...doc,
+        domainLines: doc.lines.filter(
+          l => l.domain?.toLowerCase() === domainName,
+        ),
+      }))
+      .filter(doc => doc.domainLines.length > 0);
+
+    return {
+      subscription: {
+        id: sub.id,
+        startDate: sub.startDate,
+        endDate: sub.endDate,
+        quantity: sub.quantity,
+        subscriptionPrice: sub.subscriptionPrice,
+        billingCycle: sub.billingCycle,
+        currency: sub.currency,
+        exchangeRate: sub.exchangeRate,
+        domainName: sub.domain.domainName,
+        renewalHistory: sub.renewalHistory,
+      },
+      docs,
+    };
   }
 }

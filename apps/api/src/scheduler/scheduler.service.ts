@@ -6,6 +6,7 @@ import { ZohoService } from '../zoho/zoho.service';
 import { EmailService } from '../email/email.service';
 import { SettingsService } from '../settings/settings.service';
 import { ConversionsService } from '../conversions/conversions.service';
+import { GoogleResellerSubsService } from '../google-workspace/google-reseller-subs.service';
 
 @Injectable()
 export class SchedulerService {
@@ -18,6 +19,7 @@ export class SchedulerService {
     private readonly email: EmailService,
     private readonly settings: SettingsService,
     private readonly conversions: ConversionsService,
+    private readonly resellerSubs: GoogleResellerSubsService,
   ) {}
 
   // ------------------------------------------------------------------
@@ -164,6 +166,38 @@ export class SchedulerService {
       this.logger.log('[Cron] syncPendingInvoicesStatus complete');
     } catch (err) {
       this.logger.error('[Cron] syncPendingInvoicesStatus failed', err instanceof Error ? err.stack : err);
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // GWS Daily Sync — 9:00 AM IST (03:30 UTC)
+  // ------------------------------------------------------------------
+  @Cron('30 3 * * *', { timeZone: 'UTC' })
+  async gwsSyncMorning() {
+    this.logger.log('[Cron] GWS daily sync (morning) starting');
+    try {
+      const result = await this.resellerSubs.runDailySync();
+      this.logger.log(
+        `[Cron] GWS morning sync done: ${result.subsTotal} subs, ${result.customersFetched} customers fetched, ${result.reconcileMatched} matched`,
+      );
+    } catch (err) {
+      this.logger.error('[Cron] GWS morning sync failed', err instanceof Error ? err.stack : err);
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // GWS Daily Sync — 4:00 PM IST (10:30 UTC)
+  // ------------------------------------------------------------------
+  @Cron('30 10 * * *', { timeZone: 'UTC' })
+  async gwsSyncEvening() {
+    this.logger.log('[Cron] GWS daily sync (evening) starting');
+    try {
+      const result = await this.resellerSubs.runDailySync();
+      this.logger.log(
+        `[Cron] GWS evening sync done: ${result.subsTotal} subs, ${result.customersFetched} customers fetched, ${result.reconcileMatched} matched`,
+      );
+    } catch (err) {
+      this.logger.error('[Cron] GWS evening sync failed', err instanceof Error ? err.stack : err);
     }
   }
 

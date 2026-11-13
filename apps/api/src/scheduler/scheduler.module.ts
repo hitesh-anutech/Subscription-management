@@ -5,6 +5,7 @@ import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 import { ZohoModule } from '../zoho/zoho.module';
 import { EmailModule } from '../email/email.module';
 import { ConversionsModule } from '../conversions/conversions.module';
+import { GoogleWorkspaceModule } from '../google-workspace/google-workspace.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { ConversionsModule } from '../conversions/conversions.module';
     ZohoModule,
     EmailModule,
     ConversionsModule,
+    GoogleWorkspaceModule,
   ],
   providers: [SchedulerService],
 })

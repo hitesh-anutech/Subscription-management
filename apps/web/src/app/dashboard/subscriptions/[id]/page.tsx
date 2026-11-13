@@ -12,6 +12,7 @@ import { getCurrentUser } from '@/lib/auth';
 import { DeleteSubscriptionButton } from '../_components/delete-subscription-button';
 import { HistoryDialog } from '@/components/history-dialog';
 import { OrderHistoryTimeline } from './_components/order-history-timeline';
+import { ZohoDocsButton } from './_components/zoho-docs-button';
 import { DomainSubscriptionsPanel } from './_components/domain-subscriptions-panel';
 import { GoogleResellerPanel } from './_components/google-reseller-panel';
 import { SubscriptionComments } from './_components/subscription-comments';
@@ -391,6 +392,17 @@ export default async function SubscriptionDetailPage({ params }: { params: Promi
                 <p className="text-sm text-slate-600">{sub.notes}</p>
               </div>
             )}
+            {sub.zohoCustomerId && (
+              <div className="mt-4 pt-3 border-t border-slate-100 flex justify-end">
+                <ZohoDocsButton
+                  subscriptionId={sub.id}
+                  zohoCustomerId={sub.zohoCustomerId}
+                  org={sub.organization}
+                  domainName={sub.domain.domainName}
+                  currency={sub.currency}
+                />
+              </div>
+            )}
           </div>
 
           {/* Google Reseller — only for Google Workspace subscriptions */}
@@ -414,7 +426,7 @@ export default async function SubscriptionDetailPage({ params }: { params: Promi
             initialComments={sub.comments}
           />
 
-          {/* Order History Timeline — fresh sale + renewals + pro-rata */}
+          {/* Order History */}
           <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
             <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-2">
               <h2 className="text-sm font-semibold text-slate-700">📜 Order History</h2>

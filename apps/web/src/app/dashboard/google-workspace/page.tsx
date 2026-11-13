@@ -69,6 +69,7 @@ export default async function GoogleWorkspacePage({
     googleStatus?: string;
     resellerSlot?: string;
     skuName?: string;
+    planName?: string;
     hasFlag?: string;
     search?: string;
     page?: string;
@@ -89,6 +90,7 @@ export default async function GoogleWorkspacePage({
   if (sp.googleStatus)         params.set('googleStatus', sp.googleStatus);
   if (sp.resellerSlot)         params.set('resellerSlot', sp.resellerSlot);
   if (sp.skuName)              params.set('skuName', sp.skuName);
+  if (sp.planName)             params.set('planName', sp.planName);
   if (sp.hasFlag)              params.set('hasFlag', sp.hasFlag);
   if (sp.search)               params.set('search', sp.search);
   if (sp.sortBy)               params.set('sortBy', sp.sortBy);
@@ -142,6 +144,7 @@ export default async function GoogleWorkspacePage({
           googleStatus: sp.googleStatus,
           resellerSlot: sp.resellerSlot,
           skuName: sp.skuName,
+          planName: sp.planName,
           hasFlag: sp.hasFlag,
           search: sp.search,
           sortBy: sp.sortBy,

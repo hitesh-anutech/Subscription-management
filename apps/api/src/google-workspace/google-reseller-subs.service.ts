@@ -42,9 +42,10 @@ export interface ResellerJob {
 export interface ListParams {
   orgId?: string;
   reconciliationStatus?: string;
-  googleStatus?: string;
+  googleStatus?: string | string[];
   resellerSlot?: number;
-  skuName?: string;
+  skuName?: string | string[];
+  planName?: string | string[];
   hasFlag?: string;
   search?: string;
   page?: number;
@@ -292,6 +293,18 @@ export class GoogleResellerSubsService {
         job.inserted += inserted;
         job.updated += updated;
         job.processed += subs.length;
+
+        // Mark DB records for this slot that Google no longer returns as NOT_EXIST
+        const fetchedIds = subs.map((sub) => sub.subscriptionId);
+        await this.prisma.googleResellerSubscription.updateMany({
+          where: {
+            organizationId: orgId,
+            resellerSlot: s,
+            googleSubscriptionId: { notIn: fetchedIds },
+            googleStatus: { not: 'NOT_EXIST' },
+          },
+          data: { googleStatus: 'NOT_EXIST' },
+        });
       }
 
       job.status = 'done';
@@ -324,8 +337,12 @@ export class GoogleResellerSubsService {
     )) as GoogleSubscriptionExtended[];
     const sub = subs.find((s) => s.subscriptionId === row.googleSubscriptionId);
     if (!sub) {
-      this.logger.warn(`Subscription ${row.googleSubscriptionId} not found in Google API`);
-      return { updated: false };
+      this.logger.warn(`Subscription ${row.googleSubscriptionId} not found in Google API — marking NOT_EXIST`);
+      await this.prisma.googleResellerSubscription.update({
+        where: { id },
+        data: { googleStatus: 'NOT_EXIST', subscriptionFetchedAt: new Date() },
+      });
+      return { updated: true };
     }
 
     const resellerEmail = await this.google.getResellerEmail(slot);
@@ -671,17 +688,115 @@ export class GoogleResellerSubsService {
   }
 
   // ------------------------------------------------------------------
+  // Daily cron sync — subscriptions → customer data → reconcile
+  // ------------------------------------------------------------------
+  async runDailySync(orgId?: string): Promise<{ subsTotal: number; customersFetched: number; reconcileMatched: number; reconcileNotMatched: number }> {
+    const resolvedOrgId = await this.resolveOrgId(orgId);
+    const slots: Slot[] = [1, 2];
+    let subsTotal = 0;
+
+    // Step 1: Fetch subscriptions from Google for each slot
+    for (const s of slots) {
+      const connected = await this.google.isConnected(s);
+      if (!connected) { this.logger.warn(`[DailySync] Slot ${s} not connected — skipping`); continue; }
+
+      const resellerEmail = await this.google.getResellerEmail(s);
+      const subs = (await this.google.fetchAllSubscriptionsForSlot(s)) as GoogleSubscriptionExtended[];
+      this.logger.log(`[DailySync] Slot ${s}: ${subs.length} subscriptions from Google`);
+
+      await this.batchUpsert(subs, resolvedOrgId, s, resellerEmail);
+      subsTotal += subs.length;
+
+      // Mark subscriptions no longer in Google as NOT_EXIST
+      const fetchedIds = subs.map((sub) => sub.subscriptionId);
+      await this.prisma.googleResellerSubscription.updateMany({
+        where: {
+          organizationId: resolvedOrgId,
+          resellerSlot: s,
+          googleSubscriptionId: { notIn: fetchedIds },
+          googleStatus: { not: 'NOT_EXIST' },
+        },
+        data: { googleStatus: 'NOT_EXIST' },
+      });
+    }
+
+    // Step 2: Fetch customer data for rows missing customerFetchedAt
+    const rows = await this.prisma.googleResellerSubscription.findMany({
+      where: { organizationId: resolvedOrgId, customerFetchedAt: null },
+      select: { id: true, customerId: true, resellerSlot: true },
+      orderBy: { customerDomain: 'asc' },
+    });
+
+    let customersFetched = 0;
+    if (rows.length) {
+      const uniqueMap = new Map<string, { customerId: string; slot: Slot }>();
+      for (const row of rows) {
+        if (!uniqueMap.has(row.customerId))
+          uniqueMap.set(row.customerId, { customerId: row.customerId, slot: row.resellerSlot as Slot });
+      }
+      const customerData = new Map<string, GoogleCustomer | null>();
+      await concurrentPool([...uniqueMap.values()], 5, 120, async ({ customerId, slot }) => {
+        const customer = await this.google.fetchCustomerById(customerId, slot);
+        customerData.set(customerId, customer);
+      });
+
+      const toUpdate = rows
+        .map((row) => ({ id: row.id, customer: customerData.get(row.customerId) }))
+        .filter((r): r is { id: string; customer: GoogleCustomer } => r.customer != null);
+
+      const now = new Date();
+      for (let i = 0; i < toUpdate.length; i += UPDATE_CHUNK) {
+        const chunk = toUpdate.slice(i, i + UPDATE_CHUNK);
+        await this.prisma.$transaction(
+          chunk.map(({ id, customer }) =>
+            this.prisma.googleResellerSubscription.update({
+              where: { id },
+              data: {
+                orgName: customer.postalAddress?.organizationName ?? null,
+                contactName: customer.postalAddress?.contactName ?? null,
+                alternateEmail: customer.alternateEmail ?? null,
+                countryCode: customer.postalAddress?.countryCode ?? null,
+                customerCreationTime: parseGoogleTs(customer.customerCreationTime),
+                resourceUiUrl: customer.resourceUiUrl ?? null,
+                customerFetchedAt: now,
+              },
+            }),
+          ),
+        );
+        customersFetched += chunk.length;
+      }
+      this.logger.log(`[DailySync] Customer data fetched for ${customersFetched} rows`);
+    }
+
+    // Step 3: Reconcile all
+    const result = await this.reconcile({ orgId: resolvedOrgId });
+    this.logger.log(`[DailySync] Reconcile done: ${result.matched} matched, ${result.notMatched} not matched`);
+
+    return { subsTotal, customersFetched, reconcileMatched: result.matched, reconcileNotMatched: result.notMatched };
+  }
+
+  // ------------------------------------------------------------------
   // Paginated list with filters
   // ------------------------------------------------------------------
   async list(params: ListParams) {
     const orgId = await this.resolveOrgId(params.orgId);
-    const { reconciliationStatus, googleStatus, resellerSlot, skuName, hasFlag, search, page = 1, limit = 50, sortBy, sortDir = 'asc' } = params;
+    const { reconciliationStatus, googleStatus, resellerSlot, skuName, planName, hasFlag, search, page = 1, limit = 50, sortBy, sortDir = 'asc' } = params;
 
     const where: Record<string, unknown> = { organizationId: orgId };
     if (reconciliationStatus) where.reconciliationStatus = reconciliationStatus;
-    if (googleStatus) where.googleStatus = googleStatus;
+    if (googleStatus) {
+      const statuses = Array.isArray(googleStatus) ? googleStatus : [googleStatus];
+      where.googleStatus = statuses.length === 1 ? statuses[0] : { in: statuses };
+    }
     if (resellerSlot) where.resellerSlot = resellerSlot;
-    if (skuName) where.skuName = { contains: skuName, mode: 'insensitive' };
+    if (skuName) {
+      const names = Array.isArray(skuName) ? skuName : [skuName];
+      where.skuName = names.length === 1 ? { contains: names[0], mode: 'insensitive' } : { in: names };
+    }
+    if (planName) {
+      const plans = Array.isArray(planName) ? planName : [planName];
+      where.planName = plans.length === 1 ? plans[0] : { in: plans };
+    }
     if (hasFlag) where.reconciliationFlags = { has: hasFlag };
     if (search) {
       where.OR = [

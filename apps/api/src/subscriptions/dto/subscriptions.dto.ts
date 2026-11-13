@@ -127,6 +127,8 @@ export class ImportInvoiceRefDto {
   @IsOptional() @IsDateString() quoteDate?: string;
   // Zoho estimate status snapshot (draft|sent|accepted|invoiced|…) when known.
   @IsOptional() @IsString() @MaxLength(30) quoteStatus?: string;
+  // Zoho invoice status snapshot (draft|sent|paid|void|…) when known.
+  @IsOptional() @IsString() @MaxLength(30) invoiceStatus?: string;
 
   // Billing currency of this document + its exchange rate to the org base currency.
   @IsOptional() @IsString() @MaxLength(10) currency?: string;
